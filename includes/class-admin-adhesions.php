@@ -233,6 +233,9 @@ class SP_Admin_Adhesions {
 		echo '<p class="sp-adh-meta">Soumise le ' . esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ) . '</p>';
 
 		// ── Sections de données ──────────────────────────────────────────────
+		$representants = $this->decode_personnes( $row->representants_legaux ?? '' );
+		$urgence       = $this->decode_personnes( $row->contact_urgence      ?? '', true );
+
 		$sections = [
 			'👤 Identité' => [
 				'Nom'               => $row->nom,
@@ -247,17 +250,46 @@ class SP_Admin_Adhesions {
 				'Email'     => $row->email,
 				'Téléphone' => $row->telephone ?: '—',
 			],
-			'👨‍👩‍👧 Représentant légal' => [
-				'Statut'     => $row->repres_statut    ?: '—',
-				'Nom(s)'     => $row->repres_nom       ?: '—',
-				'Téléphone'  => $row->repres_telephone ?: '—',
-				'Email'      => $row->repres_email     ?: '—',
-			],
-			'🚨 Contact d\'urgence' => [
-				'Nom(s)'     => $row->urg_nom       ?: '—',
-				'Téléphone'  => $row->urg_telephone ?: '—',
-				'Email'      => $row->urg_email     ?: '—',
-			],
+		];
+
+		foreach ( $sections as $title => $fields ) {
+			echo "<div class='sp-adh-section'><h3>{$title}</h3><table class='form-table'>";
+			foreach ( $fields as $label => $value ) {
+				printf(
+					'<tr><th scope="row">%s</th><td>%s</td></tr>',
+					esc_html( $label ),
+					esc_html( $value )
+				);
+			}
+			echo '</table></div>';
+		}
+
+		// Représentants légaux : un bloc affiché par personne
+		echo "<div class='sp-adh-section'><h3>👨‍👩‍👧 Représentant(s) légal/légaux</h3>";
+		if ( empty( $representants ) ) {
+			echo '<p>—</p>';
+		} else {
+			foreach ( $representants as $i => $p ) {
+				printf( '<h4 style="margin:.6rem 0 .3rem;">Représentant %d</h4>', $i + 1 );
+				echo '<table class="form-table">';
+				printf( '<tr><th scope="row">Statut</th><td>%s</td></tr>', esc_html( SP_Front_Adhesion::statut_label( $p['statut'] ?? '' ) ) );
+				printf( '<tr><th scope="row">Nom</th><td>%s</td></tr>', esc_html( trim( ( $p['nom'] ?? '' ) . ' ' . ( $p['prenom'] ?? '' ) ) ?: '—' ) );
+				printf( '<tr><th scope="row">Téléphone</th><td>%s</td></tr>', esc_html( $p['telephone'] ?? '' ?: '—' ) );
+				printf( '<tr><th scope="row">Email</th><td>%s</td></tr>', esc_html( $p['email'] ?? '' ?: '—' ) );
+				echo '</table>';
+			}
+		}
+		echo '</div>';
+
+		// Contact d'urgence
+		echo "<div class='sp-adh-section'><h3>🚨 Contact d'urgence</h3><table class='form-table'>";
+		printf( '<tr><th scope="row">Statut</th><td>%s</td></tr>', esc_html( SP_Front_Adhesion::statut_label( $urgence['statut'] ?? '' ) ) );
+		printf( '<tr><th scope="row">Nom</th><td>%s</td></tr>', esc_html( trim( ( $urgence['nom'] ?? '' ) . ' ' . ( $urgence['prenom'] ?? '' ) ) ?: '—' ) );
+		printf( '<tr><th scope="row">Téléphone</th><td>%s</td></tr>', esc_html( $urgence['telephone'] ?? '' ?: '—' ) );
+		printf( '<tr><th scope="row">Email</th><td>%s</td></tr>', esc_html( $urgence['email'] ?? '' ?: '—' ) );
+		echo '</table></div>';
+
+		$sections2 = [
 			'🥋 Club' => [
 				'Discipline'         => $row->discipline,
 				'Catégorie d\'âge'   => $row->categorie,
@@ -276,15 +308,9 @@ class SP_Admin_Adhesions {
 				'T-shirt / Sweat'   => $row->taille_tshirt   ?: '—',
 				'Pantalon'          => $row->taille_pantalon ?: '—',
 			],
-			'📋 Autorisations' => [
-				'Photos / vidéos'    => ($row->autorisation_photo ?? 0) ? '✅ Autorisé' : '❌ Refusé',
-				'Droit à l\'image'   => ($row->droit_image ?? 0)        ? '✅ Autorisé' : '❌ Refusé',
-				'Repartir seul(e)'   => ($row->autorisation_seul ?? 0)  ? '✅ Autorisé' : '❌ Non',
-				'Règlement accepté'  => ($row->reglement_accepte ?? 0)  ? '✅ Oui'      : '⚠️ Non',
-			],
 		];
 
-		foreach ( $sections as $title => $fields ) {
+		foreach ( $sections2 as $title => $fields ) {
 			echo "<div class='sp-adh-section'><h3>{$title}</h3><table class='form-table'>";
 			foreach ( $fields as $label => $value ) {
 				printf(
@@ -295,6 +321,32 @@ class SP_Admin_Adhesions {
 			}
 			echo '</table></div>';
 		}
+
+		// Documents déposés
+		$docs = [
+			'Certificat médical'                     => $row->doc_certificat_medical ?? '',
+			'Attestation de responsabilité civile'    => $row->doc_attestation_rc     ?? '',
+			'Décharge sur l\'honneur'                 => $row->doc_decharge_honneur   ?? '',
+		];
+		echo "<div class='sp-adh-section'><h3>📎 Documents</h3><table class='form-table'>";
+		foreach ( $docs as $label => $url ) {
+			$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
+			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), $val );
+		}
+		echo '</table></div>';
+
+		// Autorisations
+		echo "<div class='sp-adh-section'><h3>📋 Autorisations</h3><table class='form-table'>";
+		$autorisations = [
+			'Photos / vidéos'    => ($row->autorisation_photo ?? 0) ? '✅ Autorisé' : '❌ Refusé',
+			'Droit à l\'image'   => ($row->droit_image ?? 0)        ? '✅ Autorisé' : '❌ Refusé',
+			'Repartir seul(e)'   => ($row->autorisation_seul ?? 0)  ? '✅ Autorisé' : '❌ Non (ou majeur — non applicable)',
+			'Règlement accepté'  => ($row->reglement_accepte ?? 0)  ? '✅ Oui'      : '⚠️ Non',
+		];
+		foreach ( $autorisations as $label => $value ) {
+			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), esc_html( $value ) );
+		}
+		echo '</table></div>';
 
 		// Motif de refus éventuel
 		if ( $row->statut === 'refuse' && $row->refus_motif ) {
@@ -472,6 +524,22 @@ class SP_Admin_Adhesions {
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
+	// DÉCODAGE DES BLOCS "PERSONNE" (représentants légaux / contact urgence)
+	// ══════════════════════════════════════════════════════════════════════════
+	// $single = true pour un contact d'urgence (JSON = un seul objet), false pour
+	// une liste de représentants (JSON = tableau d'objets).
+	private function decode_personnes( string $json, bool $single = false ): array {
+		if ( $json === '' ) return $single ? [] : [];
+		$decoded = json_decode( $json, true );
+		if ( ! is_array( $decoded ) ) return $single ? [] : [];
+		if ( $single ) {
+			// Ancien format éventuel (tableau à un élément) ou objet direct
+			return isset( $decoded['statut'] ) || isset( $decoded['nom'] ) ? $decoded : ( $decoded[0] ?? [] );
+		}
+		return $decoded;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
 	// CRÉATION MEMBRE dans sp_cal_eleves
 	// ══════════════════════════════════════════════════════════════════════════
 	private function create_member( object $row ): int|false {
@@ -485,18 +553,34 @@ class SP_Admin_Adhesions {
 			$saison = $m >= 9 ? "{$y}/" . ($y+1) : ($y-1) . "/{$y}";
 		}
 
+		$representants = $this->decode_personnes( $row->representants_legaux ?? '' );
+		$urgence       = $this->decode_personnes( $row->contact_urgence      ?? '', true );
+		$repres1       = $representants[0] ?? [];
+
+		$docs = [
+			'certificat_medical' => $row->doc_certificat_medical ?? '',
+			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
+			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
+		];
+
+		// L'essentiel de la structure "1 à 2 représentants" est conservé intégralement en JSON
+		// dans extra_data en attendant la refonte du modèle de données (cf. md/02-etat-des-lieux.md) :
+		// sp_cal_eleves reste une table à plat, on y range donc le 1er représentant pour compat,
+		// et la liste complète (jusqu'à 2) pour ne rien perdre.
 		$extra = [
-			'sexe'                => $row->sexe,
-			'autorisation_photo'  => (bool) ($row->autorisation_photo ?? 0),
-			'autorisation_seul'   => (bool) ($row->autorisation_seul  ?? 0),
-			'reglement_accepte'   => (bool) ($row->reglement_accepte  ?? 0),
-			'pratique_anterieure' => (bool) ($row->pratique_anterieure ?? 0),
-			'ancien_licence'      => $row->ancien_licence       ?? '',
-			'ancien_passeport'    => $row->ancien_passeport     ?? '',
-			'message_adhesion'    => $row->message              ?? '',
-			'repres_statut'       => $row->repres_statut        ?? '',
-			'source'              => 'adhesion_form',
-			'adhesion_id'         => $row->id,
+			'sexe'                 => $row->sexe,
+			'autorisation_photo'   => (bool) ($row->autorisation_photo ?? 0),
+			'autorisation_seul'    => (bool) ($row->autorisation_seul  ?? 0),
+			'reglement_accepte'    => (bool) ($row->reglement_accepte  ?? 0),
+			'pratique_anterieure'  => (bool) ($row->pratique_anterieure ?? 0),
+			'ancien_licence'       => $row->ancien_licence       ?? '',
+			'ancien_passeport'     => $row->ancien_passeport     ?? '',
+			'message_adhesion'     => $row->message              ?? '',
+			'representants_legaux' => $representants,
+			'contact_urgence'      => $urgence,
+			'documents'            => $docs,
+			'source'               => 'adhesion_form',
+			'adhesion_id'          => $row->id,
 		];
 
 		$data = [
@@ -512,19 +596,19 @@ class SP_Admin_Adhesions {
 			'grade'                  => $row->ancien_grade      ?? '',
 			'saison'                 => $saison,
 			'email'                  => $row->email,
-			'email_parent'           => $row->repres_email      ?? '',
+			'email_parent'           => $repres1['email']       ?? '',
 			'telephone'              => $row->telephone,
-			'urgence_nom'            => $row->urg_nom,
+			'urgence_nom'            => trim( ( $urgence['nom'] ?? '' ) . ' ' . ( $urgence['prenom'] ?? '' ) ),
 			'urgence_prenom'         => '',
-			'urgence_telephone'      => $row->urg_telephone,
-			'urgence_email'          => $row->urg_email         ?? '',
+			'urgence_telephone'      => $urgence['telephone']   ?? '',
+			'urgence_email'          => $urgence['email']       ?? '',
 			'num_passeport'          => $row->ancien_passeport  ?? '',
 			'licence'                => $row->ancien_licence    ?? '',
 			'droit_image'            => (int) ($row->droit_image ?? 0),
 			'autorisation_seul'      => (int) ($row->autorisation_seul ?? 0),
-			'representant_nom'       => $row->repres_nom        ?? '',
-			'representant_prenom'    => '',
-			'representant_telephone' => $row->repres_telephone  ?? '',
+			'representant_nom'       => $repres1['nom']         ?? '',
+			'representant_prenom'    => $repres1['prenom']      ?? '',
+			'representant_telephone' => $repres1['telephone']   ?? '',
 			'taille_cm'              => $row->taille_cm         ?? '',
 			'poids_kg'               => $row->poids_kg          ?? '',
 			'pointure'               => $row->pointure          ?? '',

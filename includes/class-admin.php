@@ -2095,6 +2095,12 @@ function spCalBufToB64u(buf) {
             wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&saved=1' ) ); exit;
         }
 
+        /* ── Règlement intérieur : enregistrer (popup formulaire d'adhésion) ── */
+        if ( isset( $_POST['sp_cal_save_reglement'] ) && check_admin_referer( 'sp_cal_reglement' ) ) {
+            update_option( 'sp_cal_reglement_interieur', wp_kses_post( wp_unslash( $_POST['sp_cal_reglement_interieur'] ?? '' ) ) );
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&reglement_saved=1' ) ); exit;
+        }
+
         /* ── Récapitulatif mensuel : enregistrer ── */
         if ( isset( $_POST['sp_cal_save_recap'] ) && check_admin_referer( 'sp_cal_recap_settings' ) ) {
             update_option( 'sp_cal_recap_actif',   isset( $_POST['sp_cal_recap_actif'] ) ? '1' : '0' );
@@ -3112,6 +3118,7 @@ function spCalBufToB64u(buf) {
         <?php if (isset($_GET['vac_saved'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Couleurs calendrier enregistrées.</p></div>'; ?>
         <?php if (isset($_GET['pts_saved'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Convention médaille → points enregistrée.</p></div>'; ?>
         <?php if (isset($_GET['fiche_created'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Page "Ma fiche" créée et URL configurée automatiquement.</p></div>'; ?>
+        <?php if (isset($_GET['reglement_saved'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Règlement intérieur enregistré.</p></div>'; ?>
         <?php if (isset($_GET['events_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Cours et événements réinitialisés.</p></div>'; ?>
         <?php if (isset($_GET['eleves_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Élèves et présences réinitialisés.</p></div>'; ?>
         <?php $medal_pts = $this->db->get_medal_points(); ?>
@@ -3227,6 +3234,23 @@ function spCalBufToB64u(buf) {
                 <?php endif; ?>
 
                 <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les paramètres">
+            </form>
+        </div>
+
+        <!-- RÈGLEMENT INTÉRIEUR (popup formulaire d'adhésion public) -->
+        <div class="sp-box" style="margin-top:18px;">
+            <h2>📄 Règlement intérieur</h2>
+            <p class="description" style="margin-bottom:12px;">
+                Ce texte est affiché dans la fenêtre popup du formulaire d'adhésion public (<code>[sp_inscription_adhesion]</code>)
+                lorsque l'adhérent clique sur « règlement intérieur ». Quelques balises HTML simples sont acceptées (paragraphes, gras, listes, liens).
+            </p>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_reglement' ); ?>
+                <input type="hidden" name="sp_cal_save_reglement" value="1">
+                <textarea name="sp_cal_reglement_interieur" rows="14" style="width:100%;max-width:900px;font-family:monospace;font-size:13px;"><?php
+                    echo esc_textarea( get_option( 'sp_cal_reglement_interieur', '' ) );
+                ?></textarea>
+                <p class="submit"><input type="submit" name="sp_cal_save_reglement" class="button button-primary" value="Enregistrer le règlement intérieur"></p>
             </form>
         </div>
 

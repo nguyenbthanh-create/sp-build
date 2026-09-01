@@ -15,6 +15,20 @@ class SP_Front_Adhesion {
 
 	private const DISCIPLINES = [ 'TKD', 'RENFO' ];
 
+	private const STATUTS_CONTACT = [
+		'pere'               => 'Père',
+		'mere'               => 'Mère',
+		'famille_accueil'    => "Famille d'accueil",
+		'representant_legal' => 'Représentant légal',
+		'autre'              => 'Autre',
+	];
+
+	private const MAX_REPRESENTANTS = 2;
+
+	// Incrémenter à chaque changement de create_table() pour que dbDelta() soit
+	// rejoué automatiquement (front ET admin) sans dépendre d'une visite wp-admin.
+	private const SCHEMA_VERSION = 2;
+
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
 		return self::$instance;
@@ -24,6 +38,16 @@ class SP_Front_Adhesion {
 		global $wpdb;
 		$this->table = $wpdb->prefix . 'sp_adhesions_pending';
 		add_shortcode( 'sp_inscription_adhesion', [ $this, 'render_shortcode' ] );
+		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
+	}
+
+	// La création de table n'était jamais déclenchée nulle part avant le 2026-09-01
+	// (voir md/04-journal-modifications.md) — corrigé ici avec un simple garde-fou de version,
+	// pour que la table sp_adhesions_pending et ses colonnes existent avant tout dépôt de formulaire.
+	public static function maybe_create_table(): void {
+		if ( (int) get_option( 'sp_adh_schema_version', 0 ) >= self::SCHEMA_VERSION ) return;
+		self::create_table();
+		update_option( 'sp_adh_schema_version', self::SCHEMA_VERSION );
 	}
 
 	// ─── Shortcode ────────────────────────────────────────────────────────────
@@ -64,16 +88,12 @@ class SP_Front_Adhesion {
 		$categorie  = sanitize_text_field( $_POST['categorie']  ?? '' );
 		$message    = sanitize_textarea_field( $_POST['message'] ?? '' );
 
-		// Représentant légal
-		$repres_statut    = sanitize_text_field( $_POST['repres_statut']    ?? '' );
-		$repres_nom       = sanitize_text_field( $_POST['repres_nom']       ?? '' );
-		$repres_telephone = sanitize_text_field( $_POST['repres_telephone'] ?? '' );
-		$repres_email     = sanitize_text_field( $_POST['repres_email']     ?? '' );
+		// Représentants légaux : 1 à 2 blocs, une personne par bloc (cf. doléance #1)
+		$representants = $this->parse_personnes( is_array( $_POST['repres'] ?? null ) ? $_POST['repres'] : [], self::MAX_REPRESENTANTS );
 
-		// Contact urgence
-		$urg_nom       = sanitize_text_field( $_POST['urg_nom']       ?? '' );
-		$urg_telephone = sanitize_text_field( $_POST['urg_telephone'] ?? '' );
-		$urg_email     = sanitize_text_field( $_POST['urg_email']     ?? '' );
+		// Contact d'urgence : 1 bloc, même structure que les représentants (cf. doléance #7)
+		$urgence_brut = is_array( $_POST['urgence'] ?? null ) ? $_POST['urgence'] : [];
+		$urgence      = $this->parse_personnes( [ $urgence_brut ], 1 )[0] ?? $this->empty_personne();
 
 		// Pratique antérieure
 		$pratique_anterieure = isset( $_POST['pratique_anterieure'] ) ? 1 : 0;
@@ -81,18 +101,29 @@ class SP_Front_Adhesion {
 		$ancien_passeport    = sanitize_text_field( $_POST['ancien_passeport'] ?? '' );
 		$ancien_grade        = sanitize_text_field( $_POST['ancien_grade']     ?? '' );
 
-		// Mensurations
-		$taille_cm      = sanitize_text_field( $_POST['taille_cm']      ?? '' );
-		$poids_kg       = sanitize_text_field( $_POST['poids_kg']       ?? '' );
-		$pointure       = sanitize_text_field( $_POST['pointure']       ?? '' );
-		$taille_tshirt  = sanitize_text_field( $_POST['taille_tshirt']  ?? '' );
-		$taille_pantalon= sanitize_text_field( $_POST['taille_pantalon']?? '' );
+		// Mensurations — désormais obligatoires (cf. doléance #5)
+		$taille_cm       = sanitize_text_field( $_POST['taille_cm']       ?? '' );
+		$poids_kg        = sanitize_text_field( $_POST['poids_kg']        ?? '' );
+		$pointure        = sanitize_text_field( $_POST['pointure']        ?? '' );
+		$taille_tshirt   = sanitize_text_field( $_POST['taille_tshirt']   ?? '' );
+		$taille_pantalon = sanitize_text_field( $_POST['taille_pantalon'] ?? '' );
 
 		// Légal
 		$autorisation_photo = isset( $_POST['autorisation_photo'] ) ? 1 : 0;
-		$autorisation_seul  = isset( $_POST['autorisation_seul'] )  ? 1 : 0;
 		$droit_image        = isset( $_POST['droit_image'] )        ? 1 : 0;
 		$reglement_accepte  = isset( $_POST['reglement_accepte'] )  ? 1 : 0;
+
+		// ── Âge / majorité — calculée côté serveur, jamais fait confiance au client ──
+		$est_mineur_form = false;
+		if ( $ddn !== '' && $this->valid_date( $ddn ) ) {
+			$birth = new \DateTime( $ddn );
+			$today = new \DateTime();
+			$est_mineur_form = $today->diff( $birth )->y < 18;
+		}
+
+		// "Repartir seul" n'a de sens que pour un mineur (cf. doléance #7) : forcé à 0 sinon,
+		// quelle que soit la valeur postée (défense en profondeur, indépendante du JS).
+		$autorisation_seul = ( $est_mineur_form && isset( $_POST['autorisation_seul'] ) ) ? 1 : 0;
 
 		// ── Validation ──
 		$errors = [];
@@ -114,20 +145,42 @@ class SP_Front_Adhesion {
 		if ( $telephone === '' ) $errors[] = 'Le téléphone est requis.';
 		if ( ! in_array( $discipline, self::DISCIPLINES, true ) ) $errors[] = 'Discipline invalide.';
 		if ( $categorie === '' ) $errors[] = 'La catégorie n\'a pas pu être calculée. Vérifiez la date de naissance et la discipline.';
-		if ( $urg_nom          === '' ) $errors[] = 'Le nom du contact d\'urgence est requis.';
-		if ( $urg_telephone    === '' ) $errors[] = 'Le téléphone du contact d\'urgence est requis.';
 
-		// Représentant légal obligatoire uniquement pour les mineurs
-		$est_mineur_form = false;
-		if ( $ddn !== '' && $this->valid_date( $ddn ) ) {
-			$birth = new \DateTime( $ddn );
-			$today = new \DateTime();
-			$est_mineur_form = $today->diff( $birth )->y < 18;
-		}
+		// Représentants légaux : au moins un bloc complet (statut + nom + téléphone), uniquement pour un mineur
 		if ( $est_mineur_form ) {
-			if ( $repres_nom       === '' ) $errors[] = 'Le nom du représentant légal est requis (adhérent mineur).';
-			if ( $repres_telephone === '' ) $errors[] = 'Le téléphone du représentant légal est requis (adhérent mineur).';
+			$premier = $representants[0] ?? null;
+			if ( ! $premier || $premier['statut'] === '' || $premier['nom'] === '' || $premier['telephone'] === '' ) {
+				$errors[] = 'Au moins un représentant légal complet (statut, nom, téléphone) est requis pour un adhérent mineur.';
+			}
 		}
+
+		// Contact d'urgence : toujours requis, quel que soit l'âge
+		if ( $urgence['statut']    === '' ) $errors[] = 'Le lien du contact d\'urgence avec l\'adhérent est requis.';
+		if ( $urgence['nom']       === '' ) $errors[] = 'Le nom du contact d\'urgence est requis.';
+		if ( $urgence['telephone'] === '' ) $errors[] = 'Le téléphone du contact d\'urgence est requis.';
+
+		// Mensurations obligatoires (cf. doléance #5)
+		if ( $taille_cm       === '' ) $errors[] = 'La taille est requise.';
+		if ( $poids_kg        === '' ) $errors[] = 'Le poids est requis.';
+		if ( $pointure        === '' ) $errors[] = 'La pointure est requise.';
+		if ( $taille_tshirt   === '' ) $errors[] = 'La taille de t-shirt/sweat est requise.';
+		if ( $taille_pantalon === '' ) $errors[] = 'La taille de pantalon est requise.';
+
+		// Documents obligatoires selon la discipline (cf. doléance #2)
+		$need_certif_medical = $discipline === 'TKD';
+		$need_rc             = $discipline === 'RENFO';
+		$need_decharge       = $discipline === 'RENFO';
+
+		if ( $need_certif_medical && empty( $_FILES['doc_certificat_medical']['name'] ) ) {
+			$errors[] = 'Le certificat médical est obligatoire pour la pratique du Taekwondo.';
+		}
+		if ( $need_rc && empty( $_FILES['doc_attestation_rc']['name'] ) ) {
+			$errors[] = 'L\'attestation de responsabilité civile est obligatoire pour le Renforcement musculaire.';
+		}
+		if ( $need_decharge && empty( $_FILES['doc_decharge_honneur']['name'] ) ) {
+			$errors[] = 'La décharge sur l\'honneur est obligatoire pour le Renforcement musculaire.';
+		}
+
 		if ( ! $reglement_accepte ) $errors[] = 'Vous devez accepter le règlement intérieur.';
 
 		// Anti-doublon
@@ -145,50 +198,75 @@ class SP_Front_Adhesion {
 			return [ 'success' => false, 'errors' => $errors, 'data' => $_POST ];
 		}
 
+		// ── Envoi des documents — uniquement une fois tout le reste validé ──
+		$doc_certificat_medical = '';
+		$doc_attestation_rc     = '';
+		$doc_decharge_honneur   = '';
+
+		if ( $need_certif_medical ) {
+			$up = $this->handle_upload( 'doc_certificat_medical', 'certificats-medicaux' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi du certificat médical." ], 'data' => $_POST ];
+			}
+			$doc_certificat_medical = $up['url'];
+		}
+		if ( $need_rc ) {
+			$up = $this->handle_upload( 'doc_attestation_rc', 'attestations-rc' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi de l'attestation de responsabilité civile." ], 'data' => $_POST ];
+			}
+			$doc_attestation_rc = $up['url'];
+		}
+		if ( $need_decharge ) {
+			$up = $this->handle_upload( 'doc_decharge_honneur', 'decharges' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi de la décharge sur l'honneur." ], 'data' => $_POST ];
+			}
+			$doc_decharge_honneur = $up['url'];
+		}
+
 		// ── Insertion ──
 		$ok = $wpdb->insert( $this->table, [
-			'nom'                 => $nom,
-			'prenom'              => $prenom,
-			'date_naissance'      => $ddn,
-			'sexe'                => $sexe,
-			'email'               => $email,
-			'telephone'           => $telephone,
-			'lieu_naissance'      => $lieu_naissance,
-			'nationalite'         => $nationalite,
-			'adresse'             => $adresse,
-			'discipline'          => $discipline,
-			'categorie'           => $categorie,
-			'message'             => $message,
-			'repres_statut'       => $repres_statut,
-			'repres_nom'          => $repres_nom,
-			'repres_telephone'    => $repres_telephone,
-			'repres_email'        => $repres_email,
-			'urg_nom'             => $urg_nom,
-			'urg_telephone'       => $urg_telephone,
-			'urg_email'           => $urg_email,
-			'pratique_anterieure' => $pratique_anterieure,
-			'ancien_licence'      => $ancien_licence,
-			'ancien_passeport'    => $ancien_passeport,
-			'ancien_grade'        => $ancien_grade,
-			'taille_cm'           => $taille_cm,
-			'poids_kg'            => $poids_kg,
-			'pointure'            => $pointure,
-			'taille_tshirt'       => $taille_tshirt,
-			'taille_pantalon'     => $taille_pantalon,
-			'autorisation_photo'  => $autorisation_photo,
-			'autorisation_seul'   => $autorisation_seul,
-			'droit_image'         => $droit_image,
-			'reglement_accepte'   => $reglement_accepte,
-			'statut'              => 'pending',
-			'ip_address'          => $_SERVER['REMOTE_ADDR'] ?? '',
-			'created_at'          => current_time( 'mysql' ),
+			'nom'                    => $nom,
+			'prenom'                 => $prenom,
+			'date_naissance'         => $ddn,
+			'sexe'                   => $sexe,
+			'email'                  => $email,
+			'telephone'              => $telephone,
+			'lieu_naissance'         => $lieu_naissance,
+			'nationalite'            => $nationalite,
+			'adresse'                => $adresse,
+			'discipline'             => $discipline,
+			'categorie'              => $categorie,
+			'message'                => $message,
+			'representants_legaux'   => wp_json_encode( $representants ),
+			'contact_urgence'        => wp_json_encode( $urgence ),
+			'pratique_anterieure'    => $pratique_anterieure,
+			'ancien_licence'         => $ancien_licence,
+			'ancien_passeport'       => $ancien_passeport,
+			'ancien_grade'           => $ancien_grade,
+			'taille_cm'              => $taille_cm,
+			'poids_kg'               => $poids_kg,
+			'pointure'               => $pointure,
+			'taille_tshirt'          => $taille_tshirt,
+			'taille_pantalon'        => $taille_pantalon,
+			'doc_certificat_medical' => $doc_certificat_medical,
+			'doc_attestation_rc'     => $doc_attestation_rc,
+			'doc_decharge_honneur'   => $doc_decharge_honneur,
+			'autorisation_photo'     => $autorisation_photo,
+			'autorisation_seul'      => $autorisation_seul,
+			'droit_image'            => $droit_image,
+			'reglement_accepte'      => $reglement_accepte,
+			'statut'                 => 'pending',
+			'ip_address'             => $_SERVER['REMOTE_ADDR'] ?? '',
+			'created_at'             => current_time( 'mysql' ),
 		], [
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%s','%s','%s','%s','%s',
-			'%s','%s','%s','%s',
-			'%s','%s','%s',
+			'%s','%s',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
+			'%s','%s','%s',
 			'%d','%d','%d','%d',
 			'%s','%s','%s',
 		] );
@@ -202,6 +280,81 @@ class SP_Front_Adhesion {
 		$this->email_confirmation_adherent( $email, $prenom, $nom );
 
 		return [ 'success' => true, 'prenom' => $prenom, 'email' => $email ];
+	}
+
+	// ─── Blocs "personne" (représentants légaux / contact urgence) ────────────
+	private function empty_personne(): array {
+		return [ 'statut' => '', 'nom' => '', 'prenom' => '', 'telephone' => '', 'email' => '' ];
+	}
+
+	private function parse_personnes( array $blocs, int $max ): array {
+		$out = [];
+		foreach ( $blocs as $bloc ) {
+			if ( ! is_array( $bloc ) ) continue;
+			$p = [
+				'statut'    => sanitize_text_field( $bloc['statut']    ?? '' ),
+				'nom'       => sanitize_text_field( $bloc['nom']       ?? '' ),
+				'prenom'    => sanitize_text_field( $bloc['prenom']    ?? '' ),
+				'telephone' => sanitize_text_field( $bloc['telephone'] ?? '' ),
+				'email'     => sanitize_text_field( $bloc['email']     ?? '' ),
+			];
+			if ( $p === $this->empty_personne() ) continue; // bloc laissé vide (ex : 2e représentant ajouté puis non rempli)
+			$out[] = $p;
+			if ( count( $out ) >= $max ) break;
+		}
+		return $out;
+	}
+
+	// ─── Upload de documents (cf. doléance #2) ────────────────────────────────
+	private function handle_upload( string $field, string $subdir ): array {
+		if ( empty( $_FILES[ $field ]['name'] ) ) {
+			return [ 'ok' => false, 'error' => null, 'url' => '' ];
+		}
+		if ( $_FILES[ $field ]['error'] !== UPLOAD_ERR_OK ) {
+			return [ 'ok' => false, 'error' => "Erreur lors de l'envoi du fichier.", 'url' => '' ];
+		}
+		if ( $_FILES[ $field ]['size'] > 5 * 1024 * 1024 ) {
+			return [ 'ok' => false, 'error' => 'Le fichier dépasse la taille maximale autorisée (5 Mo).', 'url' => '' ];
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		// Rangés à part du dossier uploads/ standard, hors indexation directe (voir protect_uploads_dir()).
+		$target = '/sp-adhesions-docs/' . trim( $subdir, '/' ) . '/' . date( 'Y' );
+		$filter = static function ( array $dirs ) use ( $target ): array {
+			$dirs['subdir'] = $target;
+			$dirs['path']   = $dirs['basedir'] . $target;
+			$dirs['url']    = $dirs['baseurl'] . $target;
+			return $dirs;
+		};
+		add_filter( 'upload_dir', $filter );
+
+		$result = wp_handle_upload( $_FILES[ $field ], [
+			'test_form' => false,
+			'mimes'     => [
+				'pdf'      => 'application/pdf',
+				'jpg|jpeg' => 'image/jpeg',
+				'png'      => 'image/png',
+			],
+		] );
+
+		remove_filter( 'upload_dir', $filter );
+
+		if ( isset( $result['error'] ) ) {
+			return [ 'ok' => false, 'error' => $result['error'], 'url' => '' ];
+		}
+
+		$this->protect_uploads_dir();
+
+		return [ 'ok' => true, 'error' => null, 'url' => $result['url'] ];
+	}
+
+	private function protect_uploads_dir(): void {
+		$dir      = wp_upload_dir()['basedir'] . '/sp-adhesions-docs';
+		$htaccess = $dir . '/.htaccess';
+		if ( is_dir( $dir ) && ! file_exists( $htaccess ) ) {
+			@file_put_contents( $htaccess, "Options -Indexes\n" );
+		}
 	}
 
 	// ─── Emails ──────────────────────────────────────────────────────────────
@@ -244,6 +397,14 @@ class SP_Front_Adhesion {
 		$errors = $result['errors'] ?? [];
 		$data   = $result['data']   ?? [];
 		$v = static fn( string $k ): string => esc_attr( $data[ $k ] ?? '' );
+
+		// Ré-affichage après erreur : au moins 1 bloc représentant, jusqu'à MAX_REPRESENTANTS
+		$repres_posted = is_array( $data['repres'] ?? null ) ? array_values( $data['repres'] ) : [];
+		$nb_repres     = max( 1, min( self::MAX_REPRESENTANTS, count( $repres_posted ) ?: 1 ) );
+
+		$urgence_posted = is_array( $data['urgence'] ?? null ) ? $data['urgence'] : [];
+
+		$reglement_html = (string) get_option( 'sp_cal_reglement_interieur', '' );
 		?>
 		<div class="sp-adh-wrapper">
 			<h2 class="sp-adh-title">Demande d'adhésion</h2>
@@ -256,7 +417,7 @@ class SP_Front_Adhesion {
 				</div>
 			<?php endif; ?>
 
-			<form method="post" class="sp-adh-form" novalidate lang="fr">
+			<form method="post" class="sp-adh-form" novalidate lang="fr" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'sp_adhesion_form', 'sp_adhesion_nonce' ); ?>
 				<input type="hidden" name="categorie" id="sp_categorie_hidden" value="<?= $v('categorie') ?>">
 
@@ -331,71 +492,33 @@ class SP_Front_Adhesion {
 					</div>
 				</div>
 
-				<!-- ══ REPRÉSENTANT LÉGAL ════════════════════════════════════ -->
+				<!-- ══ REPRÉSENTANTS LÉGAUX ══════════════════════════════════ -->
 				<div class="sp-adh-group" id="sp_repres_bloc">
 					<h3 class="sp-adh-group-title">
 						👨‍👩‍👧 Représentant(s) légal/légaux
 						<span id="sp_repres_mineur_badge" style="display:none;background:#dc2626;color:#fff;font-size:.75rem;padding:1px 8px;border-radius:10px;font-weight:600;margin-left:8px;vertical-align:middle;">Mineur</span>
 					</h3>
-					<p class="sp-adh-group-desc">Personne(s) ayant autorité parentale — utilisé pour les communications officielles et autorisations.</p>
-					<div class="sp-adh-row">
-						<div class="sp-adh-col">
-							<label for="sp_repres_statut">Statut <span class="sp-req sp-repres-req">*</span></label>
-							<input type="text" id="sp_repres_statut" name="repres_statut"
-							       value="<?= $v('repres_statut') ?>"
-							       placeholder="Ex : Père et mère, Tuteur légal, Famille d'accueil…">
-						</div>
+					<p class="sp-adh-group-desc">Une personne par bloc — utilisé pour les communications officielles et autorisations.</p>
+
+					<div id="sp_repres_list">
+						<?php for ( $i = 0; $i < $nb_repres; $i++ ) : ?>
+							<?php echo $this->render_personne_block( 'repres', $i, $repres_posted[ $i ] ?? [], $i === 0 ? 'conditional' : 'optional' ); ?>
+						<?php endfor; ?>
 					</div>
-					<div class="sp-adh-row">
-						<div class="sp-adh-col">
-							<label for="sp_repres_nom">Nom(s) complet(s) <span class="sp-req sp-repres-req">*</span></label>
-							<input type="text" id="sp_repres_nom" name="repres_nom"
-							       value="<?= $v('repres_nom') ?>"
-							       placeholder="Ex : Martin Jean et Martin Sophie">
-						</div>
-					</div>
-					<div class="sp-adh-row">
-						<div class="sp-adh-col">
-							<label for="sp_repres_telephone">Téléphone(s) <span class="sp-req sp-repres-req">*</span></label>
-							<input type="text" id="sp_repres_telephone" name="repres_telephone"
-							       value="<?= $v('repres_telephone') ?>"
-							       placeholder="Ex : 06 12 34 56 78 / 07 98 76 54 32">
-						</div>
-						<div class="sp-adh-col">
-							<label for="sp_repres_email">Email(s)</label>
-							<input type="text" id="sp_repres_email" name="repres_email"
-							       value="<?= $v('repres_email') ?>"
-							       placeholder="Ex : parent1@mail.fr, parent2@mail.fr">
-						</div>
+
+					<div class="sp-adh-row" id="sp_repres_add_row" style="padding:0 1.2rem 1rem;">
+						<button type="button" id="sp_repres_add_btn" class="sp-adh-btn-add">+ Ajouter un représentant légal</button>
 					</div>
 				</div>
+
+				<!-- Template JS pour cloner un bloc représentant supplémentaire -->
+				<template id="sp_repres_template"><?php echo $this->render_personne_block( 'repres', '__INDEX__', [], 'optional' ); ?></template>
 
 				<!-- ══ CONTACT URGENCE ═══════════════════════════════════════ -->
 				<div class="sp-adh-group">
 					<h3 class="sp-adh-group-title">🚨 Contact d'urgence</h3>
-					<p class="sp-adh-group-desc">Personne à contacter immédiatement en cas d'incident — peut être différente du représentant légal.</p>
-					<div class="sp-adh-row">
-						<div class="sp-adh-col">
-							<label for="sp_urg_nom">Nom(s) <span class="sp-req">*</span></label>
-							<input type="text" id="sp_urg_nom" name="urg_nom"
-							       value="<?= $v('urg_nom') ?>"
-							       placeholder="Ex : Dupont Jean, ou grand-mère Marie…" required>
-						</div>
-					</div>
-					<div class="sp-adh-row">
-						<div class="sp-adh-col">
-							<label for="sp_urg_tel">Téléphone(s) <span class="sp-req">*</span></label>
-							<input type="text" id="sp_urg_tel" name="urg_telephone"
-							       value="<?= $v('urg_telephone') ?>"
-							       placeholder="Ex : 06 11 22 33 44 / 07 55 66 77 88" required>
-						</div>
-						<div class="sp-adh-col">
-							<label for="sp_urg_email">Email(s)</label>
-							<input type="text" id="sp_urg_email" name="urg_email"
-							       value="<?= $v('urg_email') ?>"
-							       placeholder="Ex : urgence@mail.fr">
-						</div>
-					</div>
+					<p class="sp-adh-group-desc">Personne à contacter immédiatement en cas d'incident — peut être différente du/des représentant(s) légal/légaux.</p>
+					<?php echo $this->render_personne_block( 'urgence', null, $urgence_posted, 'required' ); ?>
 				</div>
 
 				<!-- ══ CLUB ══════════════════════════════════════════════════ -->
@@ -423,6 +546,36 @@ class SP_Front_Adhesion {
 							<textarea id="sp_msg" name="message" rows="3"
 							          placeholder="Informations complémentaires, questions sur les horaires, tarifs..."
 							><?= esc_textarea( $data['message'] ?? '' ) ?></textarea>
+						</div>
+					</div>
+				</div>
+
+				<!-- ══ DOCUMENTS OBLIGATOIRES (selon discipline) ═════════════ -->
+				<div class="sp-adh-group" id="sp_docs_group" style="display:none;">
+					<h3 class="sp-adh-group-title">📎 Documents obligatoires</h3>
+					<p class="sp-adh-group-desc">Les documents demandés dépendent de la discipline choisie ci-dessus.</p>
+
+					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_certif_row" style="display:none;">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_doc_certif">Certificat médical <span class="sp-optional">(obligatoire pour le Taekwondo)</span> <span class="sp-req">*</span></label>
+							<input type="file" id="sp_doc_certif" name="doc_certificat_medical" accept=".pdf,.jpg,.jpeg,.png">
+							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+						</div>
+					</div>
+
+					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_rc_row" style="display:none;">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_doc_rc">Attestation de responsabilité civile <span class="sp-optional">(obligatoire pour le Renforcement musculaire)</span> <span class="sp-req">*</span></label>
+							<input type="file" id="sp_doc_rc" name="doc_attestation_rc" accept=".pdf,.jpg,.jpeg,.png">
+							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+						</div>
+					</div>
+
+					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_decharge_row" style="display:none;">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_doc_decharge">Décharge sur l'honneur <span class="sp-optional">(obligatoire pour le Renforcement musculaire)</span> <span class="sp-req">*</span></label>
+							<input type="file" id="sp_doc_decharge" name="doc_decharge_honneur" accept=".pdf,.jpg,.jpeg,.png">
+							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
 						</div>
 					</div>
 				</div>
@@ -456,44 +609,36 @@ class SP_Front_Adhesion {
 					</div>
 				</div>
 
-				<!-- ══ MENSURATIONS ══════════════════════════════════════════ -->
+				<!-- ══ MENSURATIONS (obligatoire — cf. doléance #5) ══════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">📏 Mensurations <span class="sp-optional" style="font-weight:400;font-size:.85rem;">(optionnel — utile pour la commande des équipements)</span></h3>
-					<label class="sp-adh-check sp-adh-check-trigger">
-						<input type="checkbox" id="sp_mensuration_toggle" value="1"
-						       <?= ( !empty($data['taille_cm']) || !empty($data['poids_kg']) || !empty($data['pointure']) ) ? 'checked' : '' ?>>
-						<span>Renseigner les mensurations maintenant</span>
-					</label>
-					<div class="sp-adh-conditional" id="sp_mensuration_fields"
-					     style="<?= ( !empty($data['taille_cm']) || !empty($data['poids_kg']) || !empty($data['pointure']) ) ? '' : 'display:none' ?>">
-						<div class="sp-adh-row">
-							<div class="sp-adh-col">
-								<label for="sp_taille">Taille (cm)</label>
-								<input type="number" id="sp_taille" name="taille_cm" value="<?= $v('taille_cm') ?>"
-								       min="50" max="250" placeholder="Ex : 165">
-							</div>
-							<div class="sp-adh-col">
-								<label for="sp_poids">Poids (kg)</label>
-								<input type="number" id="sp_poids" name="poids_kg" value="<?= $v('poids_kg') ?>"
-								       min="10" max="250" placeholder="Ex : 60">
-							</div>
-							<div class="sp-adh-col">
-								<label for="sp_pointure">Pointure</label>
-								<input type="number" id="sp_pointure" name="pointure" value="<?= $v('pointure') ?>"
-								       min="20" max="55" placeholder="Ex : 38">
-							</div>
+					<h3 class="sp-adh-group-title">📏 Mensurations <span class="sp-optional" style="font-weight:400;font-size:.85rem;">(nécessaire pour la commande des équipements)</span></h3>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col">
+							<label for="sp_taille">Taille (cm) <span class="sp-req">*</span></label>
+							<input type="number" id="sp_taille" name="taille_cm" value="<?= $v('taille_cm') ?>"
+							       min="50" max="250" placeholder="Ex : 165" required>
 						</div>
-						<div class="sp-adh-row">
-							<div class="sp-adh-col">
-								<label for="sp_tshirt">Taille t-shirt / sweat</label>
-								<input type="text" id="sp_tshirt" name="taille_tshirt" value="<?= $v('taille_tshirt') ?>"
-								       placeholder="Ex : M, L, XL, 12 ans…">
-							</div>
-							<div class="sp-adh-col">
-								<label for="sp_pantalon">Taille pantalon</label>
-								<input type="text" id="sp_pantalon" name="taille_pantalon" value="<?= $v('taille_pantalon') ?>"
-								       placeholder="Ex : 40, 12 ans…">
-							</div>
+						<div class="sp-adh-col">
+							<label for="sp_poids">Poids (kg) <span class="sp-req">*</span></label>
+							<input type="number" id="sp_poids" name="poids_kg" value="<?= $v('poids_kg') ?>"
+							       min="10" max="250" placeholder="Ex : 60" required>
+						</div>
+						<div class="sp-adh-col">
+							<label for="sp_pointure">Pointure <span class="sp-req">*</span></label>
+							<input type="number" id="sp_pointure" name="pointure" value="<?= $v('pointure') ?>"
+							       min="20" max="55" placeholder="Ex : 38" required>
+						</div>
+					</div>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col">
+							<label for="sp_tshirt">Taille t-shirt / sweat <span class="sp-req">*</span></label>
+							<input type="text" id="sp_tshirt" name="taille_tshirt" value="<?= $v('taille_tshirt') ?>"
+							       placeholder="Ex : M, L, XL, 12 ans…" required>
+						</div>
+						<div class="sp-adh-col">
+							<label for="sp_pantalon">Taille pantalon <span class="sp-req">*</span></label>
+							<input type="text" id="sp_pantalon" name="taille_pantalon" value="<?= $v('taille_pantalon') ?>"
+							       placeholder="Ex : 40, 12 ans…" required>
 						</div>
 					</div>
 				</div>
@@ -509,13 +654,13 @@ class SP_Front_Adhesion {
 						<input type="checkbox" name="droit_image" value="1" <?= !empty($data['droit_image'])?'checked':'' ?>>
 						<span>J'autorise la <strong>diffusion</strong> de ces photos et vidéos sur les supports du club (site web, réseaux sociaux).</span>
 					</label>
-					<label class="sp-adh-check">
+					<label class="sp-adh-check" id="sp_autorisation_seul_row">
 						<input type="checkbox" name="autorisation_seul" value="1" <?= !empty($data['autorisation_seul'])?'checked':'' ?>>
 						<span>J'autorise l'adhérent à <strong>repartir seul(e)</strong> après les entraînements.</span>
 					</label>
 					<label class="sp-adh-check sp-adh-check-required">
 						<input type="checkbox" name="reglement_accepte" value="1" required <?= !empty($data['reglement_accepte'])?'checked':'' ?>>
-						<span>J'ai lu et j'accepte le <strong>règlement intérieur</strong> du club. <span class="sp-req">*</span></span>
+						<span>J'ai lu et j'accepte le <button type="button" class="sp-adh-link-btn" id="sp_reglement_open">règlement intérieur</button> du club. <span class="sp-req">*</span></span>
 					</label>
 				</div>
 
@@ -526,6 +671,21 @@ class SP_Front_Adhesion {
 					</button>
 				</div>
 			</form>
+		</div>
+
+		<!-- ══ POPUP RÈGLEMENT INTÉRIEUR (cf. doléance #6) ═══════════════ -->
+		<div class="sp-adh-modal-overlay" id="sp_reglement_overlay" style="display:none;">
+			<div class="sp-adh-modal" role="dialog" aria-modal="true" aria-labelledby="sp_reglement_title">
+				<div class="sp-adh-modal-header">
+					<h3 id="sp_reglement_title">📋 Règlement intérieur</h3>
+					<button type="button" class="sp-adh-modal-close" id="sp_reglement_close" aria-label="Fermer">✕</button>
+				</div>
+				<div class="sp-adh-modal-body">
+					<?php echo $reglement_html !== ''
+						? wp_kses_post( wpautop( $reglement_html ) )
+						: '<p><em>Le règlement intérieur n\'a pas encore été renseigné par le club. Contactez-nous pour plus d\'informations.</em></p>'; ?>
+				</div>
+			</div>
 		</div>
 
 		<script>
@@ -574,46 +734,118 @@ class SP_Front_Adhesion {
 			discInput.addEventListener('change', calculerCategorie);
 			calculerCategorie();
 
-			// ── Représentant légal : conditionnel selon majorité ──────────────
-			const represBloc   = document.getElementById('sp_repres_bloc');
-			const represBadge  = document.getElementById('sp_repres_mineur_badge');
-			const represInputs = represBloc ? represBloc.querySelectorAll('input[id="sp_repres_statut"], input[id="sp_repres_nom"], input[id="sp_repres_telephone"]') : [];
+			// ── Documents obligatoires selon discipline (doléance #2) ─────────
+			const docsGroup   = document.getElementById('sp_docs_group');
+			const docCertif   = document.getElementById('sp_doc_certif_row');
+			const docRc       = document.getElementById('sp_doc_rc_row');
+			const docDecharge = document.getElementById('sp_doc_decharge_row');
+
+			function setDocRequired(rowEl, required) {
+				if (!rowEl) return;
+				const input = rowEl.querySelector('input[type="file"]');
+				rowEl.style.display = required ? '' : 'none';
+				if (input) {
+					if (required) { input.setAttribute('required', 'required'); }
+					else { input.removeAttribute('required'); input.value = ''; }
+				}
+			}
+
+			function majDocuments() {
+				const disc    = discInput.value;
+				const isTkd   = disc === 'TKD';
+				const isRenfo = disc === 'RENFO';
+				docsGroup.style.display = (isTkd || isRenfo) ? '' : 'none';
+				setDocRequired(docCertif,   isTkd);
+				setDocRequired(docRc,       isRenfo);
+				setDocRequired(docDecharge, isRenfo);
+			}
+			discInput.addEventListener('change', majDocuments);
+			majDocuments();
+
+			// ── Représentant légal + "repartir seul" : conditionnel à la majorité (doléance #7) ──
+			const represBloc       = document.getElementById('sp_repres_bloc');
+			const represBadge      = document.getElementById('sp_repres_mineur_badge');
+			const autorisationSeul = document.getElementById('sp_autorisation_seul_row');
+
+			function represRequiredInputs() {
+				return represBloc ? represBloc.querySelectorAll('[data-repres-required]') : [];
+			}
 
 			function majeurOuMineur() {
 				const ddn = ddnInput.value;
 				if ( ! represBloc ) return;
 
 				if ( ! ddn ) {
-					// DDN non saisie → bloc visible, non obligatoire
 					represBloc.style.display = '';
+					if (autorisationSeul) autorisationSeul.style.display = '';
 					represBadge.style.display = 'none';
-					represInputs.forEach( i => i.removeAttribute('required') );
+					represRequiredInputs().forEach( i => i.removeAttribute('required') );
 					return;
 				}
 
-				const birth    = new Date( ddn );
-				const today    = new Date();
+				const birth = new Date( ddn );
+				const today = new Date();
 				let age = today.getFullYear() - birth.getFullYear();
 				const m = today.getMonth() - birth.getMonth();
 				if ( m < 0 || ( m === 0 && today.getDate() < birth.getDate() ) ) age--;
 
 				if ( age < 18 ) {
-					// Mineur → bloc visible et obligatoire
 					represBloc.style.display = '';
+					if (autorisationSeul) autorisationSeul.style.display = '';
 					represBadge.style.display = 'inline';
-					represInputs.forEach( i => i.setAttribute('required', 'required') );
+					represRequiredInputs().forEach( i => i.setAttribute('required', 'required') );
 				} else {
-					// Majeur → bloc masqué, non obligatoire
 					represBloc.style.display = 'none';
+					if (autorisationSeul) {
+						autorisationSeul.style.display = 'none';
+						const cb = autorisationSeul.querySelector('input[type="checkbox"]');
+						if (cb) cb.checked = false;
+					}
 					represBadge.style.display = 'none';
-					represInputs.forEach( i => i.removeAttribute('required') );
+					represRequiredInputs().forEach( i => i.removeAttribute('required') );
 				}
 			}
 
 			ddnInput.addEventListener('change', majeurOuMineur);
 			majeurOuMineur(); // init si DDN déjà remplie (ex: retour après erreur)
 
-			// ── Blocs conditionnels (pratique + mensurations) ─────────────────
+			// ── Représentants légaux : ajout / suppression de blocs (doléance #1) ──
+			const represList     = document.getElementById('sp_repres_list');
+			const represTemplate = document.getElementById('sp_repres_template');
+			const represAddBtn   = document.getElementById('sp_repres_add_btn');
+			const MAX_REPRES     = <?= (int) self::MAX_REPRESENTANTS ?>;
+
+			function updateAddBtnVisibility() {
+				const count = represList.querySelectorAll('.sp-adh-personne-block').length;
+				represAddBtn.style.display = count >= MAX_REPRES ? 'none' : '';
+			}
+
+			if (represAddBtn) {
+				represAddBtn.addEventListener('click', function() {
+					const count = represList.querySelectorAll('.sp-adh-personne-block').length;
+					if ( count >= MAX_REPRES ) return;
+					const html = represTemplate.innerHTML.replace(/__INDEX__/g, String(count));
+					const wrapper = document.createElement('div');
+					wrapper.innerHTML = html.trim();
+					const block = wrapper.firstElementChild;
+					represList.appendChild(block);
+					updateAddBtnVisibility();
+				});
+			}
+
+			if (represList) {
+				represList.addEventListener('click', function(e) {
+					const btn = e.target.closest('.sp-adh-personne-remove');
+					if ( ! btn ) return;
+					const block = btn.closest('.sp-adh-personne-block');
+					if ( block ) block.remove();
+					updateAddBtnVisibility();
+				});
+			}
+
+			updateAddBtnVisibility();
+
+			// ── Bloc conditionnel : pratique antérieure ───────────────────────
 			function initToggle(checkboxId, fieldsId) {
 				const cb = document.getElementById(checkboxId);
 				const fl = document.getElementById(fieldsId);
@@ -624,16 +856,93 @@ class SP_Front_Adhesion {
 				});
 			}
 			initToggle('sp_pratique_anterieure', 'sp_pratique_fields');
-			initToggle('sp_mensuration_toggle',  'sp_mensuration_fields');
+
+			// ── Popup règlement intérieur (doléance #6) ───────────────────────
+			const reglementOpen    = document.getElementById('sp_reglement_open');
+			const reglementOverlay = document.getElementById('sp_reglement_overlay');
+			const reglementClose   = document.getElementById('sp_reglement_close');
+
+			function openReglement(e) { if (e) e.preventDefault(); reglementOverlay.style.display = 'flex'; }
+			function closeReglement() { reglementOverlay.style.display = 'none'; }
+
+			if (reglementOpen)    reglementOpen.addEventListener('click', openReglement);
+			if (reglementClose)   reglementClose.addEventListener('click', closeReglement);
+			if (reglementOverlay) reglementOverlay.addEventListener('click', function(e) {
+				if (e.target === reglementOverlay) closeReglement();
+			});
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape') closeReglement();
+			});
 		})();
 		</script>
 		<?php
+	}
+
+	// ─── Rendu d'un bloc "personne" (représentant légal ou contact urgence) ──
+	// $requirement : 'required' (toujours obligatoire), 'conditional' (obligatoire si mineur,
+	// géré en JS via data-repres-required), 'optional' (jamais obligatoire).
+	private function render_personne_block( string $prefix, $index, array $values, string $requirement = 'optional' ): string {
+		$idx  = $index === null ? '' : "[{$index}]";
+		$name = static fn( string $field ): string => "{$prefix}{$idx}[{$field}]";
+		$val  = static fn( string $field ): string => esc_attr( $values[ $field ] ?? '' );
+
+		$show_star = in_array( $requirement, [ 'required', 'conditional' ], true );
+		$req_star  = $show_star ? ' <span class="sp-req">*</span>' : '';
+		$req_attr  = $requirement === 'required'    ? 'required' : '';
+		$data_req  = $requirement === 'conditional' ? 'data-repres-required="1"' : '';
+
+		$removable = $prefix === 'repres' && $index !== null && $index !== '__INDEX__' && (int) $index > 0;
+
+		ob_start();
+		?>
+		<div class="sp-adh-personne-block">
+			<?php if ( $removable ) : ?>
+				<button type="button" class="sp-adh-personne-remove" aria-label="Retirer ce représentant">✕ Retirer</button>
+			<?php endif; ?>
+			<div class="sp-adh-row">
+				<div class="sp-adh-col">
+					<label>Statut<?= $req_star ?></label>
+					<select name="<?= esc_attr( $name('statut') ) ?>" <?= $req_attr ?> <?= $data_req ?>>
+						<option value="">— Choisir —</option>
+						<?php foreach ( self::STATUTS_CONTACT as $key => $label ) : ?>
+							<option value="<?= esc_attr( $key ) ?>" <?= ( $values['statut'] ?? '' ) === $key ? 'selected' : '' ?>><?= esc_html( $label ) ?></option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+			</div>
+			<div class="sp-adh-row">
+				<div class="sp-adh-col">
+					<label>Nom<?= $req_star ?></label>
+					<input type="text" name="<?= esc_attr( $name('nom') ) ?>" value="<?= $val('nom') ?>" <?= $req_attr ?> <?= $data_req ?>>
+				</div>
+				<div class="sp-adh-col">
+					<label>Prénom</label>
+					<input type="text" name="<?= esc_attr( $name('prenom') ) ?>" value="<?= $val('prenom') ?>">
+				</div>
+			</div>
+			<div class="sp-adh-row">
+				<div class="sp-adh-col">
+					<label>Téléphone<?= $req_star ?></label>
+					<input type="text" name="<?= esc_attr( $name('telephone') ) ?>" value="<?= $val('telephone') ?>" <?= $req_attr ?> <?= $data_req ?>>
+				</div>
+				<div class="sp-adh-col">
+					<label>Email</label>
+					<input type="email" name="<?= esc_attr( $name('email') ) ?>" value="<?= $val('email') ?>">
+				</div>
+			</div>
+		</div>
+		<?php
+		return ob_get_clean();
 	}
 
 	// ─── Helpers ─────────────────────────────────────────────────────────────
 	private function valid_date( string $date ): bool {
 		$d = \DateTime::createFromFormat( 'Y-m-d', $date );
 		return $d instanceof \DateTime && $d->format( 'Y-m-d' ) === $date;
+	}
+
+	public static function statut_label( string $key ): string {
+		return self::STATUTS_CONTACT[ $key ] ?? ( $key !== '' ? $key : '—' );
 	}
 
 	// ─── Création de la table ─────────────────────────────────────────────────
@@ -643,47 +952,45 @@ class SP_Front_Adhesion {
 		$charset = $wpdb->get_charset_collate();
 
 		$sql = "CREATE TABLE IF NOT EXISTS {$table} (
-			id                   INT UNSIGNED  NOT NULL AUTO_INCREMENT,
-			nom                  VARCHAR(100)  NOT NULL,
-			prenom               VARCHAR(100)  NOT NULL,
-			date_naissance       DATE          NOT NULL,
-			sexe                 ENUM('M','F') NOT NULL,
-			email                VARCHAR(200)  NOT NULL,
-			telephone            VARCHAR(30)   NOT NULL DEFAULT '',
-			lieu_naissance       VARCHAR(150)  NOT NULL DEFAULT '',
-			nationalite          VARCHAR(100)  NOT NULL DEFAULT '',
-			adresse              VARCHAR(255)  NOT NULL DEFAULT '',
-			discipline           VARCHAR(50)   NOT NULL DEFAULT '',
-			categorie            VARCHAR(50)   NOT NULL DEFAULT '',
-			message              TEXT,
-			repres_statut        VARCHAR(255)  NOT NULL DEFAULT '',
-			repres_nom           VARCHAR(255)  NOT NULL DEFAULT '',
-			repres_telephone     VARCHAR(100)  NOT NULL DEFAULT '',
-			repres_email         VARCHAR(255)  NOT NULL DEFAULT '',
-			urg_nom              VARCHAR(255)  NOT NULL DEFAULT '',
-			urg_telephone        VARCHAR(100)  NOT NULL DEFAULT '',
-			urg_email            VARCHAR(255)  NOT NULL DEFAULT '',
-			pratique_anterieure  TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-			ancien_licence       VARCHAR(50)   NOT NULL DEFAULT '',
-			ancien_passeport     VARCHAR(50)   NOT NULL DEFAULT '',
-			ancien_grade         VARCHAR(100)  NOT NULL DEFAULT '',
-			taille_cm            VARCHAR(10)   NOT NULL DEFAULT '',
-			poids_kg             VARCHAR(10)   NOT NULL DEFAULT '',
-			pointure             VARCHAR(10)   NOT NULL DEFAULT '',
-			taille_tshirt        VARCHAR(20)   NOT NULL DEFAULT '',
-			taille_pantalon      VARCHAR(20)   NOT NULL DEFAULT '',
-			autorisation_photo   TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-			autorisation_seul    TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-			droit_image          TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-			reglement_accepte    TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-			statut               ENUM('pending','valide','refuse') NOT NULL DEFAULT 'pending',
-			refus_motif          TEXT,
-			ip_address           VARCHAR(45)   NOT NULL DEFAULT '',
-			created_at           DATETIME      NOT NULL,
-			updated_at           DATETIME      DEFAULT NULL,
-			PRIMARY KEY          (id),
-			KEY idx_statut       (statut),
-			KEY idx_email        (email(50))
+			id                      INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+			nom                     VARCHAR(100)  NOT NULL,
+			prenom                  VARCHAR(100)  NOT NULL,
+			date_naissance          DATE          NOT NULL,
+			sexe                    ENUM('M','F') NOT NULL,
+			email                   VARCHAR(200)  NOT NULL,
+			telephone               VARCHAR(30)   NOT NULL DEFAULT '',
+			lieu_naissance          VARCHAR(150)  NOT NULL DEFAULT '',
+			nationalite             VARCHAR(100)  NOT NULL DEFAULT '',
+			adresse                 VARCHAR(255)  NOT NULL DEFAULT '',
+			discipline              VARCHAR(50)   NOT NULL DEFAULT '',
+			categorie               VARCHAR(50)   NOT NULL DEFAULT '',
+			message                 TEXT,
+			representants_legaux    LONGTEXT,
+			contact_urgence         LONGTEXT,
+			pratique_anterieure     TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			ancien_licence          VARCHAR(50)   NOT NULL DEFAULT '',
+			ancien_passeport        VARCHAR(50)   NOT NULL DEFAULT '',
+			ancien_grade            VARCHAR(100)  NOT NULL DEFAULT '',
+			taille_cm               VARCHAR(10)   NOT NULL DEFAULT '',
+			poids_kg                VARCHAR(10)   NOT NULL DEFAULT '',
+			pointure                VARCHAR(10)   NOT NULL DEFAULT '',
+			taille_tshirt           VARCHAR(20)   NOT NULL DEFAULT '',
+			taille_pantalon         VARCHAR(20)   NOT NULL DEFAULT '',
+			doc_certificat_medical  VARCHAR(255)  NOT NULL DEFAULT '',
+			doc_attestation_rc      VARCHAR(255)  NOT NULL DEFAULT '',
+			doc_decharge_honneur    VARCHAR(255)  NOT NULL DEFAULT '',
+			autorisation_photo      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			autorisation_seul       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			droit_image             TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			reglement_accepte       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			statut                  ENUM('pending','valide','refuse') NOT NULL DEFAULT 'pending',
+			refus_motif             TEXT,
+			ip_address              VARCHAR(45)   NOT NULL DEFAULT '',
+			created_at              DATETIME      NOT NULL,
+			updated_at              DATETIME      DEFAULT NULL,
+			PRIMARY KEY             (id),
+			KEY idx_statut          (statut),
+			KEY idx_email           (email(50))
 		) {$charset};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
