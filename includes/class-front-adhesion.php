@@ -506,7 +506,7 @@ class SP_Front_Adhesion {
 						<?php endfor; ?>
 					</div>
 
-					<div class="sp-adh-row" id="sp_repres_add_row" style="padding:0 1.2rem 1rem;">
+					<div class="sp-adh-row" id="sp_repres_add_row">
 						<button type="button" id="sp_repres_add_btn" class="sp-adh-btn-add">+ Ajouter un représentant légal</button>
 					</div>
 				</div>
