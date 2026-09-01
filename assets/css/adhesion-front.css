@@ -1,0 +1,226 @@
+/* ============================================================
+   SP Build — Formulaire d'adhésion front-end
+   Shortcode [sp_inscription_adhesion]
+   ============================================================ */
+
+/* ── Wrapper global ────────────────────────────────────────── */
+.sp-adh-wrapper {
+	max-width: 780px;
+	margin: 2rem auto;
+	font-family: inherit;
+}
+
+.sp-adh-title {
+	font-size: 1.6rem !important;
+	margin-bottom: .4rem !important;
+	border: none !important;
+	padding: 0 !important;
+}
+
+.sp-adh-intro {
+	color: #555;
+	margin-bottom: 1.8rem;
+	line-height: 1.6;
+}
+
+/* ── Erreurs ───────────────────────────────────────────────── */
+.sp-adh-errors {
+	background: #fff0f0;
+	border-left: 4px solid #c0392b;
+	padding: 1rem 1.2rem;
+	margin-bottom: 1.5rem;
+	border-radius: 0 4px 4px 0;
+}
+.sp-adh-errors strong { display:block; margin-bottom:.5rem; color:#c0392b; }
+.sp-adh-errors ul { margin:0; padding-left:1.2rem; }
+.sp-adh-errors li { margin-bottom:.25rem; color:#333; }
+
+/* ── Sections ──────────────────────────────────────────────── */
+.sp-adh-form .sp-adh-group {
+	border: 1px solid #ddd !important;
+	border-radius: 6px !important;
+	padding: 0 !important;
+	margin: 0 0 1.4rem 0 !important;
+	background: #fafafa !important;
+	overflow: hidden;
+}
+
+/* ── Titre de section ──────────────────────────────────────── */
+.sp-adh-form .sp-adh-group-title {
+	font-size: .95rem !important;
+	font-weight: 700 !important;
+	margin: 0 !important;
+	padding: .7rem 1.2rem !important;
+	background: #f0f2f5 !important;
+	border: none !important;
+	border-bottom: 1px solid #ddd !important;
+	color: #1a1a2e !important;
+	line-height: 1.4 !important;
+}
+
+/* Espacement interne */
+.sp-adh-group > .sp-adh-row { padding: 0 1.2rem; }
+.sp-adh-group > .sp-adh-row:first-of-type { margin-top: .9rem; }
+.sp-adh-group > .sp-adh-row:last-of-type  { margin-bottom: .9rem; }
+
+/* Section légale */
+.sp-adh-group-legal { background: #f5f9ff !important; border-color: #b3d4f5 !important; }
+.sp-adh-group-legal .sp-adh-group-title { background: #e8f0fb !important; border-bottom-color: #b3d4f5 !important; }
+.sp-adh-group-legal .sp-adh-check { padding: .5rem 1.2rem; }
+
+/* ── Grille ────────────────────────────────────────────────── */
+.sp-adh-row { display:flex; gap:1.2rem; margin-bottom:.9rem; flex-wrap:wrap; }
+.sp-adh-col { flex:1; min-width:180px; display:flex; flex-direction:column; }
+.sp-adh-col-half { flex: 0 0 calc(50% - .6rem); }
+.sp-adh-col-full { flex: 0 0 100%; }
+
+/* ── Labels ────────────────────────────────────────────────── */
+.sp-adh-form label:not(.sp-adh-check):not(.sp-adh-radio) {
+	font-weight: 600 !important;
+	font-size: .88rem !important;
+	margin-bottom: .3rem !important;
+	color: #333 !important;
+}
+.sp-optional { font-weight:400; font-size:.8rem; color:#888; }
+
+/* ── Inputs ────────────────────────────────────────────────── */
+.sp-adh-form input[type="text"],
+.sp-adh-form input[type="email"],
+.sp-adh-form input[type="tel"],
+.sp-adh-form input[type="date"],
+.sp-adh-form select,
+.sp-adh-form textarea {
+	width: 100% !important;
+	padding: .55rem .75rem !important;
+	border: 1px solid #ccc !important;
+	border-radius: 4px !important;
+	font-size: .95rem !important;
+	background: #fff !important;
+	box-sizing: border-box !important;
+	font-family: inherit !important;
+	color: #333 !important;
+	transition: border-color .15s, box-shadow .15s;
+}
+.sp-adh-form input:focus,
+.sp-adh-form select:focus,
+.sp-adh-form textarea:focus {
+	outline: none !important;
+	border-color: #2271b1 !important;
+	box-shadow: 0 0 0 2px rgba(34,113,177,.2) !important;
+}
+.sp-adh-form textarea { resize:vertical; min-height:100px; }
+
+/* ── Sexe radios ───────────────────────────────────────────── */
+.sp-adh-inline-fieldset { display:flex; flex-direction:column; }
+.sp-adh-inline-label {
+	font-weight: 600 !important;
+	font-size: .88rem !important;
+	color: #333 !important;
+	margin-bottom: .4rem;
+	display: block;
+}
+.sp-adh-radio-group { display:flex; align-items:center; gap:1.2rem; padding:.55rem 0; }
+.sp-adh-radio {
+	display: inline-flex !important;
+	align-items: center !important;
+	gap: .4rem !important;
+	font-size: .95rem !important;
+	cursor: pointer;
+	font-weight: 400 !important;
+	color: #333 !important;
+	border: none !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	background: none !important;
+}
+.sp-adh-radio input { width:auto !important; cursor:pointer; margin:0 !important; }
+
+/* ── Checkboxes légaux ─────────────────────────────────────── */
+.sp-adh-check {
+	display: flex !important;
+	align-items: flex-start !important;
+	gap: .7rem !important;
+	padding: .6rem 1.2rem !important;
+	border-bottom: 1px solid #e8effa !important;
+	cursor: pointer;
+	line-height: 1.5;
+	font-weight: 400 !important;
+	background: none !important;
+}
+.sp-adh-check:last-child { border-bottom: none !important; }
+.sp-adh-check input[type="checkbox"] {
+	width: 18px !important; height: 18px !important;
+	flex-shrink: 0; margin-top: .15rem !important; cursor: pointer;
+}
+.sp-adh-check-required span { font-weight: 500 !important; }
+
+/* ── Requis ────────────────────────────────────────────────── */
+.sp-req { color:#c0392b; font-weight:700; }
+
+/* ── Submit ────────────────────────────────────────────────── */
+.sp-adh-footer {
+	display:flex; align-items:center; justify-content:space-between;
+	flex-wrap:wrap; gap:1rem; margin-top:1rem;
+}
+.sp-adh-required-note { font-size:.82rem; color:#777; margin:0; }
+.sp-adh-btn-submit {
+	background: #2271b1 !important;
+	color: #fff !important;
+	border: none !important;
+	border-radius: 5px !important;
+	padding: .75rem 1.8rem !important;
+	font-size: 1rem !important;
+	font-weight: 600 !important;
+	cursor: pointer !important;
+	text-decoration: none !important;
+	transition: background .15s;
+}
+.sp-adh-btn-submit:hover { background: #135e96 !important; color:#fff !important; }
+
+/* ── Succès ────────────────────────────────────────────────── */
+.sp-adh-success {
+	max-width:600px; margin:3rem auto; text-align:center;
+	padding:2.5rem 2rem; background:#f0fff4;
+	border:1px solid #68d391; border-radius:8px;
+}
+.sp-adh-success-icon { font-size:3rem; margin-bottom:1rem; }
+.sp-adh-success h2 { color:#276749; margin-bottom:.5rem; }
+.sp-adh-success p { color:#333; line-height:1.6; }
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 600px) {
+	.sp-adh-row { flex-direction:column; gap:0; }
+	.sp-adh-col-half { flex: 0 0 100%; }
+	.sp-adh-footer { flex-direction:column; align-items:stretch; }
+	.sp-adh-btn-submit { width:100%; text-align:center; }
+}
+
+/* ── Catégorie calculée ────────────────────────────────────── */
+.sp-adh-categorie-display {
+	padding: .55rem .75rem;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	background: #f9f9f9;
+	min-height: 2.4rem;
+	display: flex;
+	align-items: center;
+}
+.sp-adh-categorie-placeholder { color: #999; font-size: .88rem; font-style: italic; }
+.sp-adh-cat-badge {
+	font-size: .9rem;
+	padding: .25rem .7rem;
+	border-radius: 20px;
+	font-weight: 700;
+}
+.sp-adh-cat-baby   { background: #fff3cd; color: #856404; }
+.sp-adh-cat-enfant { background: #d1ecf1; color: #0c5460; }
+.sp-adh-cat-adulte { background: #d4edda; color: #155724; }
+.sp-adh-cat-renfo  { background: #e2d9f3; color: #4a2c7e; }
+
+/* ── Pratique antérieure conditionnelle ────────────────────── */
+.sp-adh-check-trigger { background: #fffbec; border-bottom: none !important; }
+.sp-adh-conditional {
+	padding: .5rem 1.2rem 1rem;
+	border-top: 1px dashed #ddd;
+	background: #fffbec;
+}

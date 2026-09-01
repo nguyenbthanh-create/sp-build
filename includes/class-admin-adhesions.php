@@ -1,0 +1,633 @@
+<?php
+/**
+ * Admin : Page "Demandes d'adhésion"
+ * Gestion des pré-inscriptions soumises via [sp_inscription_adhesion]
+ *
+ * @package SP_Build
+ */
+
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+class SP_Admin_Adhesions {
+
+	private static ?self $instance = null;
+
+	private string $table;
+	private string $eleves_table;
+
+	// ─── Singleton ───────────────────────────────────────────────────────────
+	public static function get_instance(): self {
+		if ( self::$instance === null ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+	private function __construct() {
+		global $wpdb;
+		$this->table         = $wpdb->prefix . 'sp_adhesions_pending';
+		$this->eleves_table  = $wpdb->prefix . 'sp_cal_eleves';
+
+		add_action( 'admin_menu',                        [ $this, 'register_menu'   ], 20 );
+		add_action( 'admin_post_sp_adhesion_valider',    [ $this, 'handle_valider'  ] );
+		add_action( 'admin_post_sp_adhesion_refuser',    [ $this, 'handle_refuser'  ] );
+	}
+
+	// ─── Menu ─────────────────────────────────────────────────────────────────
+	public function register_menu(): void {
+		global $wpdb;
+
+		$pending = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$this->table} WHERE statut = 'pending'"
+		);
+
+		$label = $pending > 0
+			? '📝 Demandes adhésion <span class="awaiting-mod">' . $pending . '</span>'
+			: '📝 Demandes adhésion';
+
+		add_submenu_page(
+			'sp-cal-pro',
+			"Demandes d'adhésion",
+			$label,
+			'manage_options',
+			'sp_adhesions',
+			[ $this, 'render_page' ]
+		);
+	}
+
+	// ─── Page principale ─────────────────────────────────────────────────────
+	public function render_page(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Accès refusé.' );
+		}
+
+		$action = sanitize_key( $_GET['action'] ?? 'list' );
+		$id     = absint( $_GET['id'] ?? 0 );
+
+		echo '<div class="wrap sp-adh-admin">';
+		echo '<h1 class="wp-heading-inline">📝 Demandes d\'adhésion</h1>';
+
+		$this->render_notices();
+
+		if ( $action === 'view' && $id > 0 ) {
+			$this->render_view( $id );
+		} else {
+			$this->render_list();
+		}
+
+		echo '</div>';
+	}
+
+	// ─── Notices flash ───────────────────────────────────────────────────────
+	private function render_notices(): void {
+		$notices = [
+			'valide'      => [ 'success', '✅ Demande validée. Le compte élève a été créé et le token envoyé.' ],
+			'refuse'      => [ 'success', '🚫 Demande refusée. L\'adhérent a été notifié par email.' ],
+			'deja_valide' => [ 'warning', '⚠️ Cette demande est déjà traitée.' ],
+			'error_db'    => [ 'error',   '❌ Erreur base de données lors de la création de l\'élève.' ],
+			'error_nonce' => [ 'error',   '❌ Erreur de sécurité (nonce invalide). Veuillez réessayer.' ],
+			'not_found'   => [ 'error',   '❌ Demande introuvable.' ],
+		];
+
+		$key = sanitize_key( $_GET['sp_notice'] ?? '' );
+		if ( $key && isset( $notices[ $key ] ) ) {
+			[ $type, $msg ] = $notices[ $key ];
+			printf(
+				'<div class="notice notice-%s is-dismissible"><p>%s</p></div>',
+				esc_attr( $type ),
+				esc_html( $msg )
+			);
+		}
+
+		// Afficher l'erreur DB détaillée si disponible
+		if ( $key === 'error_db' ) {
+			$db_id  = absint( $_GET['id'] ?? 0 );
+			$db_err = $db_id ? get_transient( 'sp_adh_db_error_' . $db_id ) : '';
+			if ( $db_err ) {
+				printf(
+					'<div class="notice notice-error"><p><strong>Détail erreur SQL :</strong> %s</p></div>',
+					esc_html( $db_err )
+				);
+				delete_transient( 'sp_adh_db_error_' . $db_id );
+			}
+		}
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// LISTE
+	// ══════════════════════════════════════════════════════════════════════════
+	private function render_list(): void {
+		global $wpdb;
+
+		$allowed_statuts = [ 'pending', 'valide', 'refuse', 'all' ];
+		$sf = sanitize_key( $_GET['statut'] ?? 'pending' );
+		if ( ! in_array( $sf, $allowed_statuts, true ) ) $sf = 'pending';
+
+		// Counts par statut
+		$raw_counts = $wpdb->get_results(
+			"SELECT statut, COUNT(*) AS n FROM {$this->table} GROUP BY statut",
+			ARRAY_A
+		);
+		$counts = array_fill_keys( $allowed_statuts, 0 );
+		foreach ( $raw_counts as $r ) {
+			if ( isset( $counts[ $r['statut'] ] ) ) {
+				$counts[ $r['statut'] ] = (int) $r['n'];
+			}
+			$counts['all'] += (int) $r['n'];
+		}
+
+		// Onglets
+		$tabs = [
+			'pending' => "⏳ En attente ({$counts['pending']})",
+			'valide'  => "✅ Validées ({$counts['valide']})",
+			'refuse'  => "🚫 Refusées ({$counts['refuse']})",
+			'all'     => "Toutes ({$counts['all']})",
+		];
+
+		echo '<ul class="subsubsub">';
+		foreach ( $tabs as $key => $label ) {
+			$url    = esc_url( add_query_arg( [ 'page' => 'sp_adhesions', 'statut' => $key ], admin_url( 'admin.php' ) ) );
+			$active = $sf === $key ? ' class="current" aria-current="page"' : '';
+			echo "<li><a href='{$url}'{$active}>{$label}</a> &nbsp;</li>";
+		}
+		echo '</ul><br class="clear">';
+
+		// Requête
+		$where = $sf !== 'all'
+			? $wpdb->prepare( 'WHERE statut = %s', $sf )
+			: '';
+
+		$rows = $wpdb->get_results(
+			"SELECT id, nom, prenom, email, categorie, discipline, statut, created_at
+			 FROM {$this->table} {$where}
+			 ORDER BY created_at DESC"
+		);
+
+		if ( empty( $rows ) ) {
+			echo '<p style="margin-top:1.5rem;">Aucune demande' . ( $sf !== 'all' ? ' dans cette catégorie' : '' ) . '.</p>';
+			return;
+		}
+		?>
+		<table class="wp-list-table widefat fixed striped sp-adh-table" style="margin-top:1rem;">
+			<thead>
+				<tr>
+					<th style="width:140px">Date</th>
+					<th>Nom / Prénom</th>
+					<th>Email</th>
+					<th>Catégorie</th>
+					<th>Discipline</th>
+					<th style="width:130px">Statut</th>
+					<th style="width:80px">Action</th>
+				</tr>
+			</thead>
+			<tbody>
+			<?php foreach ( $rows as $row ) :
+				$view_url = esc_url( add_query_arg( [
+					'page'   => 'sp_adhesions',
+					'action' => 'view',
+					'id'     => $row->id,
+				], admin_url( 'admin.php' ) ) );
+			?>
+				<tr>
+					<td><?= esc_html( date( 'd/m/Y H:i', strtotime( $row->created_at ) ) ) ?></td>
+					<td><strong><?= esc_html( "{$row->prenom} {$row->nom}" ) ?></strong></td>
+					<td><?= esc_html( $row->email ) ?></td>
+					<td><?= esc_html( $row->categorie ) ?></td>
+					<td><?= esc_html( $row->discipline ) ?></td>
+					<td><?= $this->badge_statut( $row->statut ) ?></td>
+					<td><a href="<?= $view_url ?>" class="button button-small">👁 Voir</a></td>
+				</tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// FICHE DÉTAIL
+	// ══════════════════════════════════════════════════════════════════════════
+	private function render_view( int $id ): void {
+		global $wpdb;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$this->table} WHERE id = %d LIMIT 1",
+			$id
+		) );
+
+		if ( ! $row ) {
+			echo '<div class="notice notice-error"><p>Demande introuvable.</p></div>';
+			return;
+		}
+
+		$back = esc_url( add_query_arg( 'page', 'sp_adhesions', admin_url( 'admin.php' ) ) );
+		echo "<p style='margin-top:1rem;'><a href='{$back}' class='button'>← Retour à la liste</a></p>";
+
+		echo '<div class="sp-adh-fiche">';
+		printf(
+			'<h2>Demande #%d — %s %s</h2>',
+			$row->id,
+			esc_html( $row->prenom ),
+			esc_html( $row->nom )
+		);
+		echo $this->badge_statut( $row->statut );
+		echo '<p class="sp-adh-meta">Soumise le ' . esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ) . '</p>';
+
+		// ── Sections de données ──────────────────────────────────────────────
+		$sections = [
+			'👤 Identité' => [
+				'Nom'               => $row->nom,
+				'Prénom'            => $row->prenom,
+				'Date de naissance' => date( 'd/m/Y', strtotime( $row->date_naissance ) ),
+				'Sexe'              => $row->sexe === 'M' ? 'Masculin' : 'Féminin',
+				'Lieu de naissance' => $row->lieu_naissance ?: '—',
+				'Nationalité'       => $row->nationalite    ?: '—',
+				'Adresse'           => $row->adresse        ?: '—',
+			],
+			'📞 Contact' => [
+				'Email'     => $row->email,
+				'Téléphone' => $row->telephone ?: '—',
+			],
+			'👨‍👩‍👧 Représentant légal' => [
+				'Statut'     => $row->repres_statut    ?: '—',
+				'Nom(s)'     => $row->repres_nom       ?: '—',
+				'Téléphone'  => $row->repres_telephone ?: '—',
+				'Email'      => $row->repres_email     ?: '—',
+			],
+			'🚨 Contact d\'urgence' => [
+				'Nom(s)'     => $row->urg_nom       ?: '—',
+				'Téléphone'  => $row->urg_telephone ?: '—',
+				'Email'      => $row->urg_email     ?: '—',
+			],
+			'🥋 Club' => [
+				'Discipline'         => $row->discipline,
+				'Catégorie d\'âge'   => $row->categorie,
+				'Message'            => $row->message ?: '—',
+			],
+			'🏅 Pratique antérieure' => [
+				'Déjà pratiqué'      => ($row->pratique_anterieure ?? 0) ? '✅ Oui' : 'Non',
+				'N° licence'         => $row->ancien_licence   ?: '—',
+				'N° passeport FFTDA' => $row->ancien_passeport ?: '—',
+				'Grade'              => $row->ancien_grade     ?: '—',
+			],
+			'📏 Mensurations' => [
+				'Taille (cm)'       => $row->taille_cm       ?: '—',
+				'Poids (kg)'        => $row->poids_kg        ?: '—',
+				'Pointure'          => $row->pointure        ?: '—',
+				'T-shirt / Sweat'   => $row->taille_tshirt   ?: '—',
+				'Pantalon'          => $row->taille_pantalon ?: '—',
+			],
+			'📋 Autorisations' => [
+				'Photos / vidéos'    => ($row->autorisation_photo ?? 0) ? '✅ Autorisé' : '❌ Refusé',
+				'Droit à l\'image'   => ($row->droit_image ?? 0)        ? '✅ Autorisé' : '❌ Refusé',
+				'Repartir seul(e)'   => ($row->autorisation_seul ?? 0)  ? '✅ Autorisé' : '❌ Non',
+				'Règlement accepté'  => ($row->reglement_accepte ?? 0)  ? '✅ Oui'      : '⚠️ Non',
+			],
+		];
+
+		foreach ( $sections as $title => $fields ) {
+			echo "<div class='sp-adh-section'><h3>{$title}</h3><table class='form-table'>";
+			foreach ( $fields as $label => $value ) {
+				printf(
+					'<tr><th scope="row">%s</th><td>%s</td></tr>',
+					esc_html( $label ),
+					esc_html( $value )
+				);
+			}
+			echo '</table></div>';
+		}
+
+		// Motif de refus éventuel
+		if ( $row->statut === 'refuse' && $row->refus_motif ) {
+			echo '<div class="sp-adh-section sp-adh-section-refus">';
+			echo '<h3>🗒 Motif de refus</h3>';
+			echo '<p>' . nl2br( esc_html( $row->refus_motif ) ) . '</p>';
+			echo '</div>';
+		}
+
+		// Actions (seulement si pending)
+		if ( $row->statut === 'pending' ) {
+			$this->render_actions( $row );
+		}
+
+		echo '</div>'; // .sp-adh-fiche
+	}
+
+	// ─── Boutons d'action ─────────────────────────────────────────────────────
+	private function render_actions( object $row ): void {
+		$valider_url = wp_nonce_url(
+			add_query_arg(
+				[ 'action' => 'sp_adhesion_valider', 'id' => $row->id ],
+				admin_url( 'admin-post.php' )
+			),
+			"sp_valider_{$row->id}"
+		);
+		?>
+		<div class="sp-adh-actions">
+			<h3>⚡ Actions</h3>
+
+			<!-- Valider -->
+			<div class="sp-adh-action-block sp-adh-action-valider">
+				<h4>✅ Valider la demande</h4>
+				<p>
+					Un profil élève sera créé dans la base de données et un token d'accès
+					sera envoyé par email à <strong><?= esc_html( $row->email ) ?></strong>.
+					Le paiement reste à gérer manuellement.
+				</p>
+				<a href="<?= esc_url( $valider_url ) ?>"
+				   class="button button-primary"
+				   onclick="return confirm('Valider la demande de <?= esc_js( "{$row->prenom} {$row->nom}" ) ?> et créer son compte élève ?')">
+					✅ Valider &amp; créer le compte
+				</a>
+			</div>
+
+			<!-- Refuser -->
+			<div class="sp-adh-action-block sp-adh-action-refuser">
+				<h4>🚫 Refuser la demande</h4>
+				<form method="post" action="<?= esc_url( admin_url( 'admin-post.php' ) ) ?>">
+					<input type="hidden" name="action" value="sp_adhesion_refuser">
+					<input type="hidden" name="id"     value="<?= intval( $row->id ) ?>">
+					<?php wp_nonce_field( "sp_refuser_{$row->id}", 'sp_refus_nonce' ); ?>
+					<label for="sp_refus_motif">
+						Motif du refus
+						<span style="font-weight:400;font-size:.85em;">(sera inclus dans l'email à l'adhérent — optionnel)</span>
+					</label><br>
+					<textarea name="refus_motif" id="sp_refus_motif" rows="4"
+					          style="width:100%;max-width:600px;margin:.4rem 0;"
+					          placeholder="Ex : La catégorie d'âge ne correspond pas à la discipline choisie."></textarea>
+					<br>
+					<button type="submit" class="button button-secondary"
+					        onclick="return confirm('Refuser définitivement cette demande ?')">
+						🚫 Refuser la demande
+					</button>
+				</form>
+			</div>
+
+		</div>
+		<?php
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// HANDLER — VALIDER
+	// ══════════════════════════════════════════════════════════════════════════
+	public function handle_valider(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+
+		$id = absint( $_GET['id'] ?? 0 );
+
+		if ( ! check_admin_referer( "sp_valider_{$id}" ) ) {
+			wp_redirect( $this->list_url( 'error_nonce' ) );
+			exit;
+		}
+
+		global $wpdb;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$this->table} WHERE id = %d LIMIT 1",
+			$id
+		) );
+
+		if ( ! $row ) {
+			wp_redirect( $this->list_url( 'not_found' ) );
+			exit;
+		}
+
+		if ( $row->statut !== 'pending' ) {
+			wp_redirect( $this->list_url( 'deja_valide' ) );
+			exit;
+		}
+
+		// Créer le membre
+		$member_id = $this->create_member( $row );
+
+		if ( ! $member_id ) {
+			// Stocker l'erreur DB pour l'afficher sur la fiche
+			set_transient( 'sp_adh_db_error_' . $id, $wpdb->last_error, 60 );
+			wp_redirect( $this->view_url( $id, 'error_db' ) );
+			exit;
+		}
+
+		// Marquer validée
+		$wpdb->update(
+			$this->table,
+			[ 'statut' => 'valide', 'updated_at' => current_time( 'mysql' ) ],
+			[ 'id' => $id ],
+			[ '%s', '%s' ], [ '%d' ]
+		);
+
+		// Envoyer token / email de bienvenue
+		$this->send_token_or_welcome( $row, $member_id );
+
+		// Rediriger vers l'onglet "Validées" pour voir la demande traitée
+		wp_redirect( $this->list_url( 'valide', 'valide' ) );
+		exit;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// HANDLER — REFUSER
+	// ══════════════════════════════════════════════════════════════════════════
+	public function handle_refuser(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+
+		$id          = absint( $_POST['id'] ?? 0 );
+		$refus_motif = sanitize_textarea_field( $_POST['refus_motif'] ?? '' );
+
+		if ( ! check_admin_referer( "sp_refuser_{$id}", 'sp_refus_nonce' ) ) {
+			wp_redirect( $this->list_url( 'error_nonce' ) );
+			exit;
+		}
+
+		global $wpdb;
+
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT * FROM {$this->table} WHERE id = %d LIMIT 1",
+			$id
+		) );
+
+		if ( ! $row ) {
+			wp_redirect( $this->list_url( 'not_found' ) );
+			exit;
+		}
+
+		if ( $row->statut !== 'pending' ) {
+			wp_redirect( $this->list_url( 'deja_valide' ) );
+			exit;
+		}
+
+		$wpdb->update(
+			$this->table,
+			[
+				'statut'      => 'refuse',
+				'refus_motif' => $refus_motif,
+				'updated_at'  => current_time( 'mysql' ),
+			],
+			[ 'id' => $id ],
+			[ '%s', '%s', '%s' ], [ '%d' ]
+		);
+
+		$this->email_refus( $row, $refus_motif );
+
+		// Rediriger vers l'onglet "Refusées" pour voir la demande traitée
+		wp_redirect( $this->list_url( 'refuse', 'refuse' ) );
+		exit;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// CRÉATION MEMBRE dans sp_cal_eleves
+	// ══════════════════════════════════════════════════════════════════════════
+	private function create_member( object $row ): int|false {
+		global $wpdb;
+
+		$annee_naissance = substr( $row->date_naissance, 0, 4 );
+
+		$saison = get_option( 'tkd_saison_courante', '' );
+		if ( ! $saison ) {
+			$y = (int) date('Y'); $m = (int) date('m');
+			$saison = $m >= 9 ? "{$y}/" . ($y+1) : ($y-1) . "/{$y}";
+		}
+
+		$extra = [
+			'sexe'                => $row->sexe,
+			'autorisation_photo'  => (bool) ($row->autorisation_photo ?? 0),
+			'autorisation_seul'   => (bool) ($row->autorisation_seul  ?? 0),
+			'reglement_accepte'   => (bool) ($row->reglement_accepte  ?? 0),
+			'pratique_anterieure' => (bool) ($row->pratique_anterieure ?? 0),
+			'ancien_licence'      => $row->ancien_licence       ?? '',
+			'ancien_passeport'    => $row->ancien_passeport     ?? '',
+			'message_adhesion'    => $row->message              ?? '',
+			'repres_statut'       => $row->repres_statut        ?? '',
+			'source'              => 'adhesion_form',
+			'adhesion_id'         => $row->id,
+		];
+
+		$data = [
+			'nom'                    => $row->nom,
+			'prenom'                 => $row->prenom,
+			'date_naissance'         => $row->date_naissance,
+			'annee_naissance'        => $annee_naissance,
+			'lieu_naissance'         => $row->lieu_naissance    ?? '',
+			'nationalite'            => $row->nationalite       ?? '',
+			'adresse'                => $row->adresse           ?? '',
+			'categorie_age'          => $row->categorie,
+			'categorie_saisie'       => $row->discipline,
+			'grade'                  => $row->ancien_grade      ?? '',
+			'saison'                 => $saison,
+			'email'                  => $row->email,
+			'email_parent'           => $row->repres_email      ?? '',
+			'telephone'              => $row->telephone,
+			'urgence_nom'            => $row->urg_nom,
+			'urgence_prenom'         => '',
+			'urgence_telephone'      => $row->urg_telephone,
+			'urgence_email'          => $row->urg_email         ?? '',
+			'num_passeport'          => $row->ancien_passeport  ?? '',
+			'licence'                => $row->ancien_licence    ?? '',
+			'droit_image'            => (int) ($row->droit_image ?? 0),
+			'autorisation_seul'      => (int) ($row->autorisation_seul ?? 0),
+			'representant_nom'       => $row->repres_nom        ?? '',
+			'representant_prenom'    => '',
+			'representant_telephone' => $row->repres_telephone  ?? '',
+			'taille_cm'              => $row->taille_cm         ?? '',
+			'poids_kg'               => $row->poids_kg          ?? '',
+			'pointure'               => $row->pointure          ?? '',
+			'taille_tshirt'          => $row->taille_tshirt     ?? '',
+			'taille_pantalon'        => $row->taille_pantalon   ?? '',
+			'motif_inactif'          => '',
+			'palmares'               => '',
+			'photo_url'              => '',
+			'actif'                  => 0,
+			'rang'                   => 0,
+			'nb_licences'            => 0,
+			'eligible_dan'           => 0,
+			'extra_data'             => wp_json_encode( $extra ),
+		];
+
+		$format = [
+			'%s','%s','%s','%s','%s','%s','%s',
+			'%s','%s','%s','%s',
+			'%s','%s','%s',
+			'%s','%s','%s','%s',
+			'%s','%s',
+			'%d',  // droit_image
+			'%d',  // autorisation_seul
+			'%s','%s','%s',
+			'%s','%s','%s','%s','%s',
+			'%s','%s','%s',
+			'%d','%d','%d','%d',
+			'%s',
+		];
+
+		$inserted = $wpdb->insert( $this->eleves_table, $data, $format );
+
+		if ( ! $inserted ) {
+			error_log( '[SP_Build] create_member() DB error: ' . $wpdb->last_error );
+			return false;
+		}
+
+		return $wpdb->insert_id;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// EMAILS
+	// ══════════════════════════════════════════════════════════════════════════
+	private function send_token_or_welcome( object $row, int $member_id ): void {
+		// Intégration SP_Token si disponible
+		if ( class_exists( 'SP_Token' ) && method_exists( 'SP_Token', 'generate_and_send' ) ) {
+			SP_Token::generate_and_send( $member_id, $row->email );
+			return;
+		}
+
+		// Fallback : email de bienvenue simple
+		$club    = get_bloginfo( 'name' );
+		$subject = "[{$club}] Votre adhésion est validée !";
+		$body    = "Bonjour {$row->prenom},\n\n"
+		         . "Votre demande d'adhésion au club {$club} a été validée !\n\n"
+		         . "Votre fiche est maintenant active. "
+		         . "Vous recevrez prochainement vos informations de connexion.\n\n"
+		         . "Pensez à régler votre cotisation lors de votre prochaine venue.\n\n"
+		         . "À bientôt sur les tatamis !\n"
+		         . "— L'équipe {$club}";
+
+		wp_mail( $row->email, $subject, $body );
+	}
+
+	private function email_refus( object $row, string $motif ): void {
+		$club    = get_bloginfo( 'name' );
+		$subject = "[{$club}] Votre demande d'adhésion";
+		$motif_txt = $motif
+			? "\n\nMotif :\n{$motif}\n"
+			: '';
+
+		$body = "Bonjour {$row->prenom},\n\n"
+		      . "Nous avons bien examiné votre demande d'adhésion au club {$club}.\n\n"
+		      . "Malheureusement, nous ne pouvons pas y donner suite pour le moment.{$motif_txt}\n"
+		      . "N'hésitez pas à nous contacter pour plus d'informations ou pour soumettre une nouvelle demande.\n\n"
+		      . "Cordialement,\n"
+		      . "— L'équipe {$club}";
+
+		wp_mail( $row->email, $subject, $body );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
+	// HELPERS URL / AFFICHAGE
+	// ══════════════════════════════════════════════════════════════════════════
+	private function list_url( string $notice = '', string $statut = '' ): string {
+		$args = [ 'page' => 'sp_adhesions' ];
+		if ( $notice ) $args['sp_notice'] = $notice;
+		if ( $statut ) $args['statut']    = $statut;
+		return admin_url( add_query_arg( $args, 'admin.php' ) );
+	}
+
+	private function view_url( int $id, string $notice = '' ): string {
+		$args = [ 'page' => 'sp_adhesions', 'action' => 'view', 'id' => $id ];
+		if ( $notice ) $args['sp_notice'] = $notice;
+		return admin_url( add_query_arg( $args, 'admin.php' ) );
+	}
+
+	private function badge_statut( string $statut ): string {
+		$badges = [
+			'pending' => '<span style="background:#f0ad4e;color:#fff;padding:2px 8px;border-radius:3px;font-size:.8em;">⏳ En attente</span>',
+			'valide'  => '<span style="background:#46b450;color:#fff;padding:2px 8px;border-radius:3px;font-size:.8em;">✅ Validée</span>',
+			'refuse'  => '<span style="background:#dc3232;color:#fff;padding:2px 8px;border-radius:3px;font-size:.8em;">🚫 Refusée</span>',
+		];
+		return $badges[ $statut ] ?? esc_html( $statut );
+	}
+}

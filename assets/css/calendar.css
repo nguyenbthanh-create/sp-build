@@ -1,0 +1,666 @@
+/* SP Calendar PRO – calendar.css  v10.1 */
+
+#sp-cal-container { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; max-width:100%; }
+
+/* ── Toolbar ── */
+.sp-cal-toolbar { display:flex; align-items:center; justify-content:space-between; background:#1e3a5f; color:#fff; border-radius:10px; padding:12px 18px; margin-bottom:16px; gap:12px; }
+.sp-cal-btn-apercu { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.35); border-radius:6px; padding:6px 14px; font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap; cursor:pointer; display:flex; align-items:center; gap:6px; }
+.sp-cal-btn-apercu:hover { background:rgba(255,255,255,.3); color:#fff; }
+.sp-cal-btn-apercu .dashicons { font-size:16px; width:16px; height:16px; }
+.sp-cal-nav-center { display:flex; align-items:center; gap:14px; flex:1; justify-content:center; }
+.sp-nav-btn { background:rgba(255,255,255,.15); color:#fff; border:1px solid rgba(255,255,255,.3); border-radius:6px; width:34px; height:34px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.sp-nav-btn:hover { background:rgba(255,255,255,.3); }
+.sp-nav-btn .dashicons { font-size:18px; width:18px; height:18px; }
+.sp-cal-month-title { font-size:18px; font-weight:700; text-transform:uppercase; text-align:center; min-width:200px; white-space:nowrap; letter-spacing:.03em; }
+.sp-cal-today-label { font-size:11px; color:rgba(255,255,255,.7); text-align:center; text-transform:capitalize; }
+
+/* ── Grille ── */
+.sp-cal-header { display:grid; grid-template-columns:repeat(7,1fr); margin-bottom:4px; }
+.sp-cal-header div { text-align:center; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; padding:6px 0; }
+.sp-cal-grid { display:grid; grid-template-columns:repeat(7,1fr); border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
+.sp-cal-day { min-height:90px; padding:5px 6px; background:#fff; cursor:pointer; border-right:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; transition:background .12s; display:flex; flex-direction:column; }
+.sp-cal-day:hover { background:#f0f7ff; }
+.sp-cal-day.other-month { background:#f8fafc; opacity:.5; pointer-events:none; }
+.sp-cal-day.today { background:#eff6ff; }
+.sp-cal-day.today .sp-day-num { color:#1d4ed8; font-weight:800; font-size:14px; }
+.sp-day-num { font-size:12px; font-weight:600; color:#374151; margin-bottom:3px; }
+
+/* ── Pills événements ── */
+.sp-evt-pill { display:block; font-size:10px; border-radius:4px; padding:2px 5px; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#fff; cursor:pointer; transition:opacity .1s; max-width:100%; }
+.sp-evt-pill:hover { opacity:.82; }
+
+/* cours récurrent : fond normal */
+.sp-pill-recurrent { }
+
+/* cours ponctuel : légèrement différent */
+.sp-pill-ponctuel { }
+
+/* annulation : barré + rouge */
+.sp-pill-annulation { text-decoration:line-through; opacity:.75; }
+
+/* anniversaire : bloc en bas de cellule, gauche */
+.sp-bday-block {
+    margin-top: auto;
+    padding-top: 3px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: flex-start;
+}
+.sp-pill-bday {
+    font-size: 9px;
+    font-weight: 600;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 3px;
+    padding: 1px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    cursor: pointer;
+    display: block;
+}
+
+/* ── Modale ── */
+.sp-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:99999; align-items:center; justify-content:center; }
+.sp-modal-overlay.open { display:flex; }
+.sp-modal-box { background:#fff; border-radius:12px; padding:24px; width:520px; max-width:95vw; max-height:92vh; overflow-y:auto; box-shadow:0 24px 64px rgba(0,0,0,.3); }
+.sp-modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:2px solid #1e3a5f; padding-bottom:12px; }
+.sp-modal-header h3 { margin:0; font-size:15px; color:#1e3a5f; }
+.sp-modal-close { background:none; border:none; font-size:26px; cursor:pointer; color:#aaa; line-height:1; padding:0; }
+.sp-modal-close:hover { color:#000; }
+
+/* Sections dans la vue jour */
+.sp-modal-section { margin-bottom:12px; }
+.sp-section-title { font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+
+/* Items dans la vue jour */
+.sp-day-occ-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px; margin-bottom:5px; border:1px solid #e5e7eb; background:#f9fafb; }
+.sp-day-occ-item:hover { background:#f0f7ff; }
+.sp-occ-annule { background:#fef2f2 !important; border-color:#fecaca !important; }
+.sp-day-event-item { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px; margin-bottom:5px; border:1px solid #e5e7eb; background:#f9fafb; cursor:pointer; }
+.sp-day-event-item:hover { background:#eff6ff; border-color:#93c5fd; }
+.sp-day-event-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+.sp-day-event-info { flex:1; }
+.sp-day-event-title { font-weight:600; font-size:13px; }
+.sp-day-event-time  { font-size:11px; color:#888; }
+.sp-bday-item { padding:6px 10px; font-size:13px; color:#92400e; background:#fef3c7; border-radius:6px; margin-bottom:4px; }
+
+/* ── Tabs ── */
+.sp-modal-tabs { display:flex; gap:4px; margin-bottom:14px; }
+.sp-tab-btn { flex:1; padding:8px; cursor:pointer; border:1px solid #d1d5db; background:#f9fafb; font-weight:600; color:#6b7280; border-radius:6px; font-size:13px; display:flex; align-items:center; justify-content:center; gap:6px; }
+.sp-tab-btn.active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
+.sp-tab-btn:disabled { opacity:.4; cursor:not-allowed; }
+.sp-tab-content { display:none; }
+.sp-tab-content.active { display:block; }
+.sp-count { background:rgba(255,255,255,.3); border-radius:10px; padding:1px 6px; font-size:11px; }
+
+/* ── Formulaire ── */
+.sp-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.sp-form-row { display:flex; flex-direction:column; gap:4px; }
+.sp-form-row label { font-size:12px; font-weight:600; color:#374151; }
+.sp-form-full { grid-column:1/-1; }
+.sp-input { height:36px; border:1px solid #d1d5db; border-radius:6px; padding:0 10px; font-size:13px; width:100%; box-sizing:border-box; }
+.sp-input:focus { outline:none; border-color:#1e3a5f; box-shadow:0 0 0 2px rgba(30,58,95,.15); }
+textarea.sp-input { height:auto; padding:8px 10px; resize:vertical; }
+
+/* ── Présences ── */
+.sp-pres-group-title { font-size:11px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; padding:8px 10px 4px; background:#f9fafb; border-bottom:1px solid #f0f0f0; position:sticky; top:0; z-index:1; }
+.sp-pres-row { display:flex; align-items:center; gap:10px; padding:7px 10px; border-bottom:1px solid #f3f4f6; cursor:pointer; transition:background .1s; }
+.sp-pres-row:hover { background:#f0f7ff; }
+.sp-pres-row input[type="checkbox"] { width:16px; height:16px; cursor:pointer; accent-color:#1e3a5f; }
+.sp-pres-name  { font-size:13px; flex:1; }
+.sp-pres-grade { font-size:11px; color:#15803d; font-weight:600; }
+
+/* ── Footer modale ── */
+.sp-modal-footer { display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:12px; border-top:1px solid #f0f0f1; }
+
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── Badge catégorie saisie (popup présences) ── */
+.sp-pres-saisie-badge {
+    display: inline-block;
+    background: #ede9fe;
+    color: #6d28d9;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* ── Pill examen sur le calendrier ── */
+.sp-pill-examen {
+    background: #b45309 !important;
+}
+
+/* ── Ligne examen (saisie grade) ── */
+.sp-exam-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-bottom: 1px solid #f3f4f6;
+    flex-wrap: wrap;
+}
+.sp-exam-row:hover { background: #fafafa; }
+.sp-exam-row .sp-exam-chk { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+.sp-exam-grade-current {
+    font-size: 11px;
+    color: #6b7280;
+    flex-shrink: 0;
+}
+.sp-exam-arrow {
+    color: #9ca3af;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+.sp-exam-note {
+    flex: 1;
+    min-width: 110px;
+    height: 28px !important;
+    font-size: 12px !important;
+    padding: 0 6px !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 4px !important;
+}
+.sp-exam-note:focus {
+    border-color: #6d28d9 !important;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(109,40,217,0.15);
+}
+
+/* ============================================================
+   FICHE MEMBRE PUBLIQUE (token)
+   ============================================================ */
+.sp-membre-wrap {
+    max-width: 760px; margin: 0 auto; font-family: -apple-system, Arial, sans-serif;
+}
+.sp-membre-error {
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+    padding: 24px; text-align: center; color: #b91c1c; font-size: 15px;
+}
+
+/* En-tête */
+.sp-membre-header {
+    background: linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);
+    color: #fff; border-radius: 12px; padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.sp-membre-avatar {
+    width: 60px; height: 60px; border-radius: 50%;
+    background: rgba(255,255,255,.2); border: 2px solid rgba(255,255,255,.5);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 800; flex-shrink: 0;
+}
+.sp-membre-identity { flex: 1; min-width: 160px; }
+.sp-membre-identity h1 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+.sp-membre-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-membre-tag {
+    padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
+}
+.sp-membre-tag-saisie { background: rgba(139,92,246,.3); color: #e9d5ff; }
+.sp-membre-tag-age    { background: rgba(255,255,255,.2); color: #fff; }
+.sp-membre-saison     { font-size: 12px; opacity: .7; align-self: center; }
+.sp-membre-right      { margin-left: auto; text-align: right; }
+
+/* Badges statut */
+.sp-membre-badge {
+    display: inline-block; padding: 4px 12px; border-radius: 20px;
+    font-size: 12px; font-weight: 700; margin-bottom: 8px;
+}
+.sp-membre-badge-ok   { background: #22c55e; color: #fff; }
+.sp-membre-badge-ko   { background: #ef4444; color: #fff; }
+.sp-membre-badge-warn { background: #f59e0b; color: #fff; }
+
+/* Barre assiduité */
+.sp-membre-assiduity { font-size: 12px; opacity: .9; }
+.sp-membre-bar-track {
+    height: 6px; background: rgba(255,255,255,.2);
+    border-radius: 3px; overflow: hidden; margin-bottom: 3px;
+}
+.sp-membre-bar-fill { height: 100%; border-radius: 3px; }
+
+/* Sections */
+.sp-membre-section {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 16px;
+}
+.sp-membre-section h2 {
+    font-size: 15px; font-weight: 700; color: #1e3a5f;
+    margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f1;
+}
+.sp-membre-muted { color: #9ca3af; font-size: 13px; }
+
+/* Grade actuel */
+.sp-membre-grade-current {
+    display: inline-block; background: #1e3a5f; color: #fff;
+    border-radius: 8px; padding: 8px 20px; font-size: 18px; font-weight: 800;
+}
+
+/* Table grades */
+.sp-membre-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sp-membre-table th {
+    text-align: left; font-size: 11px; text-transform: uppercase;
+    color: #6b7280; padding: 4px 8px 8px 0; border-bottom: 1px solid #e5e7eb;
+}
+.sp-membre-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid #f3f4f6; }
+.sp-membre-tr-current td { background: #f0fdf4; }
+.sp-membre-badge-small {
+    background: #22c55e; color: #fff; border-radius: 4px;
+    padding: 1px 6px; font-size: 10px; font-weight: 700; margin-left: 4px;
+}
+
+/* Grille présences */
+.sp-membre-pres-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px;
+}
+.sp-membre-pres-item {
+    border-radius: 8px; padding: 8px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    border: 1px solid #e5e7eb;
+}
+.sp-pres-ok { background: #f0fdf4; border-color: #bbf7d0; }
+.sp-pres-ko { background: #fef2f2; border-color: #fecaca; }
+.sp-pres-icon  { font-size: 16px; }
+.sp-pres-date  { font-size: 12px; font-weight: 700; color: #374151; }
+.sp-pres-label { font-size: 10px; color: #9ca3af; }
+
+/* Footer */
+.sp-membre-footer {
+    text-align: center; font-size: 11px; color: #9ca3af;
+    padding: 12px 0; margin-top: 8px;
+}
+
+/* ============================================================
+   DISPONIBILITÉS ENTRAÎNEURS — frontend shortcode (v10.12.2)
+   ============================================================ */
+
+/* ── Bloc entraîneurs dans la cellule du calendrier ── */
+.sp-dispo-block { display:flex; flex-direction:column; gap:2px; margin:2px 0 4px; }
+.sp-trainer-row {
+    display:flex; align-items:center; gap:3px;
+    border-radius:4px; padding:1px 4px 1px 3px;
+    font-size:9px; font-weight:600; font-style:italic; line-height:1.3;
+    white-space:nowrap; overflow:hidden; max-width:100%; border:1px solid transparent;
+}
+.sp-trainer-ok  { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; }
+.sp-trainer-ko  { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+.sp-trainer-icon  { font-size:8px; flex-shrink:0; opacity:.8; }
+.sp-trainer-name  { overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+.sp-trainer-note-dot { font-size:6px; flex-shrink:0; opacity:.6; color:#6b7280; }
+
+/* ── Titre section dispos ── */
+.sp-dispo-title-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sp-dispo-summary { display:flex; gap:6px; font-size:12px; font-weight:normal; }
+.sp-dispo-sum-ok { color:#15803d; font-weight:700; }
+.sp-dispo-sum-ko { color:#b91c1c; font-weight:700; }
+.sp-dispo-sum-nr { color:#9ca3af; font-weight:700; }
+
+/* ── Ligne entraîneur dans la modale ── */
+.sp-dispo-row {
+    display:flex; align-items:center; gap:10px; padding:5px 10px;
+    border-radius:6px; margin-bottom:3px; border:1px solid #e5e7eb;
+    background:#f9fafb; transition:background 0.1s;
+}
+.sp-dispo-row-ok { background:#f0fdf4; border-color:#bbf7d0; }
+.sp-dispo-row-ko { background:#fef2f2; border-color:#fecaca; }
+.sp-dispo-row-nr { background:#f9fafb; border-color:#e5e7eb; }
+
+/* Avatar initiale */
+.sp-dispo-avatar {
+    width:24px; height:24px; border-radius:50%;
+    background:#dbeafe; color:#1d4ed8;
+    font-size:11px; font-weight:800; font-style:normal;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sp-dispo-row-ok .sp-dispo-avatar { background:#dcfce7; color:#15803d; }
+.sp-dispo-row-ko .sp-dispo-avatar { background:#fee2e2; color:#b91c1c; }
+
+/* Nom */
+.sp-dispo-name {
+    flex:1; font-size:12px; font-weight:500; color:#374151;
+    letter-spacing:0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.sp-dispo-note-badge {
+    font-size:10px; color:#6b7280; font-style:italic;
+    max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* ── Actions (spans, pas de <button>) ── */
+.sp-dispo-acts { display:flex; gap:3px; flex-shrink:0; }
+.sp-dispo-act {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:28px; height:26px; border-radius:5px; border:1px solid #e5e7eb;
+    background:#fff; cursor:pointer; font-size:13px; line-height:1;
+    transition:background 0.12s, border-color 0.12s, transform 0.1s;
+    user-select:none;
+}
+.sp-dispo-act:hover { background:#f3f4f6; border-color:#9ca3af; transform:scale(1.1); }
+.sp-dispo-act.sp-act-on-ok { background:#dcfce7; border-color:#22c55e; box-shadow:0 0 0 2px #86efac; }
+.sp-dispo-act.sp-act-on-ko { background:#fee2e2; border-color:#ef4444; box-shadow:0 0 0 2px #fca5a5; }
+.sp-dispo-act.sp-act-on-nr { background:#f3f4f6; border-color:#9ca3af; }
+.sp-dispo-act-clr { font-size:11px; }
+.sp-dispo-act-note { border-color:#e5e7eb; background:#fff; }
+
+/* ── Boutons Annuler / Rétablir cours (spans, évite styles WP/thème) ── */
+.sp-occ-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+    white-space: nowrap;
+    transition: opacity 0.12s, transform 0.1s;
+    border: 1px solid transparent;
+}
+.sp-occ-btn:hover { opacity: .85; transform: scale(1.03); }
+.sp-occ-btn-cancel  { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.sp-occ-btn-restore { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+
+/* ============================================================
+   COMPÉTITIONS (v10.13)
+   ============================================================ */
+
+/* Pill compétition sur la grille */
+.sp-pill-competition { font-style: normal; }
+
+/* ── Table résultats dans la modale ── */
+.sp-comp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.sp-comp-th-name {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 6px 8px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px 0 0 0;
+    min-width: 110px;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+}
+.sp-comp-th-ep {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 6px 8px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 100px;
+}
+.sp-comp-td-name {
+    padding: 6px 8px;
+    font-weight: 600;
+    border-bottom: 1px solid #f0f0f1;
+    background: #f8fafc;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    font-size: 12px;
+}
+.sp-comp-cat { font-size: 10px; color: #9ca3af; font-weight: 400; }
+.sp-comp-td-res {
+    padding: 4px 6px;
+    border-bottom: 1px solid #f0f0f1;
+    text-align: center;
+    vertical-align: middle;
+}
+.sp-comp-med-btns { display: flex; justify-content: center; gap: 2px; margin-bottom: 3px; }
+.sp-comp-med {
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0.35;
+    transition: opacity 0.15s, transform 0.1s;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+}
+.sp-comp-med:hover { opacity: 0.7; transform: scale(1.15); }
+.sp-comp-med.active { opacity: 1; transform: scale(1.1); }
+.sp-comp-score {
+    height: 24px !important;
+    font-size: 11px !important;
+    padding: 0 5px !important;
+    text-align: center;
+    width: 80px !important;
+    margin: 0 auto;
+    display: block;
+}
+
+/* Ligne épreuve dans l'éditeur */
+.sp-comp-ep-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+}
+.sp-comp-ep-ordre {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1e3a5f;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ── Palmarès sur la fiche personnelle ── */
+.sp-palmares-comp {
+    margin-bottom: 18px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.sp-palmares-comp-header {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.sp-palmares-comp-titre { font-weight: 700; font-size: 14px; flex: 1; }
+.sp-palmares-comp-date  { font-size: 12px; opacity: 0.75; }
+.sp-palmares-comp-cat   {
+    background: rgba(255,255,255,0.18);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+.sp-palmares-epreuves {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #fff;
+}
+.sp-palmares-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    background: #f9fafb;
+    min-width: 90px;
+    text-align: center;
+}
+.sp-palmares-card-medal { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.sp-palmares-medal-emoji { font-size: 28px; line-height: 1; }
+.sp-palmares-medal-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.sp-palmares-ep-nom { font-size: 11px; font-weight: 600; color: #374151; margin-top: 2px; }
+.sp-palmares-score  { font-size: 11px; color: #6b7280; }
+
+/* ── Archives saisons (accordéon) (v10.13) ── */
+.sp-archive-details {
+    border: none;
+}
+.sp-archive-details[open] { border: none; }
+.sp-archive-summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #6b7280;
+    padding: 6px 0;
+    list-style: none;
+    user-select: none;
+}
+.sp-archive-summary::-webkit-details-marker { display: none; }
+.sp-archive-summary::before {
+    content: '▶';
+    font-size: 10px;
+    transition: transform 0.2s;
+    color: #9ca3af;
+}
+.sp-archive-details[open] .sp-archive-summary::before { transform: rotate(90deg); }
+.sp-archive-summary:hover { color: #374151; }
+.sp-archive-stats {
+    font-size: 12px;
+    font-weight: 400;
+    color: #9ca3af;
+    margin-left: 4px;
+}
+.sp-archive-saison {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed #e5e7eb;
+}
+.sp-archive-saison:first-child { border-top: none; margin-top: 8px; padding-top: 0; }
+.sp-archive-saison-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+}
+
+/* ══ v10.14 : Harmonisation planning + ergonomie ══════════════ */
+
+/* Planning : bandeau nav = même style que toolbar calendrier */
+.sp-planning-nav {
+    background: #1e3a5f;
+    color: #fff;
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.sp-planning-title { margin:0; font-size:18px; font-weight:700; color:#fff; flex:1; text-align:center; text-transform:uppercase; letter-spacing:.03em; }
+.sp-plan-nav-btn {
+    background: rgba(255,255,255,.18);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 6px;
+    width: 34px; height: 34px;
+    font-size: 20px; line-height: 1;
+    cursor: pointer; text-decoration: none;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+}
+.sp-plan-nav-btn:hover { background: rgba(255,255,255,.28); color:#fff; }
+.sp-plan-toggle-past {
+    background: rgba(255,255,255,.15);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.3);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* Planning : pastilles = même taille police + border-radius que calendrier */
+.sp-plan-event {
+    border-radius: 4px;
+    padding: 2px 5px;
+    margin-bottom: 2px;
+    font-size: 10px;
+    line-height: 1.35;
+    overflow: hidden;
+}
+.sp-plan-label { font-size: 10px; font-weight: 700; }
+.sp-plan-icon  { font-size: 10px; }
+
+/* Document joint : lien téléchargement dans le planning */
+.sp-plan-doc-link {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    text-decoration: none;
+    color: inherit;
+    opacity: .85;
+    margin-left: 4px;
+}
+.sp-plan-doc-link:hover { opacity: 1; }
+
+/* Ergonomie : double bouton actions rapides sous la date */
+.sp-day-quick-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+.sp-quick-btn {
+    flex: 1;
+    height: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    justify-content: center;
+}
+@media (max-width: 480px) {
+    .sp-day-quick-actions { flex-direction: column; }
+}
+
+/* ── Vue sélection cours pour présences (pick view) ──────── */
+.sp-pick-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    background: #f9fafb;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .12s, transform .1s;
+    user-select: none;
+}
+.sp-pick-item:hover {
+    background: #eff6ff;
+    transform: translateX(2px);
+}
+.sp-pick-icon  { font-size: 20px; flex-shrink: 0; }
+.sp-pick-info  { flex: 1; min-width: 0; }
+.sp-pick-titre { font-size: 14px; font-weight: 700; color: #111827; }
+.sp-pick-heure { font-size: 12px; color: #6b7280; margin-top: 2px; }
+.sp-pick-cat   { font-size: 11px; color: #9ca3af; margin-top: 1px; }
+.sp-pick-arrow { font-size: 16px; color: #9ca3af; flex-shrink: 0; }
