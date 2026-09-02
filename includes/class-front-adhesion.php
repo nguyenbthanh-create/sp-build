@@ -143,6 +143,9 @@ class SP_Front_Adhesion {
 		if ( $sexe      === '' ) $errors[] = 'Le sexe est requis.';
 		if ( ! is_email( $email ) ) $errors[] = 'Un email valide est requis.';
 		if ( $telephone === '' ) $errors[] = 'Le téléphone est requis.';
+		if ( $lieu_naissance === '' ) $errors[] = 'Le lieu de naissance est requis.';
+		if ( $nationalite    === '' ) $errors[] = 'La nationalité est requise.';
+		if ( $adresse        === '' ) $errors[] = 'L\'adresse est requise.';
 		if ( ! in_array( $discipline, self::DISCIPLINES, true ) ) $errors[] = 'Discipline invalide.';
 		if ( $categorie === '' ) $errors[] = 'La catégorie n\'a pas pu être calculée. Vérifiez la date de naissance et la discipline.';
 
@@ -461,18 +464,18 @@ class SP_Front_Adhesion {
 					</div>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col">
-							<label for="sp_lieu_naissance">Lieu de naissance</label>
-							<input type="text" id="sp_lieu_naissance" name="lieu_naissance" value="<?= $v('lieu_naissance') ?>">
+							<label for="sp_lieu_naissance">Lieu de naissance <span class="sp-req">*</span></label>
+							<input type="text" id="sp_lieu_naissance" name="lieu_naissance" value="<?= $v('lieu_naissance') ?>" required>
 						</div>
 						<div class="sp-adh-col">
-							<label for="sp_nationalite">Nationalité</label>
-							<input type="text" id="sp_nationalite" name="nationalite" value="<?= $v('nationalite') ?>">
+							<label for="sp_nationalite">Nationalité <span class="sp-req">*</span></label>
+							<input type="text" id="sp_nationalite" name="nationalite" value="<?= $v('nationalite') ?>" required>
 						</div>
 					</div>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col sp-adh-col-full">
-							<label for="sp_adresse">Adresse</label>
-							<input type="text" id="sp_adresse" name="adresse" value="<?= $v('adresse') ?>" autocomplete="street-address">
+							<label for="sp_adresse">Adresse <span class="sp-req">*</span></label>
+							<input type="text" id="sp_adresse" name="adresse" value="<?= $v('adresse') ?>" autocomplete="street-address" required>
 						</div>
 					</div>
 				</div>
