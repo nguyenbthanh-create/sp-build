@@ -6,6 +6,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-admin-members.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-jury.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-front-adhesion.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-adhesions.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -71,6 +72,7 @@ class SpCalPro_Admin {
 $this->jury = new SP_Cal_Jury( $this->db );
 		SP_Front_Adhesion::get_instance();
         SP_Admin_Adhesions::get_instance();
+        SP_Cal_Renouvellement::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════

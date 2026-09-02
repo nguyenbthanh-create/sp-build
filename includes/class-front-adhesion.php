@@ -27,7 +27,7 @@ class SP_Front_Adhesion {
 
 	// Incrémenter à chaque changement de create_table() pour que dbDelta() soit
 	// rejoué automatiquement (front ET admin) sans dépendre d'une visite wp-admin.
-	private const SCHEMA_VERSION = 2;
+	private const SCHEMA_VERSION = 3;
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -54,22 +54,103 @@ class SP_Front_Adhesion {
 	public function render_shortcode( array $atts = [] ): string {
 		wp_enqueue_style( 'sp-adhesion-front', SP_CAL_PRO_URL . 'assets/css/adhesion-front.css', [], SP_CAL_PRO_VERSION );
 
+		// Renouvellement (cf. md/06-renouvellement-saison.md) : ?renouv=TOKEN identifie
+		// une fiche élève existante à pré-remplir. Le token est le même que celui de
+		// l'espace membre (SP_Token) — jamais une simple ID, toujours résolu par ce secret.
+		$renouv_token = sanitize_text_field( $_POST['renouv_token'] ?? $_GET['renouv'] ?? '' );
+		$renouv_eleve = $renouv_token !== '' ? $this->lookup_eleve_by_token( $renouv_token ) : null;
+
 		$result = null;
 		if ( isset( $_POST['sp_adhesion_submit'] ) && check_admin_referer( 'sp_adhesion_form', 'sp_adhesion_nonce' ) ) {
-			$result = $this->handle_submission();
+			$result = $this->handle_submission( $renouv_eleve );
 		}
 
 		ob_start();
 		if ( $result && $result['success'] ) {
 			$this->render_success( $result );
 		} else {
-			$this->render_form( $result );
+			$this->render_form( $result, $renouv_eleve );
 		}
 		return ob_get_clean();
 	}
 
+	// ─── Renouvellement : lookup + pré-remplissage ────────────────────────────
+	private function lookup_eleve_by_token( string $token ): ?object {
+		global $wpdb;
+		if ( $token === '' ) return null;
+		$tel = $wpdb->prefix . 'sp_cal_eleves';
+		$el  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tel} WHERE token = %s LIMIT 1", $token ) );
+		return $el ?: null;
+	}
+
+	private function to_iso_date( ?string $d ): string {
+		$d = trim( (string) $d );
+		if ( $d === '' ) return '';
+		foreach ( [ 'Y-m-d', 'd/m/Y', 'd-m-Y' ] as $fmt ) {
+			$dt = \DateTime::createFromFormat( $fmt, $d );
+			if ( $dt instanceof \DateTime && $dt->format( $fmt ) === $d ) return $dt->format( 'Y-m-d' );
+		}
+		return '';
+	}
+
+	/** Reconstruit un tableau "façon $_POST" depuis une fiche sp_cal_eleves, pour pré-remplir le formulaire. */
+	private function build_prefill_from_eleve( object $el ): array {
+		$extra = json_decode( $el->extra_data ?? '', true );
+		$extra = is_array( $extra ) ? $extra : [];
+
+		$representants = $extra['representants_legaux'] ?? [];
+		if ( empty( $representants ) && ( ! empty( $el->representant_nom ) || ! empty( $el->representant_telephone ) ) ) {
+			$representants = [ [
+				'statut'    => '',
+				'nom'       => $el->representant_nom       ?? '',
+				'prenom'    => $el->representant_prenom    ?? '',
+				'telephone' => $el->representant_telephone ?? '',
+				'email'     => $el->email_parent           ?? '',
+			] ];
+		}
+
+		$urgence = $extra['contact_urgence'] ?? [];
+		if ( empty( $urgence ) && ! empty( $el->urgence_nom ) ) {
+			$urgence = [
+				'statut'    => '',
+				'nom'       => $el->urgence_nom       ?? '',
+				'prenom'    => $el->urgence_prenom    ?? '',
+				'telephone' => $el->urgence_telephone ?? '',
+				'email'     => $el->urgence_email     ?? '',
+			];
+		}
+
+		$discipline = in_array( $el->categorie_saisie ?? '', self::DISCIPLINES, true ) ? $el->categorie_saisie : '';
+
+		return [
+			'nom'                => $el->nom                ?? '',
+			'prenom'             => $el->prenom              ?? '',
+			'date_naissance'     => $this->to_iso_date( $el->date_naissance ?? '' ),
+			'sexe'               => $extra['sexe']           ?? '',
+			'email'              => $el->email               ?? '',
+			'telephone'          => $el->telephone           ?? '',
+			'lieu_naissance'     => $el->lieu_naissance      ?? '',
+			'nationalite'        => $el->nationalite         ?? '',
+			'adresse'            => $el->adresse             ?? '',
+			'discipline'         => $discipline,
+			'repres'             => $representants,
+			'urgence'            => $urgence,
+			'ancien_licence'     => $el->licence             ?? '',
+			'ancien_passeport'   => $el->num_passeport       ?? '',
+			'ancien_grade'       => $el->grade               ?? '',
+			'taille_cm'          => $el->taille_cm           ?? '',
+			'poids_kg'           => $el->poids_kg            ?? '',
+			'pointure'           => $el->pointure            ?? '',
+			'taille_tshirt'      => $el->taille_tshirt       ?? '',
+			'taille_pantalon'    => $el->taille_pantalon     ?? '',
+			'autorisation_photo' => ! empty( $extra['autorisation_photo'] ) ? 1 : 0,
+			'droit_image'        => (int) ( $el->droit_image ?? 0 ),
+			'autorisation_seul'  => (int) ( $el->autorisation_seul ?? 0 ),
+		];
+	}
+
 	// ─── Traitement soumission ────────────────────────────────────────────────
-	private function handle_submission(): array {
+	private function handle_submission( ?object $renouv_eleve = null ): array {
 		global $wpdb;
 
 		// ── Sanitisation ──
@@ -244,6 +325,7 @@ class SP_Front_Adhesion {
 			'message'                => $message,
 			'representants_legaux'   => wp_json_encode( $representants ),
 			'contact_urgence'        => wp_json_encode( $urgence ),
+			'renouvellement_eleve_id'=> $renouv_eleve ? $renouv_eleve->id : null,
 			'pratique_anterieure'    => $pratique_anterieure,
 			'ancien_licence'         => $ancien_licence,
 			'ancien_passeport'       => $ancien_passeport,
@@ -266,7 +348,7 @@ class SP_Front_Adhesion {
 		], [
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%s','%s','%s','%s','%s',
-			'%s','%s',
+			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
 			'%s','%s','%s',
@@ -396,9 +478,9 @@ class SP_Front_Adhesion {
 	<?php }
 
 	// ─── Formulaire ───────────────────────────────────────────────────────────
-	private function render_form( ?array $result ): void {
+	private function render_form( ?array $result, ?object $renouv_eleve = null ): void {
 		$errors = $result['errors'] ?? [];
-		$data   = $result['data']   ?? [];
+		$data   = $result['data']   ?? ( $renouv_eleve ? $this->build_prefill_from_eleve( $renouv_eleve ) : [] );
 		$v = static fn( string $k ): string => esc_attr( $data[ $k ] ?? '' );
 
 		// Ré-affichage après erreur : au moins 1 bloc représentant, jusqu'à MAX_REPRESENTANTS
@@ -408,10 +490,25 @@ class SP_Front_Adhesion {
 		$urgence_posted = is_array( $data['urgence'] ?? null ) ? $data['urgence'] : [];
 
 		$reglement_html = (string) get_option( 'sp_cal_reglement_interieur', '' );
+
+		// Bandeau bien visible côté adhérent quand il s'agit d'un renouvellement (cf. doléance renouvellement,
+		// point laissé à mon appréciation) : titre, bandeau et libellé du bouton changent — jamais juste
+		// une mention discrète, pour éviter toute confusion avec une nouvelle inscription.
+		$titre = $renouv_eleve
+			? '🔄 Renouvellement d\'adhésion — ' . esc_html( $renouv_eleve->prenom . ' ' . $renouv_eleve->nom )
+			: 'Demande d\'adhésion';
+		$intro = $renouv_eleve
+			? 'Vos informations sont pré-remplies ci-dessous à partir de votre fiche existante : vérifiez-les, complétez ce qui manque, puis envoyez pour renouveler votre adhésion.'
+			: 'Remplissez ce formulaire pour rejoindre notre club. Notre équipe vous contactera pour finaliser votre inscription et le règlement de la cotisation.';
+		$btn_label = $renouv_eleve ? 'Confirmer mon renouvellement →' : 'Envoyer ma demande d\'adhésion →';
 		?>
 		<div class="sp-adh-wrapper">
-			<h2 class="sp-adh-title">Demande d'adhésion</h2>
-			<p class="sp-adh-intro">Remplissez ce formulaire pour rejoindre notre club. Notre équipe vous contactera pour finaliser votre inscription et le règlement de la cotisation.</p>
+			<h2 class="sp-adh-title"><?= $titre ?></h2>
+			<?php if ( $renouv_eleve ) : ?>
+				<div class="sp-adh-renouv-banner">🔄 <?= esc_html( $intro ) ?></div>
+			<?php else : ?>
+				<p class="sp-adh-intro"><?= esc_html( $intro ) ?></p>
+			<?php endif; ?>
 
 			<?php if ( ! empty( $errors ) ) : ?>
 				<div class="sp-adh-errors" role="alert">
@@ -423,6 +520,9 @@ class SP_Front_Adhesion {
 			<form method="post" class="sp-adh-form" novalidate lang="fr" enctype="multipart/form-data">
 				<?php wp_nonce_field( 'sp_adhesion_form', 'sp_adhesion_nonce' ); ?>
 				<input type="hidden" name="categorie" id="sp_categorie_hidden" value="<?= $v('categorie') ?>">
+				<?php if ( $renouv_eleve ) : ?>
+					<input type="hidden" name="renouv_token" value="<?= esc_attr( $renouv_eleve->token ) ?>">
+				<?php endif; ?>
 
 				<!-- ══ IDENTITÉ ══════════════════════════════════════════════ -->
 				<div class="sp-adh-group">
@@ -670,7 +770,7 @@ class SP_Front_Adhesion {
 				<div class="sp-adh-footer">
 					<p class="sp-adh-required-note"><span class="sp-req">*</span> Champs obligatoires</p>
 					<button type="submit" name="sp_adhesion_submit" class="sp-adh-btn-submit">
-						Envoyer ma demande d'adhésion →
+						<?= $btn_label ?>
 					</button>
 				</div>
 			</form>
@@ -970,6 +1070,7 @@ class SP_Front_Adhesion {
 			message                 TEXT,
 			representants_legaux    LONGTEXT,
 			contact_urgence         LONGTEXT,
+			renouvellement_eleve_id INT UNSIGNED  DEFAULT NULL,
 			pratique_anterieure     TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			ancien_licence          VARCHAR(50)   NOT NULL DEFAULT '',
 			ancien_passeport        VARCHAR(50)   NOT NULL DEFAULT '',
@@ -993,7 +1094,8 @@ class SP_Front_Adhesion {
 			updated_at              DATETIME      DEFAULT NULL,
 			PRIMARY KEY             (id),
 			KEY idx_statut          (statut),
-			KEY idx_email           (email(50))
+			KEY idx_email           (email(50)),
+			KEY idx_renouv          (renouvellement_eleve_id)
 		) {$charset};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';

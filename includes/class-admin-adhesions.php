@@ -158,7 +158,7 @@ class SP_Admin_Adhesions {
 			: '';
 
 		$rows = $wpdb->get_results(
-			"SELECT id, nom, prenom, email, categorie, discipline, statut, created_at
+			"SELECT id, nom, prenom, email, categorie, discipline, statut, created_at, renouvellement_eleve_id
 			 FROM {$this->table} {$where}
 			 ORDER BY created_at DESC"
 		);
@@ -187,10 +187,16 @@ class SP_Admin_Adhesions {
 					'action' => 'view',
 					'id'     => $row->id,
 				], admin_url( 'admin.php' ) ) );
+				$est_renouv = ! empty( $row->renouvellement_eleve_id );
 			?>
-				<tr>
+				<tr<?= $est_renouv ? ' style="background:#eef4fb;"' : '' ?>>
 					<td><?= esc_html( date( 'd/m/Y H:i', strtotime( $row->created_at ) ) ) ?></td>
-					<td><strong><?= esc_html( "{$row->prenom} {$row->nom}" ) ?></strong></td>
+					<td>
+						<strong><?= esc_html( "{$row->prenom} {$row->nom}" ) ?></strong>
+						<?php if ( $est_renouv ) : ?>
+							<br><span style="background:#2271b1;color:#fff;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;">🔄 Renouvellement</span>
+						<?php endif; ?>
+					</td>
 					<td><?= esc_html( $row->email ) ?></td>
 					<td><?= esc_html( $row->categorie ) ?></td>
 					<td><?= esc_html( $row->discipline ) ?></td>
@@ -223,6 +229,20 @@ class SP_Admin_Adhesions {
 		echo "<p style='margin-top:1rem;'><a href='{$back}' class='button'>← Retour à la liste</a></p>";
 
 		echo '<div class="sp-adh-fiche">';
+
+		// Bandeau très visible côté admin quand c'est un renouvellement (cf. doléance renouvellement) :
+		// évite qu'un gestionnaire valide "Créer le compte" par réflexe sur une fiche qui existe déjà.
+		if ( ! empty( $row->renouvellement_eleve_id ) ) {
+			$fiche_url = admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . intval( $row->renouvellement_eleve_id ) );
+			printf(
+				'<div class="notice notice-info" style="border-left-color:#2271b1;padding:12px 16px;margin:1rem 0;">
+					<p style="margin:0;font-size:14px;"><strong>🔄 Ceci est un RENOUVELLEMENT</strong> — cette demande met à jour une fiche existante, elle n\'en crée pas une nouvelle.
+					<a href="%s" target="_blank" style="margin-left:8px;">Voir la fiche actuelle de l\'adhérent →</a></p>
+				</div>',
+				esc_url( $fiche_url )
+			);
+		}
+
 		printf(
 			'<h2>Demande #%d — %s %s</h2>',
 			$row->id,
@@ -373,22 +393,30 @@ class SP_Admin_Adhesions {
 			),
 			"sp_valider_{$row->id}"
 		);
+		$est_renouv = ! empty( $row->renouvellement_eleve_id );
 		?>
 		<div class="sp-adh-actions">
 			<h3>⚡ Actions</h3>
 
 			<!-- Valider -->
 			<div class="sp-adh-action-block sp-adh-action-valider">
-				<h4>✅ Valider la demande</h4>
+				<h4>✅ <?= $est_renouv ? 'Valider le renouvellement' : 'Valider la demande' ?></h4>
 				<p>
-					Un profil élève sera créé dans la base de données et un token d'accès
-					sera envoyé par email à <strong><?= esc_html( $row->email ) ?></strong>.
-					Le paiement reste à gérer manuellement.
+					<?php if ( $est_renouv ) : ?>
+						La fiche élève existante sera mise à jour (informations, saison) et réactivée.
+						Le paiement reste à gérer manuellement.
+					<?php else : ?>
+						Un profil élève sera créé dans la base de données et un token d'accès
+						sera envoyé par email à <strong><?= esc_html( $row->email ) ?></strong>.
+						Le paiement reste à gérer manuellement.
+					<?php endif; ?>
 				</p>
 				<a href="<?= esc_url( $valider_url ) ?>"
 				   class="button button-primary"
-				   onclick="return confirm('Valider la demande de <?= esc_js( "{$row->prenom} {$row->nom}" ) ?> et créer son compte élève ?')">
-					✅ Valider &amp; créer le compte
+				   onclick="return confirm('<?= $est_renouv
+				       ? esc_js( "Valider le renouvellement de {$row->prenom} {$row->nom} et mettre à jour sa fiche ?" )
+				       : esc_js( "Valider la demande de {$row->prenom} {$row->nom} et créer son compte élève ?" ) ?>')">
+					<?= $est_renouv ? '✅ Valider le renouvellement & mettre à jour la fiche' : '✅ Valider & créer le compte' ?>
 				</a>
 			</div>
 
@@ -448,8 +476,12 @@ class SP_Admin_Adhesions {
 			exit;
 		}
 
-		// Créer le membre
-		$member_id = $this->create_member( $row );
+		// Créer le membre, ou mettre à jour la fiche existante s'il s'agit d'un renouvellement
+		// (cf. md/06-renouvellement-saison.md — ne jamais dupliquer la fiche d'un adhérent existant)
+		$est_renouv = ! empty( $row->renouvellement_eleve_id );
+		$member_id  = $est_renouv
+			? $this->update_member_renouvellement( $row )
+			: $this->create_member( $row );
 
 		if ( ! $member_id ) {
 			// Stocker l'erreur DB pour l'afficher sur la fiche
@@ -466,8 +498,12 @@ class SP_Admin_Adhesions {
 			[ '%s', '%s' ], [ '%d' ]
 		);
 
-		// Envoyer token / email de bienvenue
-		$this->send_token_or_welcome( $row, $member_id );
+		// Email de confirmation : contenu différent pour un renouvellement (le compte existe déjà)
+		if ( $est_renouv ) {
+			$this->email_renouvellement_confirme( $row );
+		} else {
+			$this->send_token_or_welcome( $row, $member_id );
+		}
 
 		// Rediriger vers l'onglet "Validées" pour voir la demande traitée
 		wp_redirect( $this->list_url( 'valide', 'valide' ) );
@@ -650,8 +686,135 @@ class SP_Admin_Adhesions {
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
+	// MISE À JOUR MEMBRE — renouvellement (ne crée jamais de doublon)
+	// ══════════════════════════════════════════════════════════════════════════
+	private function update_member_renouvellement( object $row ): int|false {
+		global $wpdb;
+
+		$eleve_id = (int) $row->renouvellement_eleve_id;
+		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->eleves_table} WHERE id = %d", $eleve_id ) );
+		if ( ! $existing ) {
+			error_log( '[SP_Build] update_member_renouvellement() : fiche élève #' . $eleve_id . ' introuvable.' );
+			return false;
+		}
+
+		$saison_cible = get_option( 'sp_cal_renouv_saison_cible', '' );
+		if ( $saison_cible === '' ) {
+			// Renouvellement hors campagne formelle (ex: adhérent revenu spontanément) : même
+			// calcul de secours que pour une nouvelle inscription.
+			$y = (int) date( 'Y' ); $m = (int) date( 'm' );
+			$saison_cible = $m >= 9 ? "{$y}/" . ( $y + 1 ) : ( $y - 1 ) . "/{$y}";
+		}
+
+		$representants = $this->decode_personnes( $row->representants_legaux ?? '' );
+		$urgence       = $this->decode_personnes( $row->contact_urgence      ?? '', true );
+		$repres1       = $representants[0] ?? [];
+
+		$docs = [
+			'certificat_medical' => $row->doc_certificat_medical ?? '',
+			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
+			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
+		];
+
+		// On fusionne avec l'extra_data existant pour ne jamais écraser un historique sans rapport
+		// avec l'adhésion (ex: grades importés en CSV, cf. class-admin-members.php:2761).
+		$extra_existant = json_decode( $existing->extra_data ?? '', true );
+		$extra_existant = is_array( $extra_existant ) ? $extra_existant : [];
+
+		$extra = array_merge( $extra_existant, [
+			'sexe'                       => $row->sexe,
+			'autorisation_photo'         => (bool) ( $row->autorisation_photo ?? 0 ),
+			'autorisation_seul'          => (bool) ( $row->autorisation_seul  ?? 0 ),
+			'reglement_accepte'          => (bool) ( $row->reglement_accepte  ?? 0 ),
+			'pratique_anterieure'        => (bool) ( $row->pratique_anterieure ?? 0 ),
+			'ancien_licence'             => $row->ancien_licence   ?? '',
+			'ancien_passeport'           => $row->ancien_passeport ?? '',
+			'message_adhesion'           => $row->message          ?? '',
+			'representants_legaux'       => $representants,
+			'contact_urgence'            => $urgence,
+			'documents'                  => $docs,
+			'source'                     => 'adhesion_form_renouvellement',
+			'adhesion_id'                => $row->id,
+			'derniere_saison_renouvelee' => $saison_cible,
+		] );
+
+		$data = [
+			'nom'                    => $row->nom,
+			'prenom'                 => $row->prenom,
+			'date_naissance'         => $row->date_naissance,
+			'annee_naissance'        => substr( $row->date_naissance, 0, 4 ),
+			'lieu_naissance'         => $row->lieu_naissance    ?? '',
+			'nationalite'            => $row->nationalite       ?? '',
+			'adresse'                => $row->adresse           ?? '',
+			'categorie_age'          => $row->categorie,
+			'categorie_saisie'       => $row->discipline,
+			'saison'                 => $saison_cible,
+			'email'                  => $row->email,
+			'email_parent'           => $repres1['email']       ?? '',
+			'telephone'              => $row->telephone,
+			'urgence_nom'            => trim( ( $urgence['nom'] ?? '' ) . ' ' . ( $urgence['prenom'] ?? '' ) ),
+			'urgence_telephone'      => $urgence['telephone']   ?? '',
+			'urgence_email'          => $urgence['email']       ?? '',
+			'num_passeport'          => $row->ancien_passeport  ?? '',
+			'licence'                => $row->ancien_licence    ?? '',
+			'droit_image'            => (int) ( $row->droit_image ?? 0 ),
+			'autorisation_seul'      => (int) ( $row->autorisation_seul ?? 0 ),
+			'representant_nom'       => $repres1['nom']         ?? '',
+			'representant_prenom'    => $repres1['prenom']      ?? '',
+			'representant_telephone' => $repres1['telephone']   ?? '',
+			'taille_cm'              => $row->taille_cm         ?? '',
+			'poids_kg'               => $row->poids_kg          ?? '',
+			'pointure'               => $row->pointure          ?? '',
+			'taille_tshirt'          => $row->taille_tshirt     ?? '',
+			'taille_pantalon'        => $row->taille_pantalon   ?? '',
+			'motif_inactif'          => '',
+			'actif'                  => 1,
+			'extra_data'             => wp_json_encode( $extra ),
+		];
+
+		$format = [
+			'%s','%s','%s','%s',
+			'%s','%s','%s',
+			'%s','%s','%s',
+			'%s','%s','%s',
+			'%s','%s','%s',
+			'%s','%s',
+			'%d','%d',
+			'%s','%s','%s',
+			'%s','%s','%s','%s','%s',
+			'%s',
+			'%d',
+			'%s',
+		];
+
+		$ok = $wpdb->update( $this->eleves_table, $data, [ 'id' => $eleve_id ], $format, [ '%d' ] );
+
+		if ( $ok === false ) {
+			error_log( '[SP_Build] update_member_renouvellement() DB error: ' . $wpdb->last_error );
+			return false;
+		}
+
+		return $eleve_id;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
 	// EMAILS
 	// ══════════════════════════════════════════════════════════════════════════
+	private function email_renouvellement_confirme( object $row ): void {
+		$club    = get_bloginfo( 'name' );
+		$saison  = get_option( 'sp_cal_renouv_saison_cible', '' );
+		$subject = "[{$club}] Votre renouvellement est confirmé !";
+		$body    = "Bonjour {$row->prenom},\n\n"
+		         . "Votre renouvellement d'adhésion au club {$club}" . ( $saison ? " pour la saison {$saison}" : '' ) . " a bien été validé.\n\n"
+		         . "Votre accès à l'espace personnel est de nouveau actif.\n\n"
+		         . "Pensez à régler votre cotisation lors de votre prochaine venue si ce n'est pas déjà fait.\n\n"
+		         . "À bientôt sur les tatamis !\n"
+		         . "— L'équipe {$club}";
+
+		wp_mail( $row->email, $subject, $body );
+	}
+
+
 	private function send_token_or_welcome( object $row, int $member_id ): void {
 		// Intégration SP_Token si disponible
 		if ( class_exists( 'SP_Token' ) && method_exists( 'SP_Token', 'generate_and_send' ) ) {

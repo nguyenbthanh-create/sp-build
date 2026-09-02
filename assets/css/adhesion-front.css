@@ -23,6 +23,18 @@
 	line-height: 1.6;
 }
 
+/* ── Bandeau renouvellement (distinct des erreurs/succès) ──── */
+.sp-adh-renouv-banner {
+	background: #eef4fb;
+	border-left: 4px solid #2271b1;
+	color: #1a3a5c;
+	padding: 1rem 1.2rem;
+	margin-bottom: 1.8rem;
+	border-radius: 0 4px 4px 0;
+	line-height: 1.6;
+	font-weight: 500;
+}
+
 /* ── Erreurs ───────────────────────────────────────────────── */
 .sp-adh-errors {
 	background: #fff0f0;

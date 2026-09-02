@@ -3461,6 +3461,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <?php endif; ?>
         </div>
 
+        <?php SP_Cal_Renouvellement::get_instance( $this->db )->render_box(); ?>
+
         <!-- KPIs -->
         <div class="sp-stats-kpi-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
             <?php
