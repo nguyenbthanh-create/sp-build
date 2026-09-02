@@ -157,9 +157,12 @@ class SP_Admin_Adhesions {
 			? $wpdb->prepare( 'WHERE statut = %s', $sf )
 			: '';
 
+		// SELECT * plutôt qu'une liste de colonnes explicite : si une colonne récente
+		// (ex: renouvellement_eleve_id) n'a pas encore été migrée par dbDelta() sur cet
+		// environnement, une liste nommée ferait échouer TOUTE la requête (donc la liste
+		// entière disparaît) au lieu de simplement ignorer la colonne manquante.
 		$rows = $wpdb->get_results(
-			"SELECT id, nom, prenom, email, categorie, discipline, statut, created_at, renouvellement_eleve_id
-			 FROM {$this->table} {$where}
+			"SELECT * FROM {$this->table} {$where}
 			 ORDER BY created_at DESC"
 		);
 
