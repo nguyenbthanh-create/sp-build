@@ -318,6 +318,9 @@ class SP_Admin_Adhesions {
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
 			],
+			'💳 Pass\'Sport' => [
+				'Code déclaré' => $row->pass_sport_code ?: '—',
+			],
 			'🏅 Pratique antérieure' => [
 				'Déjà pratiqué'      => ($row->pratique_anterieure ?? 0) ? '✅ Oui' : 'Non',
 				'N° licence'         => $row->ancien_licence   ?: '—',
@@ -615,6 +618,7 @@ class SP_Admin_Adhesions {
 			'ancien_licence'       => $row->ancien_licence       ?? '',
 			'ancien_passeport'     => $row->ancien_passeport     ?? '',
 			'message_adhesion'     => $row->message              ?? '',
+			'pass_sport_code'      => $row->pass_sport_code      ?? '',
 			'representants_legaux' => $representants,
 			'contact_urgence'      => $urgence,
 			'documents'            => $docs,
@@ -733,6 +737,7 @@ class SP_Admin_Adhesions {
 			'ancien_licence'             => $row->ancien_licence   ?? '',
 			'ancien_passeport'           => $row->ancien_passeport ?? '',
 			'message_adhesion'           => $row->message          ?? '',
+			'pass_sport_code'            => $row->pass_sport_code  ?? '',
 			'representants_legaux'       => $representants,
 			'contact_urgence'            => $urgence,
 			'documents'                  => $docs,

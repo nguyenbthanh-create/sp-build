@@ -27,7 +27,7 @@ class SP_Front_Adhesion {
 
 	// Incrémenter à chaque changement de create_table() pour que dbDelta() soit
 	// rejoué automatiquement (front ET admin) sans dépendre d'une visite wp-admin.
-	private const SCHEMA_VERSION = 3;
+	private const SCHEMA_VERSION = 4;
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -168,6 +168,10 @@ class SP_Front_Adhesion {
 		$discipline = sanitize_text_field( $_POST['discipline'] ?? '' );
 		$categorie  = sanitize_text_field( $_POST['categorie']  ?? '' );
 		$message    = sanitize_textarea_field( $_POST['message'] ?? '' );
+
+		// Pass'Sport : simple champ déclaratif, aucune vérification/calcul (cf. md/08-passsport-etat-des-lieux.md
+		// — pas d'API de vérification accessible à un tiers, le club continue de traiter ça manuellement).
+		$pass_sport_code = strtoupper( trim( sanitize_text_field( $_POST['pass_sport_code'] ?? '' ) ) );
 
 		// Représentants légaux : 1 à 2 blocs, une personne par bloc (cf. doléance #1)
 		$representants = $this->parse_personnes( is_array( $_POST['repres'] ?? null ) ? $_POST['repres'] : [], self::MAX_REPRESENTANTS );
@@ -323,6 +327,7 @@ class SP_Front_Adhesion {
 			'discipline'             => $discipline,
 			'categorie'              => $categorie,
 			'message'                => $message,
+			'pass_sport_code'        => $pass_sport_code,
 			'representants_legaux'   => wp_json_encode( $representants ),
 			'contact_urgence'        => wp_json_encode( $urgence ),
 			'renouvellement_eleve_id'=> $renouv_eleve ? $renouv_eleve->id : null,
@@ -348,6 +353,7 @@ class SP_Front_Adhesion {
 		], [
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%s','%s','%s','%s','%s',
+			'%s',
 			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
@@ -641,6 +647,14 @@ class SP_Front_Adhesion {
 							<div class="sp-adh-categorie-display" id="sp_categorie_display">
 								<span class="sp-adh-categorie-placeholder">Calculée selon la date de naissance et la discipline</span>
 							</div>
+						</div>
+					</div>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col">
+							<label for="sp_pass_sport">Code Pass'Sport <span class="sp-optional">(si vous en avez un)</span></label>
+							<input type="text" id="sp_pass_sport" name="pass_sport_code" value="<?= $v('pass_sport_code') ?>"
+							       placeholder="Ex : 26-XXXX-XXXX" maxlength="20" style="text-transform:uppercase;">
+							<p class="sp-optional">Le club se charge de la déclarer et d'appliquer la réduction — aucune vérification automatique.</p>
 						</div>
 					</div>
 					<div class="sp-adh-row">
@@ -1068,6 +1082,7 @@ class SP_Front_Adhesion {
 			discipline              VARCHAR(50)   NOT NULL DEFAULT '',
 			categorie               VARCHAR(50)   NOT NULL DEFAULT '',
 			message                 TEXT,
+			pass_sport_code         VARCHAR(20)   NOT NULL DEFAULT '',
 			representants_legaux    LONGTEXT,
 			contact_urgence         LONGTEXT,
 			renouvellement_eleve_id INT UNSIGNED  DEFAULT NULL,
