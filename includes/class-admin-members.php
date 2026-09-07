@@ -955,9 +955,9 @@ class SP_Cal_Members {
                     <option value="">— Catégorie saisie —</option>
                     <?php foreach ( $cats_saisie as $c ) echo '<option value="' . esc_attr($c) . '">' . esc_html($c) . '</option>'; ?>
                 </select>
-                <?php if ( count($saisons) > 1 ) : ?>
+                <?php if ( ! empty( $saisons ) ) : ?>
                 <select id="sp-flt-saison">
-                    <option value="">— Saison —</option>
+                    <option value="">— Toutes les saisons —</option>
                     <?php foreach ( $saisons as $s ) echo '<option value="' . esc_attr($s) . '">' . esc_html($s) . '</option>'; ?>
                 </select>
                 <?php endif; ?>

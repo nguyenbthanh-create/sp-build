@@ -40,6 +40,7 @@ class SP_Front_Adhesion {
 		$this->table = $wpdb->prefix . 'sp_adhesions_pending';
 		add_shortcode( 'sp_inscription_adhesion', [ $this, 'render_shortcode' ] );
 		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
+		add_action( 'init', [ $this, 'maybe_print_attestation' ] );
 	}
 
 	// La création de table n'était jamais déclenchée nulle part avant le 2026-09-01
@@ -94,6 +95,79 @@ class SP_Front_Adhesion {
 			$this->render_form( $result, $renouv_eleve );
 		}
 		return ob_get_clean();
+	}
+
+	// Modèle imprimable de l'attestation sur l'honneur (Renforcement musculaire, cf. doléances.md).
+	// Public (pas de current_user_can) : accessible depuis le formulaire d'adhésion avant même
+	// que le visiteur soit identifié. Nom/prénom pré-remplis si déjà saisis dans le formulaire,
+	// sinon ligne vierge à compléter à la main — pas de dépendance à une lib PDF (aucune dispo
+	// sur cet hébergement), impression navigateur comme pour les autres documents du plugin
+	// (cf. includes/class-pdf.php).
+	public function maybe_print_attestation(): void {
+		if ( ( $_GET['sp_adh_print'] ?? '' ) !== 'attestation_renfo' ) return;
+
+		$nom    = sanitize_text_field( wp_unslash( $_GET['nom']    ?? '' ) );
+		$prenom = sanitize_text_field( wp_unslash( $_GET['prenom'] ?? '' ) );
+		$nom_complet = trim( $prenom . ' ' . $nom );
+		$club = get_option( 'blogname', 'Club' );
+
+		while ( ob_get_level() ) ob_end_clean();
+		header( 'Content-Type: text/html; charset=UTF-8' );
+		?><!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Attestation sur l'honneur — <?= esc_html( $club ) ?></title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 12pt; color: #111; background: #fff; padding: 20mm; max-width: 210mm; margin: 0 auto; }
+h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; text-transform: uppercase; }
+.attestation-corps { line-height: 1.9; text-align: justify; }
+.attestation-blanc { display: inline-block; min-width: 220px; border-bottom: 1px solid #111; }
+.attestation-signature { margin-top: 60px; display: flex; justify-content: space-between; }
+.attestation-signature div { width: 45%; }
+.attestation-signature .ligne { margin-top: 40px; border-top: 1px solid #999; padding-top: 4px; font-size: 9pt; color: #666; }
+.no-print { margin-bottom: 24px; }
+.btn-print { background: #1e3a5f; color: #fff; border: none; padding: 8px 18px; border-radius: 4px; cursor: pointer; font-size: 11pt; margin-right: 8px; }
+.btn-close { background: #eee; color: #333; border: 1px solid #ccc; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 11pt; }
+@media print { .no-print { display: none !important; } body { padding: 10mm; } }
+</style>
+</head>
+<body>
+<div class="no-print">
+	<button class="btn-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+	<button class="btn-close" onclick="window.close()">✕ Fermer</button>
+</div>
+
+<h1>Attestation sur l'honneur</h1>
+
+<div class="attestation-corps">
+	<p>
+		Je soussigné(e)
+		<?php if ( $nom_complet !== '' ) : ?>
+			<strong><?= esc_html( mb_strtoupper( $nom_complet ) ) ?></strong>
+		<?php else : ?>
+			<span class="attestation-blanc">&nbsp;</span>
+		<?php endif; ?>
+		atteste sur l'honneur être en bonne condition physique et être apte à pratiquer les activités
+		de renforcement musculaire et de self-défense proposées par le club <?= esc_html( $club ) ?>.
+	</p>
+	<p style="margin-top:16px;">
+		Je déclare ne présenter, à ma connaissance, aucune contre-indication médicale à la pratique
+		de ces activités et m'engage à informer le club de toute évolution de mon état de santé
+		pouvant avoir une incidence sur ma pratique.
+	</p>
+</div>
+
+<div class="attestation-signature">
+	<div><div class="ligne">Date</div></div>
+	<div><div class="ligne">Signature</div></div>
+</div>
+
+</body>
+</html>
+		<?php
+		exit;
 	}
 
 	// ─── Renouvellement : lookup + pré-remplissage ────────────────────────────
@@ -807,6 +881,7 @@ class SP_Front_Adhesion {
 					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_decharge_row" style="display:none;">
 						<div class="sp-adh-col sp-adh-col-full">
 							<label for="sp_doc_decharge">Décharge sur l'honneur <span class="sp-optional">(obligatoire pour le Renforcement musculaire)</span> <span class="sp-req">*</span></label>
+							<p class="sp-optional">Vous n'avez pas de modèle ? <button type="button" class="sp-adh-link-btn" id="sp_attestation_print">🖨️ Imprimer le modèle à signer</button>, puis déposez-le ci-dessous une fois signé.</p>
 							<input type="file" id="sp_doc_decharge" name="doc_decharge_honneur" accept=".pdf,.jpg,.jpeg,.png">
 							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
 						</div>
@@ -1202,6 +1277,19 @@ class SP_Front_Adhesion {
 			document.addEventListener('keydown', function(e) {
 				if (e.key === 'Escape') closeReglement();
 			});
+
+			// ── Impression du modèle d'attestation sur l'honneur (Renfo) ──────
+			const attestationBtn = document.getElementById('sp_attestation_print');
+			if (attestationBtn) {
+				attestationBtn.addEventListener('click', function() {
+					const nomEl    = document.getElementById('sp_nom');
+					const prenomEl = document.getElementById('sp_prenom');
+					const params   = new URLSearchParams({ sp_adh_print: 'attestation_renfo' });
+					if (nomEl    && nomEl.value)    params.set('nom', nomEl.value);
+					if (prenomEl && prenomEl.value) params.set('prenom', prenomEl.value);
+					window.open('<?= esc_url( home_url( '/' ) ) ?>?' + params.toString(), '_blank');
+				});
+			}
 		})();
 		</script>
 		<?php
