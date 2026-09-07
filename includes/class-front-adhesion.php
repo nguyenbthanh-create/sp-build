@@ -28,7 +28,7 @@ class SP_Front_Adhesion {
 
 	// Colonne la plus récemment ajoutée à la table — sert de "sentinelle" pour
 	// maybe_create_table() (voir plus bas). La mettre à jour à chaque nouvelle colonne.
-	private const SENTINEL_COLUMN = 'qs_sport_confirme';
+	private const SENTINEL_COLUMN = 'photo_url';
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -479,6 +479,15 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			}
 			$doc_bon_caf = $up['url'];
 		}
+		// Photo de l'adhérent : facultative, pas de blocage si absente — seule une erreur
+		// d'envoi réelle (format, taille) est remontée comme erreur de formulaire.
+		$photo_url = '';
+		$up = $this->handle_upload( 'photo_adherent', 'photos' );
+		if ( $up['ok'] ) {
+			$photo_url = $up['url'];
+		} elseif ( $up['error'] ) {
+			return [ 'success' => false, 'errors' => [ $up['error'] ], 'data' => $_POST ];
+		}
 
 		// ── Insertion ──
 		$ok = $wpdb->insert( $this->table, [
@@ -514,6 +523,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'qs_sport_confirme'      => $qs_sport_renfo,
 			'doc_attestation_rc'     => $doc_attestation_rc,
 			'doc_decharge_honneur'   => $doc_decharge_honneur,
+			'photo_url'              => $photo_url,
 			'autorisation_photo'     => $autorisation_photo,
 			'autorisation_seul'      => $autorisation_seul,
 			'droit_image'            => $droit_image,
@@ -528,7 +538,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
-			'%s','%s','%d','%s','%s',
+			'%s','%s','%d','%s','%s','%s',
 			'%d','%d','%d','%d',
 			'%s','%s','%s',
 		] );
@@ -753,6 +763,13 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 						<div class="sp-adh-col sp-adh-col-full">
 							<label for="sp_adresse">Adresse <span class="sp-req">*</span></label>
 							<input type="text" id="sp_adresse" name="adresse" value="<?= $v('adresse') ?>" autocomplete="street-address" required>
+						</div>
+					</div>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_photo">Photo de l'adhérent <span class="sp-optional">(facultatif — utilisée pour la carte de membre)</span></label>
+							<input type="file" id="sp_photo" name="photo_adherent" accept=".jpg,.jpeg,.png">
+							<p class="sp-optional">Formats acceptés : JPG, PNG — 5 Mo maximum.</p>
 						</div>
 					</div>
 				</div>
@@ -1402,6 +1419,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			qs_sport_confirme       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			doc_attestation_rc      VARCHAR(255)  NOT NULL DEFAULT '',
 			doc_decharge_honneur    VARCHAR(255)  NOT NULL DEFAULT '',
+			photo_url               VARCHAR(255)  NOT NULL DEFAULT '',
 			autorisation_photo      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			autorisation_seul       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			droit_image             TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,

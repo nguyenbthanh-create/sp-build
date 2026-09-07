@@ -370,6 +370,7 @@ class SP_Admin_Adhesions {
 
 		// Documents déposés
 		$docs = [
+			'Photo de l\'adhérent'                    => $row->photo_url             ?? '',
 			'Certificat médical'                     => $row->doc_certificat_medical ?? '',
 			'Attestation de responsabilité civile'    => $row->doc_attestation_rc     ?? '',
 			'Décharge sur l\'honneur'                 => $row->doc_decharge_honneur   ?? '',
@@ -377,7 +378,12 @@ class SP_Admin_Adhesions {
 		];
 		echo "<div class='sp-adh-section'><h3>📎 Documents</h3><table class='form-table'>";
 		foreach ( $docs as $label => $url ) {
-			$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
+			if ( $label === 'Photo de l\'adhérent' && $url ) {
+				$val = '<img src="' . esc_url( $url ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
+					. '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">Voir en grand</a>';
+			} else {
+				$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
+			}
 			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), $val );
 			if ( $label === 'Certificat médical' && ! empty( $row->date_certificat_medical ) && $row->date_certificat_medical !== '0000-00-00' ) {
 				$certif_perime = $this->certificat_medical_perime( $row->date_certificat_medical );
@@ -690,7 +696,7 @@ class SP_Admin_Adhesions {
 			'taille_pantalon'        => $row->taille_pantalon   ?? '',
 			'motif_inactif'          => '',
 			'palmares'               => '',
-			'photo_url'              => '',
+			'photo_url'              => $row->photo_url ?? '',
 			'actif'                  => 0,
 			'rang'                   => 0,
 			'nb_licences'            => 0,
@@ -810,6 +816,9 @@ class SP_Admin_Adhesions {
 			'taille_tshirt'          => $row->taille_tshirt     ?? '',
 			'taille_pantalon'        => $row->taille_pantalon   ?? '',
 			'motif_inactif'          => '',
+			// Ne remplace la photo existante que si l'adhérent en a re-déposé une (renouvellement =
+			// facultatif ici) — sinon on garde celle déjà présente sur la fiche.
+			'photo_url'              => ( $row->photo_url ?? '' ) !== '' ? $row->photo_url : ( $existing->photo_url ?? '' ),
 			'actif'                  => 1,
 			'extra_data'             => wp_json_encode( $extra ),
 		];
@@ -824,6 +833,7 @@ class SP_Admin_Adhesions {
 			'%d','%d',
 			'%s','%s','%s',
 			'%s','%s','%s','%s','%s',
+			'%s',
 			'%s',
 			'%d',
 			'%s',
