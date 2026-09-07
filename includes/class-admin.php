@@ -2110,6 +2110,12 @@ function spCalBufToB64u(buf) {
             wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&reglement_saved=1' ) ); exit;
         }
 
+        /* ── Veille réglementaire : pense-bête, pas d'appel automatique (cf. doleances.md) ── */
+        if ( isset( $_POST['sp_veille_reglementaire_demandee'] ) && check_admin_referer( 'sp_cal_veille_reglementaire' ) ) {
+            update_option( 'sp_cal_veille_reglementaire_demandee_le', current_time( 'Y-m-d' ) );
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&veille_demandee=1' ) ); exit;
+        }
+
         /* ── Récapitulatif mensuel : enregistrer ── */
         if ( isset( $_POST['sp_cal_save_recap'] ) && check_admin_referer( 'sp_cal_recap_settings' ) ) {
             update_option( 'sp_cal_recap_actif',   isset( $_POST['sp_cal_recap_actif'] ) ? '1' : '0' );
@@ -3260,6 +3266,35 @@ function spCalBufToB64u(buf) {
                     echo esc_textarea( get_option( 'sp_cal_reglement_interieur', '' ) );
                 ?></textarea>
                 <p class="submit"><input type="submit" name="sp_cal_save_reglement" class="button button-primary" value="Enregistrer le règlement intérieur"></p>
+            </form>
+        </div>
+
+        <!-- VEILLE RÉGLEMENTAIRE (pense-bête, pas d'appel automatique) -->
+        <div class="sp-box" style="margin-top:18px;">
+            <h2>📋 Veille réglementaire</h2>
+            <?php if ( isset( $_GET['veille_demandee'] ) ) : ?>
+                <div class="notice notice-success is-dismissible"><p>✅ Demande de veille enregistrée. Pensez à ouvrir une conversation avec Claude Code et à lui demander de lancer la veille réglementaire pour ce plugin.</p></div>
+            <?php endif; ?>
+            <p class="description" style="margin-bottom:10px;">
+                Le plugin s'appuie sur 3 hypothèses réglementaires codées en dur, à revérifier de temps en temps auprès des sources officielles :
+            </p>
+            <ul style="margin:0 0 12px 20px;list-style:disc;font-size:13px;color:#374151;">
+                <li>Certificat médical Taekwondo (FFTDA) : renouvellement chaque année (12 mois par défaut, réglable ci-dessus dans 🪪 Adhésions).</li>
+                <li>Renforcement musculaire : certificat médical seulement en 1ère inscription adulte, sinon questionnaire de santé QS-Sport.</li>
+                <li>Pass'Sport : aide de 50€, code déclaratif, aucune API de vérification connue côté Compte Asso.</li>
+            </ul>
+            <p class="description" style="margin-bottom:10px;">
+                Ce bouton n'interroge rien automatiquement — il enregistre simplement la date de votre demande, comme un pense-bête. La vérification elle-même se fait en demandant à Claude Code de « lancer la veille réglementaire » dans une conversation : il consultera les sources officielles et vous fera un rapport.
+            </p>
+            <?php $veille_demandee_le = get_option( 'sp_cal_veille_reglementaire_demandee_le', '' ); ?>
+            <p style="margin-bottom:10px;font-size:13px;">
+                Dernière demande de veille :
+                <strong><?php echo $veille_demandee_le ? esc_html( date( 'd/m/Y', strtotime( $veille_demandee_le ) ) ) : 'jamais'; ?></strong>
+            </p>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_veille_reglementaire' ); ?>
+                <input type="hidden" name="sp_veille_reglementaire_demandee" value="1">
+                <input type="submit" class="button button-primary" value="🔍 Demander une veille réglementaire">
             </form>
         </div>
 
