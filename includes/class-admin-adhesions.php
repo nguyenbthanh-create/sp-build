@@ -318,8 +318,9 @@ class SP_Admin_Adhesions {
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
 			],
-			'💳 Pass\'Sport' => [
-				'Code déclaré' => $row->pass_sport_code ?: '—',
+			'💳 Pass\'Sport / CAF' => [
+				'Code Pass\'Sport déclaré' => $row->pass_sport_code ?: '—',
+				'Bon CAF déclaré'          => ($row->caf_bon ?? 0) ? '✅ Oui (voir Documents ci-dessous)' : 'Non',
 			],
 			'🏅 Pratique antérieure' => [
 				'Déjà pratiqué'      => ($row->pratique_anterieure ?? 0) ? '✅ Oui' : 'Non',
@@ -353,6 +354,7 @@ class SP_Admin_Adhesions {
 			'Certificat médical'                     => $row->doc_certificat_medical ?? '',
 			'Attestation de responsabilité civile'    => $row->doc_attestation_rc     ?? '',
 			'Décharge sur l\'honneur'                 => $row->doc_decharge_honneur   ?? '',
+			'Bon CAF'                                 => $row->doc_bon_caf            ?? '',
 		];
 		echo "<div class='sp-adh-section'><h3>📎 Documents</h3><table class='form-table'>";
 		foreach ( $docs as $label => $url ) {
@@ -603,6 +605,7 @@ class SP_Admin_Adhesions {
 			'certificat_medical' => $row->doc_certificat_medical ?? '',
 			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
 			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
+			'bon_caf'            => $row->doc_bon_caf            ?? '',
 		];
 
 		// L'essentiel de la structure "1 à 2 représentants" est conservé intégralement en JSON
@@ -721,6 +724,7 @@ class SP_Admin_Adhesions {
 			'certificat_medical' => $row->doc_certificat_medical ?? '',
 			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
 			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
+			'bon_caf'            => $row->doc_bon_caf            ?? '',
 		];
 
 		// On fusionne avec l'extra_data existant pour ne jamais écraser un historique sans rapport

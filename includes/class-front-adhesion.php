@@ -18,6 +18,7 @@ class SP_Front_Adhesion {
 	private const STATUTS_CONTACT = [
 		'pere'               => 'Père',
 		'mere'               => 'Mère',
+		'conjoint'           => 'Conjoint/e',
 		'famille_accueil'    => "Famille d'accueil",
 		'representant_legal' => 'Représentant légal',
 		'autre'              => 'Autre',
@@ -25,9 +26,9 @@ class SP_Front_Adhesion {
 
 	private const MAX_REPRESENTANTS = 2;
 
-	// Incrémenter à chaque changement de create_table() pour que dbDelta() soit
-	// rejoué automatiquement (front ET admin) sans dépendre d'une visite wp-admin.
-	private const SCHEMA_VERSION = 4;
+	// Colonne la plus récemment ajoutée à la table — sert de "sentinelle" pour
+	// maybe_create_table() (voir plus bas). La mettre à jour à chaque nouvelle colonne.
+	private const SENTINEL_COLUMN = 'doc_bon_caf';
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -42,12 +43,33 @@ class SP_Front_Adhesion {
 	}
 
 	// La création de table n'était jamais déclenchée nulle part avant le 2026-09-01
-	// (voir md/04-journal-modifications.md) — corrigé ici avec un simple garde-fou de version,
-	// pour que la table sp_adhesions_pending et ses colonnes existent avant tout dépôt de formulaire.
+	// (voir md/04-journal-modifications.md). Un premier correctif s'appuyait sur un simple
+	// numéro de version en option — mais si dbDelta() échoue silencieusement (ex: droits
+	// ALTER TABLE insuffisants sur l'hébergement), l'option était quand même marquée à jour
+	// et le correctif ne se relançait plus jamais, malgré des colonnes manquantes en base
+	// (cause du bug "Une erreur technique est survenue" du 03/09/2026, cf. 04-journal-modifications.md).
+	// Corrigé en vérifiant l'existence réelle de la dernière colonne attendue à chaque chargement,
+	// au lieu de se fier à un numéro de version qui peut désynchroniser de la réalité.
 	public static function maybe_create_table(): void {
-		if ( (int) get_option( 'sp_adh_schema_version', 0 ) >= self::SCHEMA_VERSION ) return;
+		global $wpdb;
+		$table = $wpdb->prefix . 'sp_adhesions_pending';
+
+		$exists = $wpdb->get_var( $wpdb->prepare(
+			"SHOW COLUMNS FROM {$table} LIKE %s", self::SENTINEL_COLUMN
+		) );
+		if ( $exists ) return;
+
 		self::create_table();
-		update_option( 'sp_adh_schema_version', self::SCHEMA_VERSION );
+
+		$exists = $wpdb->get_var( $wpdb->prepare(
+			"SHOW COLUMNS FROM {$table} LIKE %s", self::SENTINEL_COLUMN
+		) );
+		if ( ! $exists ) {
+			error_log(
+				'[SP_Build] La colonne ' . self::SENTINEL_COLUMN . ' est absente de ' . $table . ' après dbDelta() — '
+				. 'vérifier que l\'utilisateur MySQL du site a bien le droit ALTER TABLE.'
+			);
+		}
 	}
 
 	// ─── Shortcode ────────────────────────────────────────────────────────────
@@ -172,6 +194,7 @@ class SP_Front_Adhesion {
 		// Pass'Sport : simple champ déclaratif, aucune vérification/calcul (cf. md/08-passsport-etat-des-lieux.md
 		// — pas d'API de vérification accessible à un tiers, le club continue de traiter ça manuellement).
 		$pass_sport_code = strtoupper( trim( sanitize_text_field( $_POST['pass_sport_code'] ?? '' ) ) );
+		$caf_bon         = isset( $_POST['caf_bon'] ) ? 1 : 0;
 
 		// Représentants légaux : 1 à 2 blocs, une personne par bloc (cf. doléance #1)
 		$representants = $this->parse_personnes( is_array( $_POST['repres'] ?? null ) ? $_POST['repres'] : [], self::MAX_REPRESENTANTS );
@@ -269,6 +292,11 @@ class SP_Front_Adhesion {
 			$errors[] = 'La décharge sur l\'honneur est obligatoire pour le Renforcement musculaire.';
 		}
 
+		// Bon CAF : le fichier n'est requis que si la case "J'ai un bon CAF" est cochée
+		if ( $caf_bon && empty( $_FILES['doc_bon_caf']['name'] ) ) {
+			$errors[] = 'Merci de déposer votre bon CAF, ou de décocher la case si vous n\'en avez pas.';
+		}
+
 		if ( ! $reglement_accepte ) $errors[] = 'Vous devez accepter le règlement intérieur.';
 
 		// Anti-doublon
@@ -312,6 +340,14 @@ class SP_Front_Adhesion {
 			}
 			$doc_decharge_honneur = $up['url'];
 		}
+		$doc_bon_caf = '';
+		if ( $caf_bon ) {
+			$up = $this->handle_upload( 'doc_bon_caf', 'bons-caf' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi du bon CAF." ], 'data' => $_POST ];
+			}
+			$doc_bon_caf = $up['url'];
+		}
 
 		// ── Insertion ──
 		$ok = $wpdb->insert( $this->table, [
@@ -328,6 +364,8 @@ class SP_Front_Adhesion {
 			'categorie'              => $categorie,
 			'message'                => $message,
 			'pass_sport_code'        => $pass_sport_code,
+			'caf_bon'                => $caf_bon,
+			'doc_bon_caf'            => $doc_bon_caf,
 			'representants_legaux'   => wp_json_encode( $representants ),
 			'contact_urgence'        => wp_json_encode( $urgence ),
 			'renouvellement_eleve_id'=> $renouv_eleve ? $renouv_eleve->id : null,
@@ -353,7 +391,7 @@ class SP_Front_Adhesion {
 		], [
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%s','%s','%s','%s','%s',
-			'%s',
+			'%s','%d','%s',
 			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
@@ -655,6 +693,19 @@ class SP_Front_Adhesion {
 							<input type="text" id="sp_pass_sport" name="pass_sport_code" value="<?= $v('pass_sport_code') ?>"
 							       placeholder="Ex : 26-XXXX-XXXX" maxlength="20" style="text-transform:uppercase;">
 							<p class="sp-optional">Le club se charge de la déclarer et d'appliquer la réduction — aucune vérification automatique.</p>
+						</div>
+					</div>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label class="sp-adh-check sp-adh-check-trigger" style="padding-left:0;">
+								<input type="checkbox" name="caf_bon" id="sp_caf_bon" value="1" <?= !empty($data['caf_bon'])?'checked':'' ?>>
+								<span>J'ai un bon CAF</span>
+							</label>
+							<div class="sp-adh-conditional" id="sp_caf_bon_fields" style="<?= !empty($data['caf_bon'])?'':'display:none' ?>">
+								<label for="sp_doc_bon_caf">Bon CAF <span class="sp-req">*</span></label>
+								<input type="file" id="sp_doc_bon_caf" name="doc_bon_caf" accept=".pdf,.jpg,.jpeg,.png">
+								<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+							</div>
 						</div>
 					</div>
 					<div class="sp-adh-row">
@@ -974,6 +1025,20 @@ class SP_Front_Adhesion {
 			}
 			initToggle('sp_pratique_anterieure', 'sp_pratique_fields');
 
+			// ── Bon CAF : dépôt du fichier requis uniquement si la case est cochée ────
+			const cafBonCheckbox = document.getElementById('sp_caf_bon');
+			const cafBonFields   = document.getElementById('sp_caf_bon_fields');
+			if (cafBonCheckbox && cafBonFields) {
+				const cafBonInput = cafBonFields.querySelector('input[type="file"]');
+				cafBonCheckbox.addEventListener('change', function() {
+					cafBonFields.style.display = this.checked ? '' : 'none';
+					if (cafBonInput) {
+						if (this.checked) cafBonInput.setAttribute('required', 'required');
+						else { cafBonInput.removeAttribute('required'); cafBonInput.value = ''; }
+					}
+				});
+			}
+
 			// ── Popup règlement intérieur (doléance #6) ───────────────────────
 			const reglementOpen    = document.getElementById('sp_reglement_open');
 			const reglementOverlay = document.getElementById('sp_reglement_overlay');
@@ -1083,6 +1148,8 @@ class SP_Front_Adhesion {
 			categorie               VARCHAR(50)   NOT NULL DEFAULT '',
 			message                 TEXT,
 			pass_sport_code         VARCHAR(20)   NOT NULL DEFAULT '',
+			caf_bon                 TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			doc_bon_caf             VARCHAR(255)  NOT NULL DEFAULT '',
 			representants_legaux    LONGTEXT,
 			contact_urgence         LONGTEXT,
 			renouvellement_eleve_id INT UNSIGNED  DEFAULT NULL,
