@@ -190,7 +190,8 @@ class SP_Admin_Adhesions {
 					'action' => 'view',
 					'id'     => $row->id,
 				], admin_url( 'admin.php' ) ) );
-				$est_renouv = ! empty( $row->renouvellement_eleve_id );
+				$est_renouv    = ! empty( $row->renouvellement_eleve_id );
+				$certif_perime = $this->certificat_medical_perime( $row->date_certificat_medical ?? '' );
 			?>
 				<tr<?= $est_renouv ? ' style="background:#eef4fb;"' : '' ?>>
 					<td><?= esc_html( date( 'd/m/Y H:i', strtotime( $row->created_at ) ) ) ?></td>
@@ -198,6 +199,9 @@ class SP_Admin_Adhesions {
 						<strong><?= esc_html( "{$row->prenom} {$row->nom}" ) ?></strong>
 						<?php if ( $est_renouv ) : ?>
 							<br><span style="background:#2271b1;color:#fff;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;">🔄 Renouvellement</span>
+						<?php endif; ?>
+						<?php if ( $certif_perime ) : ?>
+							<br><span style="background:#f59e0b;color:#fff;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;">⚠️ Certificat médical &gt; 1 an</span>
 						<?php endif; ?>
 					</td>
 					<td><?= esc_html( $row->email ) ?></td>
@@ -243,6 +247,16 @@ class SP_Admin_Adhesions {
 					<a href="%s" target="_blank" style="margin-left:8px;">Voir la fiche actuelle de l\'adhérent →</a></p>
 				</div>',
 				esc_url( $fiche_url )
+			);
+		}
+
+		// Alerte non bloquante : certificat médical de plus d'un an (règlement FFTDA — cf. doleances.md).
+		if ( $this->certificat_medical_perime( $row->date_certificat_medical ?? '' ) ) {
+			printf(
+				'<div class="notice notice-warning" style="border-left-color:#f59e0b;padding:12px 16px;margin:1rem 0;">
+					<p style="margin:0;font-size:14px;"><strong>⚠️ Certificat médical de plus d\'un an</strong> — le certificat déposé date du %s, il ne respecte plus la validité d\'un an exigée par le règlement FFTDA pour le Taekwondo en compétition. Ceci n\'empêche pas de valider la demande, mais pensez à redemander un certificat à jour à l\'adhérent.</p>
+				</div>',
+				esc_html( date( 'd/m/Y', strtotime( $row->date_certificat_medical ) ) )
 			);
 		}
 
@@ -360,6 +374,12 @@ class SP_Admin_Adhesions {
 		foreach ( $docs as $label => $url ) {
 			$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
 			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), $val );
+			if ( $label === 'Certificat médical' && ! empty( $row->date_certificat_medical ) && $row->date_certificat_medical !== '0000-00-00' ) {
+				$certif_perime = $this->certificat_medical_perime( $row->date_certificat_medical );
+				$date_val = esc_html( date( 'd/m/Y', strtotime( $row->date_certificat_medical ) ) )
+					. ( $certif_perime ? ' — <strong style="color:#b45309;">⚠️ plus d\'un an (règlement FFTDA)</strong>' : ' — ✅ valide' );
+				printf( '<tr><th scope="row">Date du certificat</th><td>%s</td></tr>', $date_val );
+			}
 		}
 		echo '</table></div>';
 
@@ -603,6 +623,7 @@ class SP_Admin_Adhesions {
 
 		$docs = [
 			'certificat_medical' => $row->doc_certificat_medical ?? '',
+			'date_certificat_medical' => $row->date_certificat_medical ?? '',
 			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
 			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
 			'bon_caf'            => $row->doc_bon_caf            ?? '',
@@ -722,6 +743,7 @@ class SP_Admin_Adhesions {
 
 		$docs = [
 			'certificat_medical' => $row->doc_certificat_medical ?? '',
+			'date_certificat_medical' => $row->date_certificat_medical ?? '',
 			'attestation_rc'     => $row->doc_attestation_rc     ?? '',
 			'decharge_honneur'   => $row->doc_decharge_honneur   ?? '',
 			'bon_caf'            => $row->doc_bon_caf            ?? '',
@@ -888,5 +910,13 @@ class SP_Admin_Adhesions {
 			'refuse'  => '<span style="background:#dc3232;color:#fff;padding:2px 8px;border-radius:3px;font-size:.8em;">🚫 Refusée</span>',
 		];
 		return $badges[ $statut ] ?? esc_html( $statut );
+	}
+
+	// Certificat médical Taekwondo : validité 1 an selon le règlement FFTDA (combat/compétition,
+	// contrôle non bloquant — cf. doleances.md). Calculé à l'affichage, jamais figé en base.
+	private function certificat_medical_perime( string $date ): bool {
+		if ( $date === '' || $date === '0000-00-00' ) return false;
+		$ts = strtotime( $date );
+		return $ts && $ts < strtotime( '-1 year' );
 	}
 }

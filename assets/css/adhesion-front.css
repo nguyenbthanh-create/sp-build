@@ -23,6 +23,18 @@
 	line-height: 1.6;
 }
 
+/* ── Alerte non bloquante (ex: certificat médical périmé) ──── */
+.sp-adh-warning {
+	background: #fff8e6;
+	border-left: 4px solid #f59e0b;
+	color: #7a4a06;
+	padding: .6rem .9rem;
+	margin: .5rem 0 0;
+	border-radius: 0 4px 4px 0;
+	font-size: .85rem;
+	line-height: 1.5;
+}
+
 /* ── Bandeau renouvellement (distinct des erreurs/succès) ──── */
 .sp-adh-renouv-banner {
 	background: #eef4fb;

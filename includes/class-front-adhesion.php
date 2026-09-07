@@ -28,7 +28,7 @@ class SP_Front_Adhesion {
 
 	// Colonne la plus récemment ajoutée à la table — sert de "sentinelle" pour
 	// maybe_create_table() (voir plus bas). La mettre à jour à chaque nouvelle colonne.
-	private const SENTINEL_COLUMN = 'doc_bon_caf';
+	private const SENTINEL_COLUMN = 'date_certificat_medical';
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -196,6 +196,10 @@ class SP_Front_Adhesion {
 		$pass_sport_code = strtoupper( trim( sanitize_text_field( $_POST['pass_sport_code'] ?? '' ) ) );
 		$caf_bon         = isset( $_POST['caf_bon'] ) ? 1 : 0;
 
+		// Date du certificat médical (cf. doléance certificat médical — validité FFTDA d'1 an,
+		// non bloquant si dépassée, seulement une alerte).
+		$date_certif_medical = sanitize_text_field( $_POST['date_certificat_medical'] ?? '' );
+
 		// Représentants légaux : 1 à 2 blocs, une personne par bloc (cf. doléance #1)
 		$representants = $this->parse_personnes( is_array( $_POST['repres'] ?? null ) ? $_POST['repres'] : [], self::MAX_REPRESENTANTS );
 
@@ -284,6 +288,9 @@ class SP_Front_Adhesion {
 
 		if ( $need_certif_medical && empty( $_FILES['doc_certificat_medical']['name'] ) ) {
 			$errors[] = 'Le certificat médical est obligatoire pour la pratique du Taekwondo.';
+		}
+		if ( $need_certif_medical && ( $date_certif_medical === '' || ! $this->valid_date( $date_certif_medical ) ) ) {
+			$errors[] = 'La date du certificat médical est requise.';
 		}
 		if ( $need_rc && empty( $_FILES['doc_attestation_rc']['name'] ) ) {
 			$errors[] = 'L\'attestation de responsabilité civile est obligatoire pour le Renforcement musculaire.';
@@ -379,6 +386,7 @@ class SP_Front_Adhesion {
 			'taille_tshirt'          => $taille_tshirt,
 			'taille_pantalon'        => $taille_pantalon,
 			'doc_certificat_medical' => $doc_certificat_medical,
+			'date_certificat_medical'=> $date_certif_medical ?: null,
 			'doc_attestation_rc'     => $doc_attestation_rc,
 			'doc_decharge_honneur'   => $doc_decharge_honneur,
 			'autorisation_photo'     => $autorisation_photo,
@@ -395,7 +403,7 @@ class SP_Front_Adhesion {
 			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
-			'%s','%s','%s',
+			'%s','%s','%s','%s',
 			'%d','%d','%d','%d',
 			'%s','%s','%s',
 		] );
@@ -724,10 +732,16 @@ class SP_Front_Adhesion {
 					<p class="sp-adh-group-desc">Les documents demandés dépendent de la discipline choisie ci-dessus.</p>
 
 					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_certif_row" style="display:none;">
-						<div class="sp-adh-col sp-adh-col-full">
+						<div class="sp-adh-col">
 							<label for="sp_doc_certif">Certificat médical <span class="sp-optional">(obligatoire pour le Taekwondo)</span> <span class="sp-req">*</span></label>
 							<input type="file" id="sp_doc_certif" name="doc_certificat_medical" accept=".pdf,.jpg,.jpeg,.png">
 							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+						</div>
+						<div class="sp-adh-col">
+							<label for="sp_date_certif">Date du certificat <span class="sp-req">*</span></label>
+							<input type="date" id="sp_date_certif" name="date_certificat_medical" value="<?= $v('date_certificat_medical') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
+							<p class="sp-optional">Le certificat de non contre-indication au Taekwondo en compétition doit être renouvelé chaque année (règlement FFTDA).</p>
+							<p id="sp_certif_perime" class="sp-adh-warning" style="display:none;">⚠️ Ce certificat date de plus d'un an — il ne sera plus valide selon le règlement FFTDA. Vous pouvez tout de même envoyer votre demande, mais pensez à fournir un certificat plus récent dès que possible.</p>
 						</div>
 					</div>
 
@@ -910,12 +924,23 @@ class SP_Front_Adhesion {
 
 			function setDocRequired(rowEl, required) {
 				if (!rowEl) return;
-				const input = rowEl.querySelector('input[type="file"]');
 				rowEl.style.display = required ? '' : 'none';
-				if (input) {
+				rowEl.querySelectorAll('input[type="file"], input[type="date"]').forEach(function(input) {
 					if (required) { input.setAttribute('required', 'required'); }
 					else { input.removeAttribute('required'); input.value = ''; }
-				}
+				});
+			}
+
+			// ── Alerte non bloquante : certificat médical de plus d'un an (règlement FFTDA) ──
+			const dateCertifInput = document.getElementById('sp_date_certif');
+			const certifPerimeMsg = document.getElementById('sp_certif_perime');
+			if (dateCertifInput && certifPerimeMsg) {
+				dateCertifInput.addEventListener('change', function() {
+					if (!this.value) { certifPerimeMsg.style.display = 'none'; return; }
+					const uneAnAvant = new Date();
+					uneAnAvant.setFullYear(uneAnAvant.getFullYear() - 1);
+					certifPerimeMsg.style.display = (new Date(this.value) < uneAnAvant) ? '' : 'none';
+				});
 			}
 
 			function majDocuments() {
@@ -1163,6 +1188,7 @@ class SP_Front_Adhesion {
 			taille_tshirt           VARCHAR(20)   NOT NULL DEFAULT '',
 			taille_pantalon         VARCHAR(20)   NOT NULL DEFAULT '',
 			doc_certificat_medical  VARCHAR(255)  NOT NULL DEFAULT '',
+			date_certificat_medical DATE          DEFAULT NULL,
 			doc_attestation_rc      VARCHAR(255)  NOT NULL DEFAULT '',
 			doc_decharge_honneur    VARCHAR(255)  NOT NULL DEFAULT '',
 			autorisation_photo      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
