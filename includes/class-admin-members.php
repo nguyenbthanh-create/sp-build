@@ -3516,7 +3516,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <option value="<?php echo esc_attr($url); ?>" <?php selected($status_filter,$val); ?>><?php echo esc_html($lbl); ?></option>
                 <?php endforeach; ?>
             </select>
-            <?php if(count($saisons)>1): ?>
+            <?php if(!empty($saisons)): ?>
             <select onchange="location.href=this.value">
                 <option value="<?php echo esc_attr(add_query_arg(array('page'=>'sp-cal-licences','statut'=>$status_filter,'saison'=>''), admin_url('admin.php'))); ?>"
                     <?php selected($saison,''); ?>>— Toutes les saisons —</option>
