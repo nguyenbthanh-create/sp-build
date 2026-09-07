@@ -1986,6 +1986,13 @@ function spCalBufToB64u(buf) {
             wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&saved=1' ) ); exit;
         }
 
+        /* ── Durée de validité du certificat médical (doléance certificat médical, 03/09/2026) ── */
+        if ( isset( $_POST['sp_save_certif_medical'] ) && check_admin_referer( 'sp_cal_certif_medical' ) ) {
+            $mois = max( 1, min( 60, intval( $_POST['sp_certif_medical_mois'] ?? 12 ) ) );
+            update_option( 'sp_cal_certif_medical_mois', $mois );
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&certif_saved=1' ) ); exit;
+        }
+
         /* ── Convention médaille → points ── */
         if ( isset( $_POST['sp_save_medal_pts'] ) && check_admin_referer( 'sp_cal_medal_pts' ) ) {
             update_option( 'sp_cal_pts_or',     max( 0, intval( $_POST['sp_pts_or']     ?? 3 ) ) );

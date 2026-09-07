@@ -28,7 +28,7 @@ class SP_Front_Adhesion {
 
 	// Colonne la plus récemment ajoutée à la table — sert de "sentinelle" pour
 	// maybe_create_table() (voir plus bas). La mettre à jour à chaque nouvelle colonne.
-	private const SENTINEL_COLUMN = 'date_certificat_medical';
+	private const SENTINEL_COLUMN = 'qs_sport_confirme';
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -200,6 +200,13 @@ class SP_Front_Adhesion {
 		// non bloquant si dépassée, seulement une alerte).
 		$date_certif_medical = sanitize_text_field( $_POST['date_certificat_medical'] ?? '' );
 
+		// Renfo : suivi médical selon la réglementation générale du sport (cf. doléance certificat
+		// médical / Renfo) — certificat obligatoire seulement en première inscription adulte,
+		// sinon questionnaire de santé QS-Sport (certificat optionnel si une réponse était positive).
+		$qs_sport_renfo          = isset( $_POST['qs_sport_renfo'] ) ? 1 : 0;
+		$date_certif_renfo_maj   = sanitize_text_field( $_POST['date_certificat_medical_renfo_maj'] ?? '' );
+		$date_certif_renfo_qs    = sanitize_text_field( $_POST['date_certificat_medical_renfo_qs']  ?? '' );
+
 		// Représentants légaux : 1 à 2 blocs, une personne par bloc (cf. doléance #1)
 		$representants = $this->parse_personnes( is_array( $_POST['repres'] ?? null ) ? $_POST['repres'] : [], self::MAX_REPRESENTANTS );
 
@@ -299,6 +306,30 @@ class SP_Front_Adhesion {
 			$errors[] = 'La décharge sur l\'honneur est obligatoire pour le Renforcement musculaire.';
 		}
 
+		// Renfo — suivi médical : certificat obligatoire seulement en première inscription adulte,
+		// sinon questionnaire de santé QS-Sport (ou certificat en alternative si réponse positive).
+		// Jamais fait confiance à l'âge/au statut de renouvellement calculés côté client.
+		$need_renfo_certif_maj = $discipline === 'RENFO' && ! $est_mineur_form && ! $renouv_eleve;
+		$need_renfo_qs         = $discipline === 'RENFO' && ! $need_renfo_certif_maj;
+
+		if ( $need_renfo_certif_maj ) {
+			if ( empty( $_FILES['doc_certificat_medical_renfo_maj']['name'] ) ) {
+				$errors[] = 'Le certificat médical est obligatoire pour une première inscription au Renforcement musculaire (adulte).';
+			}
+			if ( $date_certif_renfo_maj === '' || ! $this->valid_date( $date_certif_renfo_maj ) ) {
+				$errors[] = 'La date du certificat médical est requise.';
+			}
+		}
+		if ( $need_renfo_qs ) {
+			$a_certif_renfo_qs = ! empty( $_FILES['doc_certificat_medical_renfo_qs']['name'] );
+			if ( ! $qs_sport_renfo && ! $a_certif_renfo_qs ) {
+				$errors[] = 'Merci soit de confirmer le questionnaire de santé QS-Sport (si vous avez répondu non à toutes les questions), soit de joindre un certificat médical (si vous avez répondu oui à une question).';
+			}
+			if ( $a_certif_renfo_qs && ( $date_certif_renfo_qs === '' || ! $this->valid_date( $date_certif_renfo_qs ) ) ) {
+				$errors[] = 'La date du certificat médical est requise si vous en joignez un.';
+			}
+		}
+
 		// Bon CAF : le fichier n'est requis que si la case "J'ai un bon CAF" est cochée
 		if ( $caf_bon && empty( $_FILES['doc_bon_caf']['name'] ) ) {
 			$errors[] = 'Merci de déposer votre bon CAF, ou de décocher la case si vous n\'en avez pas.';
@@ -332,6 +363,25 @@ class SP_Front_Adhesion {
 				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi du certificat médical." ], 'data' => $_POST ];
 			}
 			$doc_certificat_medical = $up['url'];
+		}
+		// Renfo : le certificat (obligatoire en 1ère inscription adulte, ou optionnel via QS-Sport)
+		// est reporté dans les mêmes colonnes que le certificat Taekwondo — mutuellement exclusifs
+		// puisqu'un adhérent ne choisit qu'une seule discipline.
+		if ( $need_renfo_certif_maj ) {
+			$up = $this->handle_upload( 'doc_certificat_medical_renfo_maj', 'certificats-medicaux' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi du certificat médical." ], 'data' => $_POST ];
+			}
+			$doc_certificat_medical = $up['url'];
+			$date_certif_medical    = $date_certif_renfo_maj;
+		}
+		if ( $need_renfo_qs && ! empty( $_FILES['doc_certificat_medical_renfo_qs']['name'] ) ) {
+			$up = $this->handle_upload( 'doc_certificat_medical_renfo_qs', 'certificats-medicaux' );
+			if ( ! $up['ok'] ) {
+				return [ 'success' => false, 'errors' => [ $up['error'] ?: "Erreur lors de l'envoi du certificat médical." ], 'data' => $_POST ];
+			}
+			$doc_certificat_medical = $up['url'];
+			$date_certif_medical    = $date_certif_renfo_qs;
 		}
 		if ( $need_rc ) {
 			$up = $this->handle_upload( 'doc_attestation_rc', 'attestations-rc' );
@@ -387,6 +437,7 @@ class SP_Front_Adhesion {
 			'taille_pantalon'        => $taille_pantalon,
 			'doc_certificat_medical' => $doc_certificat_medical,
 			'date_certificat_medical'=> $date_certif_medical ?: null,
+			'qs_sport_confirme'      => $qs_sport_renfo,
 			'doc_attestation_rc'     => $doc_attestation_rc,
 			'doc_decharge_honneur'   => $doc_decharge_honneur,
 			'autorisation_photo'     => $autorisation_photo,
@@ -403,7 +454,7 @@ class SP_Front_Adhesion {
 			'%s','%s','%d',
 			'%d','%s','%s','%s',
 			'%s','%s','%s','%s','%s',
-			'%s','%s','%s','%s',
+			'%s','%s','%d','%s','%s',
 			'%d','%d','%d','%d',
 			'%s','%s','%s',
 		] );
@@ -740,8 +791,8 @@ class SP_Front_Adhesion {
 						<div class="sp-adh-col">
 							<label for="sp_date_certif">Date du certificat <span class="sp-req">*</span></label>
 							<input type="date" id="sp_date_certif" name="date_certificat_medical" value="<?= $v('date_certificat_medical') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
-							<p class="sp-optional">Le certificat de non contre-indication au Taekwondo en compétition doit être renouvelé chaque année (règlement FFTDA).</p>
-							<p id="sp_certif_perime" class="sp-adh-warning" style="display:none;">⚠️ Ce certificat date de plus d'un an — il ne sera plus valide selon le règlement FFTDA. Vous pouvez tout de même envoyer votre demande, mais pensez à fournir un certificat plus récent dès que possible.</p>
+							<p class="sp-optional">Le certificat de non contre-indication au Taekwondo en compétition doit être renouvelé régulièrement (règlement FFTDA — actuellement <?= (int) get_option( 'sp_cal_certif_medical_mois', 12 ) ?> mois).</p>
+							<p id="sp_certif_perime" class="sp-adh-warning" style="display:none;">⚠️ Ce certificat dépasse la durée de validité recommandée — il ne sera plus valide selon le règlement FFTDA. Vous pouvez tout de même envoyer votre demande, mais pensez à fournir un certificat plus récent dès que possible.</p>
 						</div>
 					</div>
 
@@ -758,6 +809,37 @@ class SP_Front_Adhesion {
 							<label for="sp_doc_decharge">Décharge sur l'honneur <span class="sp-optional">(obligatoire pour le Renforcement musculaire)</span> <span class="sp-req">*</span></label>
 							<input type="file" id="sp_doc_decharge" name="doc_decharge_honneur" accept=".pdf,.jpg,.jpeg,.png">
 							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+						</div>
+					</div>
+
+					<!-- Renfo, adulte, première inscription : certificat médical obligatoire (réglementation générale du sport) -->
+					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_renfo_certif_row" style="display:none;">
+						<div class="sp-adh-col">
+							<label for="sp_doc_renfo_certif">Certificat médical <span class="sp-optional">(première inscription, adulte)</span> <span class="sp-req">*</span></label>
+							<input type="file" id="sp_doc_renfo_certif" name="doc_certificat_medical_renfo_maj" accept=".pdf,.jpg,.jpeg,.png">
+							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
+						</div>
+						<div class="sp-adh-col">
+							<label for="sp_date_renfo_certif">Date du certificat <span class="sp-req">*</span></label>
+							<input type="date" id="sp_date_renfo_certif" name="date_certificat_medical_renfo_maj" value="<?= $v('date_certificat_medical_renfo_maj') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
+							<p class="sp-optional">Obligatoire à la première inscription pour un adulte (réglementation générale du sport). Les années suivantes, un questionnaire de santé suffit.</p>
+						</div>
+					</div>
+
+					<!-- Renfo, mineur ou renouvellement : questionnaire de santé QS-Sport (certificat requis seulement si une réponse est positive).
+					     Noms de champs volontairement différents du bloc ci-dessus : deux <input> avec le même name se marcheraient dessus
+					     côté serveur (le second, même vide, écraserait la valeur du premier — un seul des deux blocs est jamais rempli). -->
+					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_renfo_qs_row" style="display:none;">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label class="sp-adh-check" style="padding-left:0;">
+								<input type="checkbox" name="qs_sport_renfo" id="sp_qs_sport_renfo" value="1" <?= !empty($data['qs_sport_renfo'])?'checked':'' ?>>
+								<span>Je certifie avoir complété le questionnaire de santé <strong>QS-Sport</strong> et avoir répondu <strong>NON</strong> à toutes les questions.</span>
+							</label>
+							<p class="sp-optional">Si vous avez répondu <strong>OUI</strong> à au moins une question, ne cochez pas cette case et joignez plutôt un certificat médical ci-dessous :</p>
+							<label for="sp_doc_renfo_qs_certif">Certificat médical <span class="sp-optional">(uniquement si une réponse était positive au questionnaire)</span></label>
+							<input type="file" id="sp_doc_renfo_qs_certif" name="doc_certificat_medical_renfo_qs" accept=".pdf,.jpg,.jpeg,.png">
+							<label for="sp_date_renfo_qs_certif" style="margin-top:.5rem;display:block;">Date du certificat <span class="sp-optional">(si fourni)</span></label>
+							<input type="date" id="sp_date_renfo_qs_certif" name="date_certificat_medical_renfo_qs" value="<?= $v('date_certificat_medical_renfo_qs') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
 						</div>
 					</div>
 				</div>
@@ -934,13 +1016,51 @@ class SP_Front_Adhesion {
 			// ── Alerte non bloquante : certificat médical de plus d'un an (règlement FFTDA) ──
 			const dateCertifInput = document.getElementById('sp_date_certif');
 			const certifPerimeMsg = document.getElementById('sp_certif_perime');
+			const CERTIF_MEDICAL_MOIS = <?= (int) get_option( 'sp_cal_certif_medical_mois', 12 ) ?>;
 			if (dateCertifInput && certifPerimeMsg) {
 				dateCertifInput.addEventListener('change', function() {
 					if (!this.value) { certifPerimeMsg.style.display = 'none'; return; }
-					const uneAnAvant = new Date();
-					uneAnAvant.setFullYear(uneAnAvant.getFullYear() - 1);
-					certifPerimeMsg.style.display = (new Date(this.value) < uneAnAvant) ? '' : 'none';
+					const limite = new Date();
+					limite.setMonth(limite.getMonth() - CERTIF_MEDICAL_MOIS);
+					certifPerimeMsg.style.display = (new Date(this.value) < limite) ? '' : 'none';
 				});
+			}
+
+			// Âge (mineur/majeur), calculé côté client pour l'affichage — jamais fait confiance
+			// côté serveur (recalculé côté PHP à la soumission, comme pour la catégorie).
+			function estMineur() {
+				const ddn = ddnInput.value;
+				if ( ! ddn ) return null;
+				const birth = new Date( ddn );
+				const today = new Date();
+				let age = today.getFullYear() - birth.getFullYear();
+				const m = today.getMonth() - birth.getMonth();
+				if ( m < 0 || ( m === 0 && today.getDate() < birth.getDate() ) ) age--;
+				return age < 18;
+			}
+
+			// Renfo : certificat obligatoire seulement pour un adulte en première inscription ;
+			// mineur ou renouvellement => questionnaire de santé QS-Sport (certificat en option si
+			// une réponse était positive) — cf. doléance certificat médical / réglementation générale du sport.
+			const RENOUVELLEMENT   = <?= $renouv_eleve ? 'true' : 'false' ?>;
+			const docRenfoCertif   = document.getElementById('sp_doc_renfo_certif_row');
+			const docRenfoQs       = document.getElementById('sp_doc_renfo_qs_row');
+
+			function majRenfoMedical() {
+				if (discInput.value !== 'RENFO') {
+					setDocRequired(docRenfoCertif, false);
+					setDocRequired(docRenfoQs,     false);
+					return;
+				}
+				const mineur = estMineur();
+				const useQs = RENOUVELLEMENT || mineur === true || mineur === null;
+				setDocRequired(docRenfoCertif, ! useQs);
+				docRenfoQs.style.display = useQs ? '' : 'none';
+				if (!useQs) {
+					const cb = docRenfoQs.querySelector('input[type="checkbox"]');
+					if (cb) cb.checked = false;
+					docRenfoQs.querySelectorAll('input[type="file"], input[type="date"]').forEach(i => i.value = '');
+				}
 			}
 
 			function majDocuments() {
@@ -951,8 +1071,10 @@ class SP_Front_Adhesion {
 				setDocRequired(docCertif,   isTkd);
 				setDocRequired(docRc,       isRenfo);
 				setDocRequired(docDecharge, isRenfo);
+				majRenfoMedical();
 			}
 			discInput.addEventListener('change', majDocuments);
+			ddnInput.addEventListener('change', majRenfoMedical);
 			majDocuments();
 
 			// ── Représentant légal + "repartir seul" : conditionnel à la majorité (doléance #7) ──
@@ -1189,6 +1311,7 @@ class SP_Front_Adhesion {
 			taille_pantalon         VARCHAR(20)   NOT NULL DEFAULT '',
 			doc_certificat_medical  VARCHAR(255)  NOT NULL DEFAULT '',
 			date_certificat_medical DATE          DEFAULT NULL,
+			qs_sport_confirme       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			doc_attestation_rc      VARCHAR(255)  NOT NULL DEFAULT '',
 			doc_decharge_honneur    VARCHAR(255)  NOT NULL DEFAULT '',
 			autorisation_photo      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,

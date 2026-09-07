@@ -3461,6 +3461,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <?php endif; ?>
         </div>
 
+        <div class="sp-box" style="margin-bottom:20px;">
+            <h2>🩺 Certificat médical</h2>
+            <?php if ( isset( $_GET['certif_saved'] ) ) : ?>
+                <div class="notice notice-success is-dismissible"><p>✅ Durée de validité enregistrée.</p></div>
+            <?php endif; ?>
+            <p class="description" style="margin-bottom:10px;">
+                Durée au-delà de laquelle le certificat médical déposé au Taekwondo (date renseignée sur le formulaire d'adhésion) est signalé comme à renouveler — alerte informative uniquement, elle ne bloque jamais l'envoi du formulaire ni la validation d'une demande.
+                Par défaut 12 mois, conformément au règlement FFTDA pour le Taekwondo en compétition.
+            </p>
+            <form method="post" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+                <?php wp_nonce_field('sp_cal_certif_medical'); ?>
+                <div>
+                    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">
+                        Durée de validité (mois)
+                    </label>
+                    <input type="number" name="sp_certif_medical_mois" min="1" max="60"
+                           value="<?php echo esc_attr( intval( get_option( 'sp_cal_certif_medical_mois', 12 ) ) ); ?>"
+                           style="height:32px;width:70px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
+                </div>
+                <input type="submit" name="sp_save_certif_medical" class="button button-primary" value="Enregistrer">
+            </form>
+        </div>
+
         <?php SP_Cal_Renouvellement::get_instance( $this->db )->render_box(); ?>
 
         <!-- KPIs -->

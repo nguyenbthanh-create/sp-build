@@ -250,13 +250,15 @@ class SP_Admin_Adhesions {
 			);
 		}
 
-		// Alerte non bloquante : certificat médical de plus d'un an (règlement FFTDA — cf. doleances.md).
+		// Alerte non bloquante : certificat médical au-delà de la durée réglée par le bureau (cf. doleances.md).
 		if ( $this->certificat_medical_perime( $row->date_certificat_medical ?? '' ) ) {
+			$mois = max( 1, intval( get_option( 'sp_cal_certif_medical_mois', 12 ) ) );
 			printf(
 				'<div class="notice notice-warning" style="border-left-color:#f59e0b;padding:12px 16px;margin:1rem 0;">
-					<p style="margin:0;font-size:14px;"><strong>⚠️ Certificat médical de plus d\'un an</strong> — le certificat déposé date du %s, il ne respecte plus la validité d\'un an exigée par le règlement FFTDA pour le Taekwondo en compétition. Ceci n\'empêche pas de valider la demande, mais pensez à redemander un certificat à jour à l\'adhérent.</p>
+					<p style="margin:0;font-size:14px;"><strong>⚠️ Certificat médical périmé</strong> — le certificat déposé date du %s, il dépasse la durée de validité réglée par le bureau (%d mois — page 🪪 Adhésions), conformément au règlement FFTDA pour le Taekwondo en compétition. Ceci n\'empêche pas de valider la demande, mais pensez à redemander un certificat à jour à l\'adhérent.</p>
 				</div>',
-				esc_html( date( 'd/m/Y', strtotime( $row->date_certificat_medical ) ) )
+				esc_html( date( 'd/m/Y', strtotime( $row->date_certificat_medical ) ) ),
+				$mois
 			);
 		}
 
@@ -331,6 +333,9 @@ class SP_Admin_Adhesions {
 				'Discipline'         => $row->discipline,
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
+				'Questionnaire QS-Sport' => $row->discipline === 'RENFO'
+					? ( ($row->qs_sport_confirme ?? 0) ? '✅ Confirmé (toutes réponses négatives)' : ( $row->doc_certificat_medical ? 'Non — certificat médical fourni à la place' : '⚠️ Ni confirmé ni certificat fourni' ) )
+					: '—',
 			],
 			'💳 Pass\'Sport / CAF' => [
 				'Code Pass\'Sport déclaré' => $row->pass_sport_code ?: '—',
@@ -643,6 +648,8 @@ class SP_Admin_Adhesions {
 			'ancien_passeport'     => $row->ancien_passeport     ?? '',
 			'message_adhesion'     => $row->message              ?? '',
 			'pass_sport_code'      => $row->pass_sport_code      ?? '',
+			'date_certificat_medical' => $row->date_certificat_medical ?? '',
+			'qs_sport_confirme'    => (bool) ($row->qs_sport_confirme  ?? 0),
 			'representants_legaux' => $representants,
 			'contact_urgence'      => $urgence,
 			'documents'            => $docs,
@@ -764,6 +771,7 @@ class SP_Admin_Adhesions {
 			'ancien_passeport'           => $row->ancien_passeport ?? '',
 			'message_adhesion'           => $row->message          ?? '',
 			'pass_sport_code'            => $row->pass_sport_code  ?? '',
+			'qs_sport_confirme'          => (bool) ( $row->qs_sport_confirme ?? 0 ),
 			'representants_legaux'       => $representants,
 			'contact_urgence'            => $urgence,
 			'documents'                  => $docs,
@@ -912,11 +920,13 @@ class SP_Admin_Adhesions {
 		return $badges[ $statut ] ?? esc_html( $statut );
 	}
 
-	// Certificat médical Taekwondo : validité 1 an selon le règlement FFTDA (combat/compétition,
-	// contrôle non bloquant — cf. doleances.md). Calculé à l'affichage, jamais figé en base.
+	// Certificat médical Taekwondo : durée de validité configurable par le bureau
+	// (page 🪪 Adhésions, option sp_cal_certif_medical_mois, 12 par défaut — cf. règlement
+	// FFTDA). Contrôle non bloquant (cf. doleances.md). Calculé à l'affichage, jamais figé en base.
 	private function certificat_medical_perime( string $date ): bool {
 		if ( $date === '' || $date === '0000-00-00' ) return false;
 		$ts = strtotime( $date );
-		return $ts && $ts < strtotime( '-1 year' );
+		$mois = max( 1, intval( get_option( 'sp_cal_certif_medical_mois', 12 ) ) );
+		return $ts && $ts < strtotime( "-{$mois} months" );
 	}
 }
