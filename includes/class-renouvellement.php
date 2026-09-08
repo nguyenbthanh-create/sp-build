@@ -275,11 +275,11 @@ class SP_Cal_Renouvellement {
 				       style="height:32px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
 			</div>
 			<div>
-				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Délai avant relance bureau n°1 (jours)</label>
+				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">1ʳᵉ relance (bureau) — jours après le lancement</label>
 				<input type="number" name="renouv_delai1" value="21" min="1" max="120" style="height:32px;width:80px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
 			</div>
 			<div>
-				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Délai avant relance n°2 + désactivation (jours)</label>
+				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">2ᵉ relance + désactivation du compte — jours après le lancement</label>
 				<input type="number" name="renouv_delai2" value="45" min="1" max="180" style="height:32px;width:80px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
 			</div>
 			<button type="submit" class="button button-primary"
