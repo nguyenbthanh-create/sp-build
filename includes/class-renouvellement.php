@@ -3,6 +3,15 @@
  * Renouvellement de saison — campagne annuelle.
  * Voir md/06-renouvellement-saison.md pour la spécification complète.
  *
+ * Toutes les étapes sont déclenchées manuellement par le bureau (bouton) — aucun cron.
+ * L'ancienne version s'appuyait sur le cron interne de WordPress (wp-cron) pour envoyer
+ * les relances et déclencher la désactivation automatiquement après un délai. Abandonné
+ * le 08/09/2026 (cf. doléances.md) : wp-cron ne se déclenche que lors d'une visite du
+ * site après l'heure prévue, pas de façon garantie — inacceptable pour une action aussi
+ * impactante que la désactivation de comptes sur un site à faible trafic. Le bandeau
+ * d'alerte "X jours depuis la relance" est calculé à chaque chargement de la page admin
+ * (aucune dépendance au cron non plus).
+ *
  * @package SP_Build
  */
 
@@ -21,12 +30,15 @@ class SP_Cal_Renouvellement {
 	private function __construct( $db = null ) {
 		$this->db = $db;
 
-		add_action( 'admin_post_sp_renouv_lancer',  [ $this, 'handle_lancer' ] );
-		add_action( 'admin_post_sp_renouv_annuler', [ $this, 'handle_annuler' ] );
-		add_action( 'sp_cal_renouv_daily_check',    [ $this, 'check_daily' ] );
+		add_action( 'admin_post_sp_renouv_lancer',         [ $this, 'handle_lancer' ] );
+		add_action( 'admin_post_sp_renouv_annuler',        [ $this, 'handle_annuler' ] );
+		add_action( 'admin_post_sp_renouv_relance',        [ $this, 'handle_relance' ] );
+		add_action( 'admin_post_sp_renouv_desactiver_lot', [ $this, 'handle_desactiver_lot' ] );
+		add_action( 'admin_post_sp_renouv_desactiver_un',  [ $this, 'handle_desactiver_un' ] );
 
-		if ( ! wp_next_scheduled( 'sp_cal_renouv_daily_check' ) ) {
-			wp_schedule_event( strtotime( 'today 08:00:00' ), 'daily', 'sp_cal_renouv_daily_check' );
+		// Nettoyage de l'ancien cron s'il est encore programmé sur ce site (voir note en tête de fichier).
+		if ( wp_next_scheduled( 'sp_cal_renouv_daily_check' ) ) {
+			wp_clear_scheduled_hook( 'sp_cal_renouv_daily_check' );
 		}
 	}
 
@@ -83,14 +95,12 @@ class SP_Cal_Renouvellement {
 
 		$saison_source = $this->detecter_saison_source();
 
-		update_option( 'sp_cal_renouv_en_cours',          '1' );
-		update_option( 'sp_cal_renouv_saison_source',     $saison_source );
-		update_option( 'sp_cal_renouv_saison_cible',      $saison_cible );
-		update_option( 'sp_cal_renouv_date_lancement',    current_time( 'Y-m-d' ) );
-		update_option( 'sp_cal_renouv_delai_notif1_jours', max( 1, intval( $_POST['renouv_delai1'] ?? 21 ) ) );
-		update_option( 'sp_cal_renouv_delai_notif2_jours', max( 1, intval( $_POST['renouv_delai2'] ?? 45 ) ) );
-		update_option( 'sp_cal_renouv_notif1_le', '' );
-		update_option( 'sp_cal_renouv_notif2_le', '' );
+		update_option( 'sp_cal_renouv_en_cours',       '1' );
+		update_option( 'sp_cal_renouv_saison_source',  $saison_source );
+		update_option( 'sp_cal_renouv_saison_cible',   $saison_cible );
+		update_option( 'sp_cal_renouv_date_lancement', current_time( 'Y-m-d' ) );
+		update_option( 'sp_cal_renouv_alerte_jours',   max( 1, intval( $_POST['renouv_alerte_jours'] ?? 15 ) ) );
+		update_option( 'sp_cal_renouv_relance_le',     '' );
 
 		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_lance=1' ) );
 		exit;
@@ -107,35 +117,21 @@ class SP_Cal_Renouvellement {
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// CRON QUOTIDIEN
+	// RELANCE BUREAU — bouton à effet immédiat, au moment choisi par le bureau
 	// ══════════════════════════════════════════════════════════════════════
-	public function check_daily(): void {
-		if ( ! $this->en_cours() ) return;
+	public function handle_relance(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! check_admin_referer( 'sp_renouv_relance' ) ) wp_die( 'Nonce invalide.' );
+		if ( ! $this->en_cours() ) wp_die( 'Aucune campagne en cours.' );
 
-		$lancement = get_option( 'sp_cal_renouv_date_lancement', '' );
-		if ( $lancement === '' ) return;
+		$this->envoyer_relance_bureau();
+		update_option( 'sp_cal_renouv_relance_le', current_time( 'Y-m-d' ) );
 
-		$jours = intval( floor( ( strtotime( 'today' ) - strtotime( $lancement ) ) / DAY_IN_SECONDS ) );
-
-		$delai1     = intval( get_option( 'sp_cal_renouv_delai_notif1_jours', 21 ) );
-		$delai2     = intval( get_option( 'sp_cal_renouv_delai_notif2_jours', 45 ) );
-		$notif1_le  = get_option( 'sp_cal_renouv_notif1_le', '' );
-		$notif2_le  = get_option( 'sp_cal_renouv_notif2_le', '' );
-
-		if ( $jours >= $delai1 && $notif1_le === '' ) {
-			$this->envoyer_notif_bureau( 1 );
-			update_option( 'sp_cal_renouv_notif1_le', current_time( 'Y-m-d' ) );
-		}
-
-		if ( $jours >= $delai2 && $notif2_le === '' ) {
-			$this->envoyer_notif_bureau( 2 );
-			$this->desactiver_et_notifier_adherents();
-			update_option( 'sp_cal_renouv_notif2_le', current_time( 'Y-m-d' ) );
-		}
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_relance_envoyee=1' ) );
+		exit;
 	}
 
-	// ─── Notification bureau (récapitulatif des non-renouvelés) ───────────────
-	private function envoyer_notif_bureau( int $numero ): void {
+	private function envoyer_relance_bureau(): void {
 		if ( ! $this->db ) return;
 		$bureau = $this->db->get_bureau_members();
 		if ( empty( $bureau ) ) return;
@@ -144,25 +140,19 @@ class SP_Cal_Renouvellement {
 		$club   = get_bloginfo( 'name' );
 		$cible  = get_option( 'sp_cal_renouv_saison_cible', '' );
 
-		$titre = $numero === 1
-			? "Rappel : renouvellement de saison en cours"
-			: "Dernier rappel : désactivation des comptes non renouvelés";
-
-		$subject = "[{$club}] 🔄 {$titre} ({$cible})";
+		$subject = "[{$club}] 🔄 Relance renouvellement de saison ({$cible})";
 
 		$body  = "Bonjour,\n\n";
-		$body .= $numero === 1
-			? "Le renouvellement pour la saison {$cible} est en cours. "
-			. count( $eleves ) . " adhérent(s) n'ont pas encore renouvelé :\n\n"
-			: count( $eleves ) . " adhérent(s) n'ont toujours pas renouvelé et vont être désactivés à l'instant "
-			. "(leur accès à l'espace personnel sera bloqué, mais leurs données restent en base) :\n\n";
-
+		$body .= "Le renouvellement pour la saison {$cible} est en cours. "
+		       . count( $eleves ) . " adhérent(s) n'ont pas encore renouvelé :\n\n";
 		foreach ( $eleves as $el ) {
 			$body .= "  - {$el->prenom} {$el->nom} ({$el->categorie_age})\n";
 		}
-
-		$body .= "\nVoir la page Adhésions : " . admin_url( 'admin.php?page=sp-cal-licences' ) . "\n\n";
-		$body .= "-- \n{$club} (notification automatique)";
+		$body .= "\nVous pouvez les relancer directement (téléphone, au club...), ou désactiver leurs "
+		       . "comptes — individuellement ou en une fois — depuis la page Adhésions : ça leur envoie "
+		       . "automatiquement le lien de renouvellement pré-rempli.\n\n";
+		$body .= "Voir la page Adhésions : " . admin_url( 'admin.php?page=sp-cal-licences' ) . "\n\n";
+		$body .= "-- \n{$club} (notification manuelle)";
 
 		foreach ( $bureau as $m ) {
 			if ( ! $m->email || ! is_email( $m->email ) ) continue;
@@ -170,45 +160,71 @@ class SP_Cal_Renouvellement {
 		}
 	}
 
-	// ─── Désactivation + email individuel de renouvellement ───────────────────
-	private function desactiver_et_notifier_adherents(): void {
-		global $wpdb;
-		$tel    = $this->table_eleves();
+	// ══════════════════════════════════════════════════════════════════════
+	// DÉSACTIVATION — déclenchement manuel, en lot ou individuel
+	// ══════════════════════════════════════════════════════════════════════
+	public function handle_desactiver_lot(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! check_admin_referer( 'sp_renouv_desactiver_lot' ) ) wp_die( 'Nonce invalide.' );
+
 		$eleves = $this->get_non_renouveles();
-		if ( empty( $eleves ) ) return;
+		foreach ( $eleves as $el ) {
+			$this->desactiver_et_notifier_un( $el );
+		}
+
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_desactive=' . count( $eleves ) ) );
+		exit;
+	}
+
+	public function handle_desactiver_un(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! check_admin_referer( 'sp_renouv_desactiver_un' ) ) wp_die( 'Nonce invalide.' );
+
+		global $wpdb;
+		$eleve_id = intval( $_GET['eleve_id'] ?? 0 );
+		$tel      = $this->table_eleves();
+		$el       = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tel} WHERE id = %d", $eleve_id ) );
+
+		if ( $el ) $this->desactiver_et_notifier_un( $el );
+
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_desactive=1' ) );
+		exit;
+	}
+
+	/** Désactive un élève (jamais de suppression) et lui envoie le lien de renouvellement. */
+	private function desactiver_et_notifier_un( object $el ): void {
+		global $wpdb;
+		$tel = $this->table_eleves();
+
+		$wpdb->update( $tel,
+			[ 'actif' => 0, 'motif_inactif' => 'Non renouvelé — saison écoulée' ],
+			[ 'id' => $el->id ]
+		);
+
+		// S'assurer qu'un token existe pour construire le lien de renouvellement
+		$token = $el->token;
+		if ( ! $token ) {
+			$token = bin2hex( random_bytes( 32 ) );
+			$wpdb->update( $tel, [ 'token' => $token ], [ 'id' => $el->id ] );
+		}
+
+		$dest = $el->email_parent ?: $el->email;
+		if ( ! $dest || ! is_email( $dest ) ) return;
 
 		$club          = get_bloginfo( 'name' );
 		$page_adhesion = $this->url_formulaire_adhesion();
+		$lien          = $page_adhesion ? add_query_arg( 'renouv', $token, $page_adhesion ) : '';
 
-		foreach ( $eleves as $el ) {
-			$wpdb->update( $tel,
-				[ 'actif' => 0, 'motif_inactif' => 'Non renouvelé — saison écoulée' ],
-				[ 'id' => $el->id ]
-			);
+		$subject = "[{$club}] Pensez à renouveler votre adhésion";
+		$body    = "Bonjour {$el->prenom},\n\n"
+		         . "La nouvelle saison a commencé et votre adhésion au {$club} n'a pas encore été renouvelée. "
+		         . "Votre accès à l'espace personnel a été temporairement désactivé — vos informations restent bien sûr conservées.\n\n"
+		         . ( $lien
+		             ? "Pour renouveler, cliquez sur ce lien : vos informations sont déjà pré-remplies, il ne reste qu'à les vérifier et les compléter si besoin.\n{$lien}\n\n"
+		             : "Contactez le club pour renouveler votre adhésion.\n\n" )
+		         . "À très bientôt sur les tatamis !\n— L'équipe {$club}";
 
-			// S'assurer qu'un token existe pour construire le lien de renouvellement
-			$token = $el->token;
-			if ( ! $token ) {
-				$token = bin2hex( random_bytes( 32 ) );
-				$wpdb->update( $tel, [ 'token' => $token ], [ 'id' => $el->id ] );
-			}
-
-			$dest = $el->email_parent ?: $el->email;
-			if ( ! $dest || ! is_email( $dest ) ) continue;
-
-			$lien = $page_adhesion ? add_query_arg( 'renouv', $token, $page_adhesion ) : '';
-
-			$subject = "[{$club}] Pensez à renouveler votre adhésion";
-			$body    = "Bonjour {$el->prenom},\n\n"
-			         . "La nouvelle saison a commencé et votre adhésion au {$club} n'a pas encore été renouvelée. "
-			         . "Votre accès à l'espace personnel a été temporairement désactivé — vos informations restent bien sûr conservées.\n\n"
-			         . ( $lien
-			             ? "Pour renouveler, cliquez sur ce lien : vos informations sont déjà pré-remplies, il ne reste qu'à les vérifier et les compléter si besoin.\n{$lien}\n\n"
-			             : "Contactez le club pour renouveler votre adhésion.\n\n" )
-			         . "À très bientôt sur les tatamis !\n— L'équipe {$club}";
-
-			wp_mail( $dest, $subject, $body );
-		}
+		wp_mail( $dest, $subject, $body );
 	}
 
 	/** URL de la page publique portant le shortcode [sp_inscription_adhesion]. */
@@ -232,6 +248,13 @@ class SP_Cal_Renouvellement {
 		}
 		if ( isset( $_GET['renouv_erreur'] ) ) {
 			echo '<div class="notice notice-error is-dismissible"><p>❌ Merci de renseigner la saison cible.</p></div>';
+		}
+		if ( isset( $_GET['renouv_relance_envoyee'] ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>✅ Relance envoyée au bureau.</p></div>';
+		}
+		if ( isset( $_GET['renouv_desactive'] ) ) {
+			$n = intval( $_GET['renouv_desactive'] );
+			echo '<div class="notice notice-success is-dismissible"><p>✅ ' . $n . ' compte(s) désactivé(s) — lien de renouvellement envoyé.</p></div>';
 		}
 
 		echo '<div class="sp-box" style="margin-bottom:20px;">';
@@ -257,9 +280,9 @@ class SP_Cal_Renouvellement {
 		) ) : 0;
 		?>
 		<p class="description">
-			Déclenche la campagne de rappel de fin de saison (voir <code>md/06-renouvellement-saison.md</code>) :
-			2 relances au bureau, puis désactivation automatique des comptes non renouvelés (jamais de suppression)
-			et envoi du lien de renouvellement à chacun.
+			Déclenche la campagne de renouvellement (voir <code>md/06-renouvellement-saison.md</code>) :
+			relance du bureau au moment de votre choix, puis désactivation manuelle (en lot ou individuelle)
+			des comptes non renouvelés — jamais de suppression, jamais d'action automatique déclenchée toute seule.
 		</p>
 		<?php if ( $source ) : ?>
 			<p><strong><?php echo $count; ?></strong> adhérent(s) actuellement actif(s) sur la saison <strong><?php echo esc_html( $source ); ?></strong> seraient concernés.</p>
@@ -275,12 +298,8 @@ class SP_Cal_Renouvellement {
 				       style="height:32px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
 			</div>
 			<div>
-				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">1ʳᵉ relance (bureau) — jours après le lancement</label>
-				<input type="number" name="renouv_delai1" value="21" min="1" max="120" style="height:32px;width:80px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
-			</div>
-			<div>
-				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">2ᵉ relance + désactivation du compte — jours après le lancement</label>
-				<input type="number" name="renouv_delai2" value="45" min="1" max="180" style="height:32px;width:80px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
+				<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Bandeau d'alerte désactivation — jours après la relance</label>
+				<input type="number" name="renouv_alerte_jours" value="15" min="1" max="120" style="height:32px;width:80px;border:1px solid #8c8f94;border-radius:4px;padding:0 8px;">
 			</div>
 			<button type="submit" class="button button-primary"
 			        onclick="return confirm('Lancer la campagne de renouvellement maintenant ?');">
@@ -291,30 +310,94 @@ class SP_Cal_Renouvellement {
 	}
 
 	private function render_dashboard(): void {
-		$source    = get_option( 'sp_cal_renouv_saison_source', '' );
-		$cible     = get_option( 'sp_cal_renouv_saison_cible', '' );
-		$lancement = get_option( 'sp_cal_renouv_date_lancement', '' );
-		$notif1_le = get_option( 'sp_cal_renouv_notif1_le', '' );
-		$notif2_le = get_option( 'sp_cal_renouv_notif2_le', '' );
-		$restants  = count( $this->get_non_renouveles() );
+		$source       = get_option( 'sp_cal_renouv_saison_source', '' );
+		$cible        = get_option( 'sp_cal_renouv_saison_cible', '' );
+		$lancement    = get_option( 'sp_cal_renouv_date_lancement', '' );
+		$relance_le   = get_option( 'sp_cal_renouv_relance_le', '' );
+		$alerte_jours = max( 1, intval( get_option( 'sp_cal_renouv_alerte_jours', 15 ) ) );
+		$non_renouv   = $this->get_non_renouveles();
+		$restants     = count( $non_renouv );
 		?>
 		<p>
 			Campagne en cours : <strong><?php echo esc_html( $source ); ?> → <?php echo esc_html( $cible ); ?></strong>
 			(lancée le <?php echo esc_html( date( 'd/m/Y', strtotime( $lancement ) ) ); ?>)
 		</p>
+
+		<?php
+		// Bandeau d'alerte — calculé à chaque chargement de cette page, aucune dépendance au cron
+		// (cf. note en tête de fichier). N'apparaît que si la relance a déjà été envoyée une fois.
+		if ( $relance_le !== '' ) :
+			$jours_ecoules = intval( floor( ( strtotime( 'today' ) - strtotime( $relance_le ) ) / DAY_IN_SECONDS ) );
+			if ( $jours_ecoules >= $alerte_jours && $restants > 0 ) : ?>
+				<div class="notice notice-warning inline" style="padding:12px 16px;margin:12px 0;">
+					<p style="margin:0;">⚠️ Il y a <strong><?php echo $jours_ecoules; ?> jours</strong> que la relance a été envoyée au bureau —
+					<strong><?php echo $restants; ?></strong> adhérent(s) n'ont toujours pas renouvelé.
+					Vous pouvez désactiver leurs comptes ci-dessous (en lot ou individuellement).</p>
+				</div>
+			<?php endif;
+		endif; ?>
+
 		<ul style="margin-left:20px;list-style:disc;">
-			<li>Relance bureau n°1 : <?php echo $notif1_le ? '✅ envoyée le ' . esc_html( date( 'd/m/Y', strtotime( $notif1_le ) ) ) : '⏳ pas encore envoyée'; ?></li>
-			<li>Relance bureau n°2 + désactivation : <?php echo $notif2_le ? '✅ effectuée le ' . esc_html( date( 'd/m/Y', strtotime( $notif2_le ) ) ) : '⏳ pas encore effectuée'; ?></li>
+			<li>Relance bureau : <?php echo $relance_le ? '✅ envoyée le ' . esc_html( date( 'd/m/Y', strtotime( $relance_le ) ) ) : '⏳ pas encore envoyée'; ?></li>
 			<li><strong><?php echo $restants; ?></strong> adhérent(s) encore sur l'ancienne saison à ce jour</li>
 		</ul>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="sp_renouv_annuler">
-			<?php wp_nonce_field( 'sp_renouv_annuler' ); ?>
-			<button type="submit" class="button button-secondary"
-			        onclick="return confirm('Annuler la campagne en cours ? Les comptes déjà désactivés ne seront pas réactivés automatiquement.');">
-				Annuler la campagne
-			</button>
-		</form>
+
+		<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="sp_renouv_relance">
+				<?php wp_nonce_field( 'sp_renouv_relance' ); ?>
+				<button type="submit" class="button button-primary">
+					📧 Envoyer la relance au bureau
+				</button>
+			</form>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="sp_renouv_annuler">
+				<?php wp_nonce_field( 'sp_renouv_annuler' ); ?>
+				<button type="submit" class="button button-secondary"
+				        onclick="return confirm('Annuler la campagne en cours ? Les comptes déjà désactivés ne seront pas réactivés automatiquement.');">
+					Annuler la campagne
+				</button>
+			</form>
+		</div>
+
+		<?php if ( $restants > 0 ) : ?>
+		<div class="sp-box" style="background:#fafafa;border:1px solid #e2e8f0;">
+			<h3 style="margin-top:0;">🔒 Désactivation des comptes non renouvelés</h3>
+			<p class="description">Désactive l'accès à l'espace personnel (jamais de suppression) et envoie à l'adhérent le lien de renouvellement pré-rempli.</p>
+
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-bottom:14px;">
+				<input type="hidden" name="action" value="sp_renouv_desactiver_lot">
+				<?php wp_nonce_field( 'sp_renouv_desactiver_lot' ); ?>
+				<button type="submit" class="button" style="background:#b91c1c;color:#fff;border-color:#b91c1c;"
+				        onclick="return confirm('Désactiver les <?php echo $restants; ?> comptes non renouvelés et leur envoyer le lien de renouvellement ?');">
+					🔒 Oui, tout désactiver (<?php echo $restants; ?>)
+				</button>
+			</form>
+
+			<table class="wp-list-table widefat striped">
+				<thead><tr><th>Nom</th><th>Catégorie</th><th style="width:120px;">Action</th></tr></thead>
+				<tbody>
+				<?php foreach ( $non_renouv as $el ) :
+					$url = wp_nonce_url(
+						admin_url( 'admin-post.php?action=sp_renouv_desactiver_un&eleve_id=' . intval( $el->id ) ),
+						'sp_renouv_desactiver_un'
+					);
+				?>
+					<tr>
+						<td><?php echo esc_html( $el->prenom . ' ' . $el->nom ); ?></td>
+						<td><?php echo esc_html( $el->categorie_age ); ?></td>
+						<td>
+							<a href="<?php echo esc_url( $url ); ?>" class="button button-small"
+							   onclick="return confirm('Désactiver <?php echo esc_js( $el->prenom . ' ' . $el->nom ); ?> et lui envoyer le lien de renouvellement ?');">
+								Désactiver
+							</a>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php endif; ?>
 		<?php
 	}
 }
