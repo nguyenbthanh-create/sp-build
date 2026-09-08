@@ -59,6 +59,16 @@ class SP_Front_Adhesion {
 		add_shortcode( 'sp_inscription_adhesion', [ $this, 'render_shortcode' ] );
 		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
 		add_action( 'init', [ $this, 'maybe_print_attestation' ] );
+		add_action( 'wp_mail_failed', [ __CLASS__, 'log_mail_failure' ] );
+	}
+
+	// Journalise la raison exacte d'un échec d'envoi (08/09/2026 — email de confirmation adhérent
+	// signalé comme non reçu alors que le code est identique à l'email admin, qui lui arrive bien,
+	// et que la même adresse destinataire reçoit déjà d'autres emails du site sans souci). Ce hook
+	// WordPress ne capture que les échecs côté serveur d'envoi (SMTP refusé, en-tête invalide...) —
+	// il ne peut rien dire d'un message accepté puis filtré/silencieusement rejeté côté destinataire.
+	public static function log_mail_failure( \WP_Error $error ): void {
+		error_log( '[SP_Build] Échec wp_mail() : ' . $error->get_error_message() . ' — données : ' . wp_json_encode( $error->get_error_data() ) );
 	}
 
 	// La création de table n'était jamais déclenchée nulle part avant le 2026-09-01
@@ -691,7 +701,10 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		         . "par l'administrateur très prochainement et vous recevrez un email avec vos informations d'accès.\n\n"
 		         . "En attendant, n'hésitez pas à nous contacter pour toute question.\n\n"
 		         . "À bientôt sur les tatamis !\n— L'équipe {$club}";
-		wp_mail( $email, $subject, $body );
+		$sent = wp_mail( $email, $subject, $body );
+		if ( ! $sent ) {
+			error_log( "[SP_Build] wp_mail() a retourné false pour l'email de confirmation adhérent (destinataire : {$email})." );
+		}
 	}
 
 	// ─── Succès ───────────────────────────────────────────────────────────────
