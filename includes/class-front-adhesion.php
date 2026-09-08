@@ -438,14 +438,18 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 		if ( ! $reglement_accepte ) $errors[] = 'Vous devez accepter le règlement intérieur.';
 
-		// Anti-doublon
+		// Anti-doublon — sur l'identité de l'ADHÉRENT (nom + prénom + date de naissance), pas sur
+		// l'email de contact : une même adresse email est légitimement partagée par plusieurs
+		// adhérents (un parent inscrivant plusieurs enfants, ou son propre email pour toute la
+		// famille). Vérifier sur l'email bloquait à tort toute inscription d'un 2e/3e enfant avec
+		// la même adresse (08/09/2026, signalé par l'utilisateur).
 		if ( empty( $errors ) ) {
 			$already = $wpdb->get_var( $wpdb->prepare(
-				"SELECT id FROM {$this->table} WHERE email = %s AND statut = 'pending' LIMIT 1",
-				$email
+				"SELECT id FROM {$this->table} WHERE nom = %s AND prenom = %s AND date_naissance = %s AND statut = 'pending' LIMIT 1",
+				$nom, $prenom, $ddn
 			) );
 			if ( $already ) {
-				$errors[] = 'Une demande avec cet email est déjà en cours de traitement. Contactez-nous si besoin.';
+				$errors[] = 'Une demande pour ' . esc_html( $prenom . ' ' . $nom ) . ' est déjà en cours de traitement. Contactez-nous si besoin.';
 			}
 		}
 
