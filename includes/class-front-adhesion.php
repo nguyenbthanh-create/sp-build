@@ -490,7 +490,14 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		}
 
 		// ── Insertion ──
-		$ok = $wpdb->insert( $this->table, [
+		// $wpdb->insert() nomme obligatoirement chaque colonne (contrairement à un SELECT *) : si une
+		// colonne toute juste ajoutée n'existe pas encore réellement en base (ex: dbDelta() a échoué
+		// silencieusement faute de droit ALTER TABLE sur l'hébergement — cf. maybe_create_table() plus
+		// haut), MySQL rejette l'insertion en bloc et toute la demande d'adhésion échoue avec un message
+		// technique opaque pour l'adhérent. On filtre donc les colonnes contre le schéma réel juste avant
+		// d'insérer : une colonne manquante est simplement ignorée (et journalisée) plutôt que de bloquer
+		// toute la demande — même logique de dégradation gracieuse que le SELECT * de render_list().
+		$insert_data = [
 			'nom'                    => $nom,
 			'prenom'                 => $prenom,
 			'date_naissance'         => $ddn,
@@ -531,7 +538,8 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'statut'                 => 'pending',
 			'ip_address'             => $_SERVER['REMOTE_ADDR'] ?? '',
 			'created_at'             => current_time( 'mysql' ),
-		], [
+		];
+		$insert_format = [
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%s','%s','%s','%s','%s',
 			'%s','%d','%s',
@@ -541,7 +549,23 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'%s','%s','%d','%s','%s','%s',
 			'%d','%d','%d','%d',
 			'%s','%s','%s',
-		] );
+		];
+
+		$existing_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$this->table}" );
+		$filtered_data   = [];
+		$filtered_format = [];
+		$i = 0;
+		foreach ( $insert_data as $col => $val ) {
+			if ( in_array( $col, $existing_cols, true ) ) {
+				$filtered_data[ $col ] = $val;
+				$filtered_format[]     = $insert_format[ $i ];
+			} else {
+				error_log( "[SP_Build] Colonne '{$col}' absente de {$this->table} — ignorée pour cette demande d'adhésion. Vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+			}
+			$i++;
+		}
+
+		$ok = $wpdb->insert( $this->table, $filtered_data, $filtered_format );
 
 		if ( ! $ok ) {
 			return [ 'success' => false, 'errors' => [ 'Une erreur technique est survenue. Veuillez réessayer.' ] ];

@@ -719,7 +719,25 @@ class SP_Admin_Adhesions {
 			'%s',
 		];
 
-		$inserted = $wpdb->insert( $this->eleves_table, $data, $format );
+		// Filtrage défensif contre le schéma réel — cf. même correctif dans
+		// SP_Front_Adhesion::handle_submission() : une colonne pas encore migrée sur cet
+		// hébergement (dbDelta() en échec silencieux, droits ALTER TABLE) ne doit plus faire
+		// échouer toute la création du compte, juste être ignorée (et journalisée).
+		$existing_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$this->eleves_table}" );
+		$filtered_data   = [];
+		$filtered_format = [];
+		$i = 0;
+		foreach ( $data as $col => $val ) {
+			if ( in_array( $col, $existing_cols, true ) ) {
+				$filtered_data[ $col ] = $val;
+				$filtered_format[]     = $format[ $i ];
+			} else {
+				error_log( "[SP_Build] Colonne '{$col}' absente de {$this->eleves_table} — ignorée à la création du membre. Vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+			}
+			$i++;
+		}
+
+		$inserted = $wpdb->insert( $this->eleves_table, $filtered_data, $filtered_format );
 
 		if ( ! $inserted ) {
 			error_log( '[SP_Build] create_member() DB error: ' . $wpdb->last_error );
@@ -839,7 +857,24 @@ class SP_Admin_Adhesions {
 			'%s',
 		];
 
-		$ok = $wpdb->update( $this->eleves_table, $data, [ 'id' => $eleve_id ], $format, [ '%d' ] );
+		// Filtrage défensif contre le schéma réel — même correctif que create_member() /
+		// SP_Front_Adhesion::handle_submission() : une colonne pas encore migrée ne doit plus
+		// faire échouer tout le renouvellement, juste être ignorée (et journalisée).
+		$existing_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$this->eleves_table}" );
+		$filtered_data   = [];
+		$filtered_format = [];
+		$i = 0;
+		foreach ( $data as $col => $val ) {
+			if ( in_array( $col, $existing_cols, true ) ) {
+				$filtered_data[ $col ] = $val;
+				$filtered_format[]     = $format[ $i ];
+			} else {
+				error_log( "[SP_Build] Colonne '{$col}' absente de {$this->eleves_table} — ignorée lors du renouvellement. Vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+			}
+			$i++;
+		}
+
+		$ok = $wpdb->update( $this->eleves_table, $filtered_data, [ 'id' => $eleve_id ], $filtered_format, [ '%d' ] );
 
 		if ( $ok === false ) {
 			error_log( '[SP_Build] update_member_renouvellement() DB error: ' . $wpdb->last_error );
