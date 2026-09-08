@@ -26,9 +26,27 @@ class SP_Front_Adhesion {
 
 	private const MAX_REPRESENTANTS = 2;
 
-	// Colonne la plus récemment ajoutée à la table — sert de "sentinelle" pour
-	// maybe_create_table() (voir plus bas). La mettre à jour à chaque nouvelle colonne.
-	private const SENTINEL_COLUMN = 'photo_url';
+	// Liste complète des colonnes attendues sur la table — utilisée par maybe_create_table()
+	// (voir plus bas) pour vérifier le schéma réel à chaque chargement. La mettre à jour à
+	// chaque nouvelle colonne ajoutée à create_table().
+	//
+	// Remplace l'ancienne approche à une seule colonne "sentinelle" (08/09/2026) : un adhérent
+	// a été bloqué à l'inscription car doc_decharge_honneur (ajoutée le 03/09) manquait toujours
+	// en base alors que la sentinelle de l'époque (qs_sport_confirme, ajoutée dans le même lot)
+	// existait bien — dbDelta() avait donc échoué partiellement sur CE lot de colonnes sans que
+	// ça soit jamais détecté, puisque la vérification ne portait que sur la toute dernière
+	// colonne ajoutée, pas sur l'ensemble du schéma. Vérifier chaque colonne individuellement
+	// empêche ce genre de trou silencieux de se reproduire.
+	private const EXPECTED_COLUMNS = [
+		'id', 'nom', 'prenom', 'date_naissance', 'sexe', 'email', 'telephone', 'lieu_naissance',
+		'nationalite', 'adresse', 'discipline', 'categorie', 'message', 'pass_sport_code', 'caf_bon',
+		'doc_bon_caf', 'representants_legaux', 'contact_urgence', 'renouvellement_eleve_id',
+		'pratique_anterieure', 'ancien_licence', 'ancien_passeport', 'ancien_grade', 'taille_cm',
+		'poids_kg', 'pointure', 'taille_tshirt', 'taille_pantalon', 'doc_certificat_medical',
+		'date_certificat_medical', 'qs_sport_confirme', 'doc_attestation_rc', 'doc_decharge_honneur',
+		'photo_url', 'autorisation_photo', 'autorisation_seul', 'droit_image', 'reglement_accepte',
+		'statut', 'refus_motif', 'ip_address', 'created_at', 'updated_at',
+	];
 
 	public static function get_instance(): self {
 		if ( self::$instance === null ) self::$instance = new self();
@@ -49,26 +67,25 @@ class SP_Front_Adhesion {
 	// ALTER TABLE insuffisants sur l'hébergement), l'option était quand même marquée à jour
 	// et le correctif ne se relançait plus jamais, malgré des colonnes manquantes en base
 	// (cause du bug "Une erreur technique est survenue" du 03/09/2026, cf. 04-journal-modifications.md).
-	// Corrigé en vérifiant l'existence réelle de la dernière colonne attendue à chaque chargement,
-	// au lieu de se fier à un numéro de version qui peut désynchroniser de la réalité.
+	// Corrigé en vérifiant l'existence réelle de CHAQUE colonne attendue (EXPECTED_COLUMNS) à
+	// chaque chargement, au lieu de se fier à un numéro de version — ou même à une seule colonne
+	// "sentinelle" (insuffisant, cf. le commentaire sur EXPECTED_COLUMNS plus haut).
 	public static function maybe_create_table(): void {
 		global $wpdb;
 		$table = $wpdb->prefix . 'sp_adhesions_pending';
 
-		$exists = $wpdb->get_var( $wpdb->prepare(
-			"SHOW COLUMNS FROM {$table} LIKE %s", self::SENTINEL_COLUMN
-		) );
-		if ( $exists ) return;
+		$existing = $wpdb->get_col( "SHOW COLUMNS FROM {$table}" );
+		$missing  = array_diff( self::EXPECTED_COLUMNS, $existing );
+		if ( empty( $missing ) ) return;
 
 		self::create_table();
 
-		$exists = $wpdb->get_var( $wpdb->prepare(
-			"SHOW COLUMNS FROM {$table} LIKE %s", self::SENTINEL_COLUMN
-		) );
-		if ( ! $exists ) {
+		$existing = $wpdb->get_col( "SHOW COLUMNS FROM {$table}" );
+		$missing  = array_diff( self::EXPECTED_COLUMNS, $existing );
+		if ( ! empty( $missing ) ) {
 			error_log(
-				'[SP_Build] La colonne ' . self::SENTINEL_COLUMN . ' est absente de ' . $table . ' après dbDelta() — '
-				. 'vérifier que l\'utilisateur MySQL du site a bien le droit ALTER TABLE.'
+				'[SP_Build] Colonne(s) toujours absente(s) de ' . $table . ' après dbDelta() : '
+				. implode( ', ', $missing ) . ' — vérifier que l\'utilisateur MySQL du site a bien le droit ALTER TABLE.'
 			);
 		}
 	}
