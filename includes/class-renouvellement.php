@@ -342,22 +342,28 @@ class SP_Cal_Renouvellement {
 			<li><strong><?php echo $restants; ?></strong> adhérent(s) encore sur l'ancienne saison à ce jour</li>
 		</ul>
 
-		<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<input type="hidden" name="action" value="sp_renouv_relance">
-				<?php wp_nonce_field( 'sp_renouv_relance' ); ?>
-				<button type="submit" class="button button-primary">
-					📧 Envoyer la relance au bureau
-				</button>
-			</form>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<input type="hidden" name="action" value="sp_renouv_annuler">
-				<?php wp_nonce_field( 'sp_renouv_annuler' ); ?>
-				<button type="submit" class="button button-secondary"
-				        onclick="return confirm('Annuler la campagne en cours ? Les comptes déjà désactivés ne seront pas réactivés automatiquement.');">
-					Annuler la campagne
-				</button>
-			</form>
+		<div style="margin-bottom:16px;">
+			<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="sp_renouv_relance">
+					<?php wp_nonce_field( 'sp_renouv_relance' ); ?>
+					<button type="submit" class="button button-primary">
+						📧 Envoyer la relance au bureau
+					</button>
+				</form>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="sp_renouv_annuler">
+					<?php wp_nonce_field( 'sp_renouv_annuler' ); ?>
+					<button type="submit" class="button button-secondary"
+					        onclick="return confirm('Annuler la campagne en cours ? Les comptes déjà désactivés ne seront pas réactivés automatiquement.');">
+						Annuler la campagne
+					</button>
+				</form>
+			</div>
+			<p class="description" style="margin-top:6px;">
+				ℹ️ Ce bouton n'envoie rien aux adhérents — uniquement la liste des non-renouvelés au bureau, pour relance manuelle (téléphone, au club...).
+				Les adhérents ne reçoivent un email qu'au moment de leur <strong>désactivation</strong>, dans la section ci-dessous.
+			</p>
 		</div>
 
 		<?php if ( $restants > 0 ) : ?>
