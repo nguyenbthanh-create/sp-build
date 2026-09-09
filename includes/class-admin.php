@@ -2515,14 +2515,22 @@ function spCalBufToB64u(buf) {
                     action:     'sp_cal_send_dispo_app_link',
                     trainer_id: id,
                     nonce: '<?php echo wp_create_nonce("sp_cal_admin_nonce"); ?>'
-                }, function(r) {
-                    if (r.success) {
+                })
+                .done(function(r) {
+                    if (r && r.success) {
                         $btn.text('✅').css('color','#15803d');
                         setTimeout(function(){ $btn.prop('disabled',false).text('🗓️').css('color',''); }, 3000);
                     } else {
-                        alert('Erreur : ' + (r.data || 'Envoi échoué'));
+                        alert('Erreur : ' + (r && r.data ? r.data : 'Envoi échoué'));
                         $btn.prop('disabled',false).text('🗓️');
                     }
+                })
+                // Sans ce .fail(), une requête en échec (erreur PHP fatale, timeout...) laissait
+                // le bouton bloqué indéfiniment sur "⏳" sans aucun message — bug signalé le
+                // 09/09/2026, cause exacte jamais confirmée faute de retour visible.
+                .fail(function(xhr) {
+                    alert('Erreur réseau/serveur (HTTP ' + xhr.status + ') — voir le journal du site pour le détail.');
+                    $btn.prop('disabled',false).text('🗓️');
                 });
             });
         })(jQuery);

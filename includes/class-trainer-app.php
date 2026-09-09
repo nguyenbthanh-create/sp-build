@@ -106,17 +106,29 @@ class SP_Cal_Trainer_App {
 	}
 
 	public function ajax_send_link(): void {
-		check_ajax_referer( 'sp_cal_admin_nonce', 'nonce' );
-		if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Accès refusé', 403 );
+		// Bug signalé le 09/09/2026 : le bouton restait bloqué sur "⏳" sans jamais
+		// afficher de succès ni d'erreur, et rien n'apparaissait dans debug.log — signe
+		// que la requête échouait avant même d'atteindre wp_send_json_*() (l'ancien JS
+		// n'avait pas de gestion d'échec réseau/HTTP, donc l'échec restait invisible des
+		// deux côtés). Ajout d'un filet PHP (attrape tout Throwable, log explicite) en
+		// plus du filet JS (voir class-admin.php) pour obtenir une vraie cause au
+		// prochain essai plutôt que de deviner à nouveau.
+		try {
+			check_ajax_referer( 'sp_cal_admin_nonce', 'nonce' );
+			if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Accès refusé', 403 );
 
-		$trainer_id = intval( $_POST['trainer_id'] ?? 0 );
-		if ( ! $trainer_id ) wp_send_json_error( 'ID manquant', 400 );
+			$trainer_id = intval( $_POST['trainer_id'] ?? 0 );
+			if ( ! $trainer_id ) wp_send_json_error( 'ID manquant', 400 );
 
-		$sent = $this->generate_and_send( $trainer_id, true );
-		if ( $sent ) {
-			wp_send_json_success( 'Lien envoyé.' );
-		} else {
-			wp_send_json_error( 'Échec de l\'envoi (email manquant ou erreur d\'envoi).' );
+			$sent = $this->generate_and_send( $trainer_id, true );
+			if ( $sent ) {
+				wp_send_json_success( 'Lien envoyé.' );
+			} else {
+				wp_send_json_error( 'Échec de l\'envoi (email manquant ou erreur d\'envoi).' );
+			}
+		} catch ( \Throwable $e ) {
+			error_log( '[SP_Build] ajax_send_link() exception : ' . $e->getMessage() . ' — ' . $e->getFile() . ':' . $e->getLine() );
+			wp_send_json_error( 'Erreur interne : ' . $e->getMessage() );
 		}
 	}
 
