@@ -91,6 +91,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         add_submenu_page( 'sp-cal-pro', 'Créneaux',       'Créneaux',       'manage_options', 'sp-cal-slots',       array( $this, 'page_slots' ) );
         add_submenu_page( 'sp-cal-pro', 'Élèves & Import','Élèves & Import',SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
         add_submenu_page( 'sp-cal-pro', '🪪 Adhésions',   '🪪 Adhésions',   SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-licences',    array( $this, 'page_licences' ) );
+        add_submenu_page( 'sp-cal-pro', '📅 Planning',    '📅 Planning',    SP_Cal_Roles::CAP_VOIR_PLANNING, 'sp-cal-planning-lien', array( $this, 'page_planning_lien' ) );
         add_submenu_page( 'sp-cal-pro', '🖨️ Cartes membres','🖨️ Cartes membres','manage_options', 'sp-cal-print-cartes', array( $this, 'page_print_cartes' ) );
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );
         add_submenu_page( 'sp-cal-pro', 'Palmarès',       '🏆 Palmarès',    'manage_options', 'sp-cal-palmares',    array( $this, 'page_palmares' ) );
@@ -2269,6 +2270,34 @@ function spCalBufToB64u(buf) {
 
         echo do_shortcode( '[sp_cal_calendar]' );
         echo '</div>';
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       PAGE : Lien vers le planning (front-end) — pour les profils qui
+       n'ont accès qu'à la consultation (ex. trésorière), cf. doleances.md
+       09/09/2026. Un lien wp-admin plutôt qu'une URL à retenir/mettre en
+       favori, pour ne jamais casser si la page change de nom un jour —
+       l'URL réelle est recalculée depuis l'option à chaque affichage.
+    ══════════════════════════════════════════════════════════ */
+    public function page_planning_lien() {
+        if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) wp_die( 'Accès refusé' );
+
+        $url  = get_option( 'sp_cal_public_link', home_url( '/planning/' ) );
+        $club = get_option( 'blogname', 'Club' );
+        ?>
+        <div class="wrap sp-cal-wrap">
+            <h1>📅 Planning</h1>
+            <div class="sp-box" style="max-width:560px;text-align:center;padding:32px;">
+                <p style="font-size:14px;color:#6b7280;margin-bottom:20px;">
+                    Consultez le planning des cours et la présence des entraîneurs de <?php echo esc_html( $club ); ?>.
+                </p>
+                <a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" class="button button-primary button-hero">
+                    Voir le planning →
+                </a>
+                <p class="sp-muted" style="margin-top:16px;font-size:12px;">Ouvre le planning dans un nouvel onglet.</p>
+            </div>
+        </div>
+        <?php
     }
 
     /* ══════════════════════════════════════════════════════════

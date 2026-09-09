@@ -843,10 +843,13 @@ class SpCalPro_DB {
 
     /* ── Anniversaires du mois (depuis CSV élèves) ───────────── */
 
+    // Uniquement les élèves actifs (09/09/2026, cf. doleances.md) — un compte désactivé en
+    // fin de saison ne doit pas polluer le calendrier admin avec son anniversaire tant que
+    // la nouvelle saison n'a pas commencé.
     public function get_birthdays_for_month( $year, $month ) {
         global $wpdb;
         return $wpdb->get_results( $wpdb->prepare(
-            "SELECT nom, prenom, date_naissance, annee_naissance FROM {$this->table_eleves()} WHERE date_naissance LIKE %s ORDER BY date_naissance ASC",
+            "SELECT nom, prenom, date_naissance, annee_naissance FROM {$this->table_eleves()} WHERE date_naissance LIKE %s AND actif = 1 ORDER BY date_naissance ASC",
             '%/' . sprintf( '%02d', $month )
         ) );
     }
