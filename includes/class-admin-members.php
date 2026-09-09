@@ -14,6 +14,18 @@ if ( ! class_exists( 'SP_Cal_Members' ) ) :
 
 class SP_Cal_Members {
 
+    // Même liste que SP_Front_Adhesion::STATUTS_CONTACT (formulaire public) — dupliquée ici
+    // volontairement plutôt que de rendre la constante de l'autre classe publique, pour ne
+    // pas coupler les deux classes pour 6 lignes. Garder synchronisée si la liste évolue.
+    private const STATUTS_CONTACT = [
+        'pere'               => 'Père',
+        'mere'               => 'Mère',
+        'conjoint'           => 'Conjoint/e',
+        'famille_accueil'    => "Famille d'accueil",
+        'representant_legal' => 'Représentant légal',
+        'autre'              => 'Autre',
+    ];
+
     private $db;
     private $token;
 
@@ -36,6 +48,61 @@ class SP_Cal_Members {
 
         /* ── Élève : sauvegarder ── */
         if ( isset( $_POST['sp_cal_save_eleve'] ) && check_admin_referer( 'sp_cal_save_eleve' ) ) {
+            $id = intval( $_POST['eleve_id'] ?? 0 );
+
+            // Fusionne avec l'extra_data existant plutôt que de l'écraser — même précaution
+            // que SP_Admin_Adhesions::update_member_renouvellement(), pour ne jamais perdre un
+            // historique sans rapport (ex : grades importés en CSV, cf. class-admin-members.php).
+            $extra_existant = array();
+            if ( $id ) {
+                $raw_extra = $wpdb->get_var( $wpdb->prepare( "SELECT extra_data FROM $tel WHERE id=%d", $id ) );
+                $decoded   = $raw_extra ? json_decode( $raw_extra, true ) : null;
+                $extra_existant = is_array( $decoded ) ? $decoded : array();
+            }
+
+            // Représentants légaux — jusqu'à 2, mêmes statuts que le formulaire public
+            // (cf. SP_Front_Adhesion::STATUTS_CONTACT). Le 1er alimente aussi les colonnes à
+            // plat historiques (representant_nom/prenom/telephone) pour tout code qui les lit
+            // encore directement ; l'email et le 2e représentant n'existent qu'en JSON (pas de
+            // colonne dédiée sur sp_cal_eleves pour ces cas).
+            $representants = array();
+            for ( $i = 1; $i <= 2; $i++ ) {
+                $r = array(
+                    'statut'    => sanitize_text_field( wp_unslash( $_POST["eleve_repres{$i}_statut"]    ?? '' ) ),
+                    'nom'       => sanitize_text_field( wp_unslash( $_POST["eleve_repres{$i}_nom"]       ?? '' ) ),
+                    'prenom'    => sanitize_text_field( wp_unslash( $_POST["eleve_repres{$i}_prenom"]    ?? '' ) ),
+                    'telephone' => sanitize_text_field( wp_unslash( $_POST["eleve_repres{$i}_telephone"] ?? '' ) ),
+                    'email'     => sanitize_email( wp_unslash( $_POST["eleve_repres{$i}_email"] ?? '' ) ),
+                );
+                if ( $r === array( 'statut' => '', 'nom' => '', 'prenom' => '', 'telephone' => '', 'email' => '' ) ) continue;
+                $representants[] = $r;
+            }
+            $repres1 = $representants[0] ?? array( 'nom' => '', 'prenom' => '', 'telephone' => '' );
+
+            $urgence_statut = sanitize_text_field( wp_unslash( $_POST['eleve_urgence_statut'] ?? '' ) );
+
+            $extra = array_merge( $extra_existant, array(
+                'sexe'                    => sanitize_text_field( wp_unslash( $_POST['eleve_sexe'] ?? '' ) ),
+                'autorisation_photo'      => isset( $_POST['eleve_autorisation_photo'] ) ? 1 : 0,
+                'pass_sport_code'         => sanitize_text_field( wp_unslash( $_POST['eleve_pass_sport_code'] ?? '' ) ),
+                'qs_sport_confirme'       => isset( $_POST['eleve_qs_sport_confirme'] ) ? 1 : 0,
+                'date_certificat_medical' => sanitize_text_field( wp_unslash( $_POST['eleve_date_certificat_medical'] ?? '' ) ),
+                'representants_legaux'    => $representants,
+                'contact_urgence'         => array(
+                    'statut'    => $urgence_statut,
+                    'nom'       => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_nom']       ?? '' ) ),
+                    'prenom'    => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_prenom']    ?? '' ) ),
+                    'telephone' => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_telephone'] ?? '' ) ),
+                    'email'     => sanitize_email( wp_unslash( $_POST['eleve_urgence_email'] ?? '' ) ),
+                ),
+                'documents' => array(
+                    'certificat_medical' => esc_url_raw( wp_unslash( $_POST['eleve_doc_certificat_medical'] ?? '' ) ),
+                    'attestation_rc'     => esc_url_raw( wp_unslash( $_POST['eleve_doc_attestation_rc']     ?? '' ) ),
+                    'decharge_honneur'   => esc_url_raw( wp_unslash( $_POST['eleve_doc_decharge_honneur']   ?? '' ) ),
+                    'bon_caf'            => esc_url_raw( wp_unslash( $_POST['eleve_doc_bon_caf']            ?? '' ) ),
+                ),
+            ) );
+
             $data = array(
                 'nom'              => sanitize_text_field( wp_unslash( $_POST['eleve_nom']          ?? '' ) ),
                 'prenom'           => sanitize_text_field( wp_unslash( $_POST['eleve_prenom']       ?? '' ) ),
@@ -53,9 +120,11 @@ class SP_Cal_Members {
                 'telephone'        => sanitize_text_field( wp_unslash( $_POST['eleve_tel']          ?? '' ) ),
                 'email'            => sanitize_email( wp_unslash( $_POST['eleve_email']        ?? '' ) ),
                 'email_parent'     => sanitize_email( wp_unslash( $_POST['eleve_email_parent']    ?? '' ) ),
-                'representant_nom'       => sanitize_text_field( wp_unslash( $_POST['eleve_representant_nom']       ?? '' ) ),
-                'representant_telephone' => sanitize_text_field( wp_unslash( $_POST['eleve_representant_telephone'] ?? '' ) ),
+                'representant_nom'       => sanitize_text_field( wp_unslash( $repres1['nom']       ?? '' ) ),
+                'representant_prenom'    => sanitize_text_field( wp_unslash( $repres1['prenom']    ?? '' ) ),
+                'representant_telephone' => sanitize_text_field( wp_unslash( $repres1['telephone'] ?? '' ) ),
                 'urgence_nom'            => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_nom']            ?? '' ) ),
+                'urgence_prenom'         => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_prenom']         ?? '' ) ),
                 'urgence_telephone'      => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_telephone']      ?? '' ) ),
                 'urgence_email'          => sanitize_email( wp_unslash( $_POST['eleve_urgence_email']               ?? '' ) ),
                 // Champs RENFO
@@ -73,19 +142,33 @@ class SP_Cal_Members {
                 'nb_licences'       => intval( $_POST['eleve_nb_licences']  ?? 0 ),
                 'eligible_dan'      => isset($_POST['eleve_eligible_dan']) ? 1 : 0,
                 'photo_url'         => esc_url_raw( wp_unslash( $_POST['eleve_photo_url'] ?? '' ) ),
+                'extra_data'        => wp_json_encode( $extra ),
             );
-            $id = intval( $_POST['eleve_id'] ?? 0 );
+
+            // Filtrage défensif contre le schéma réel — même correctif que sur le formulaire
+            // d'adhésion public (cf. doleances.md 08/09/2026) : une colonne pas encore migrée
+            // sur cet hébergement ne doit plus faire échouer toute la sauvegarde de la fiche.
+            $existing_cols = $wpdb->get_col( "SHOW COLUMNS FROM {$tel}" );
+            $filtered_data = array();
+            foreach ( $data as $col => $val ) {
+                if ( in_array( $col, $existing_cols, true ) ) {
+                    $filtered_data[ $col ] = $val;
+                } else {
+                    error_log( "[SP_Build] Colonne '{$col}' absente de {$tel} — ignorée à l'enregistrement de la fiche élève. Vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+                }
+            }
+
             if ( $id ) {
                 // Détecter si l'élève passe de inactif → actif pour envoyer le token
                 $was_actif = intval( $wpdb->get_var( $wpdb->prepare( "SELECT actif FROM $tel WHERE id=%d", $id ) ) );
-                $wpdb->update( $tel, $data, array( 'id' => $id ) );
+                $wpdb->update( $tel, $filtered_data, array( 'id' => $id ) );
                 if ( ! $was_actif && $data['actif'] && $this->token ) {
                     $this->token->generate_and_send( $id );
                 }
                 // Rediriger en conservant l'ID pour réafficher la fiche correctement
                 wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&saved=1&sp_edit_eleve=' . $id ) ); exit;
             } else {
-                $wpdb->insert( $tel, $data );
+                $wpdb->insert( $tel, $filtered_data );
                 $new_id = $wpdb->insert_id;
                 if ( $data['actif'] && $this->token ) {
                     $this->token->generate_and_send( $new_id );
@@ -184,12 +267,19 @@ class SP_Cal_Members {
             $edit = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE id=%d", intval( $_GET['sp_edit_eleve'] ) ) );
         }
 
-        // Palmarès depuis extra_data pour les anciennes fiches (migration affichage)
+        // Décodage de extra_data — sert à la fois au palmarès des anciennes fiches (migration
+        // affichage) et aux champs ajoutés sur le formulaire public mais absents jusqu'ici de
+        // cette fiche admin (Pass'Sport, documents, sexe...) — cf. doleances.md 09/09/2026.
+        $extra = array();
         $extra_grades = array();
         if ( $edit && $edit->extra_data ) {
-            $extra = json_decode( $edit->extra_data, true );
-            $extra_grades = $extra['grades'] ?? array();
+            $decoded_extra = json_decode( $edit->extra_data, true );
+            $extra         = is_array( $decoded_extra ) ? $decoded_extra : array();
+            $extra_grades  = $extra['grades'] ?? array();
         }
+        $extra_representants = $extra['representants_legaux'] ?? array();
+        $extra_urgence       = $extra['contact_urgence']      ?? array();
+        $extra_documents     = $extra['documents']            ?? array();
         ?>
         <div class="wrap sp-cal-wrap">
         <h1>Élèves &amp; Import</h1>
@@ -430,6 +520,18 @@ class SP_Cal_Members {
                         <span style="color:#9ca3af;font-size:11px;">JJ/MM &nbsp;/&nbsp; AAAA</span>
                     </div>
                 </div>
+                    <!-- Sexe (ajouté 09/09/2026 — présent sur le formulaire public, absent jusqu'ici de la fiche admin) -->
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Sexe</label>
+                        <div style="display:flex;gap:14px;">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                                <input type="radio" name="eleve_sexe" value="M" <?php checked( ($extra['sexe'] ?? '') === 'M' ); ?>> Masculin
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                                <input type="radio" name="eleve_sexe" value="F" <?php checked( ($extra['sexe'] ?? '') === 'F' ); ?>> Féminin
+                            </label>
+                        </div>
+                    </div>
                     <!-- Catégorie d'âge -->
                     <div style="margin-bottom:12px;">
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie d'âge</label>
@@ -452,14 +554,37 @@ class SP_Cal_Members {
                 $f( 'Email parent',            'eleve_email_parent', $edit->email_parent    ?? '', 'email' );
                 ?>
 
-                <!-- Représentant légal / Contacts d'urgence -->
+                <!-- Représentant(s) légaux / Contact d'urgence -->
                 <?php
                 $annee_naiss = intval( $edit->annee_naissance ?? 0 );
                 $est_mineur  = $annee_naiss > 0 && ( intval(date('Y')) - $annee_naiss ) < 18;
+
+                // Champs texte/email d'un bloc "personne"
+                $f2 = function( $label, $name, $value, $type = 'text', $required = false ) use ( $est_mineur ) {
+                    $req_attr  = $required && $est_mineur ? ' required' : '';
+                    $req_label = $required && $est_mineur ? ' <span style="color:#dc2626;">*</span>' : '';
+                    echo '<div style="margin-bottom:10px;">';
+                    echo '<label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">' . esc_html($label) . $req_label . '</label>';
+                    echo '<input type="' . esc_attr($type) . '" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '" class="regular-text" style="width:100%;"' . $req_attr . '>';
+                    echo '</div>';
+                };
+                // Menu déroulant "lien avec l'adhérent" — mêmes options que le formulaire public
+                $f_statut = function( $name, $selected ) {
+                    echo '<div style="margin-bottom:10px;">';
+                    echo '<label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Lien avec l\'adhérent</label>';
+                    echo '<select name="' . esc_attr($name) . '" class="regular-text" style="width:100%;">';
+                    echo '<option value="">—</option>';
+                    foreach ( self::STATUTS_CONTACT as $key => $label ) {
+                        echo '<option value="' . esc_attr($key) . '"' . selected( $selected, $key, false ) . '>' . esc_html($label) . '</option>';
+                    }
+                    echo '</select></div>';
+                };
+
+                $repres2 = $extra_representants[1] ?? array();
                 ?>
                 <div style="max-width:860px;margin:18px 0 6px;">
 
-                    <!-- ── Représentant légal ── -->
+                    <!-- ── Représentant légal 1 ── -->
                     <div style="padding:14px 16px;border:2px solid <?php echo $est_mineur ? '#dc2626' : '#e5e7eb'; ?>;border-radius:8px 8px 0 0;background:<?php echo $est_mineur ? '#fff5f5' : '#f9fafb'; ?>;border-bottom:none;">
                         <p style="margin:0 0 12px;font-weight:700;font-size:13px;color:<?php echo $est_mineur ? '#dc2626' : '#374151'; ?>;">
                             👨‍👩‍👧 Représentant légal
@@ -467,31 +592,44 @@ class SP_Cal_Members {
                         </p>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">
                         <?php
-                        $f2 = function( $label, $name, $value, $type = 'text', $required = false ) use ( $est_mineur ) {
-                            $req_attr  = $required && $est_mineur ? ' required' : '';
-                            $req_label = $required && $est_mineur ? ' <span style="color:#dc2626;">*</span>' : '';
-                            echo '<div style="margin-bottom:10px;">';
-                            echo '<label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">' . esc_html($label) . $req_label . '</label>';
-                            echo '<input type="' . esc_attr($type) . '" name="' . esc_attr($name) . '" value="' . esc_attr($value) . '" class="regular-text" style="width:100%;"' . $req_attr . '>';
-                            echo '</div>';
-                        };
-                        $f2( 'Nom(s) complet(s)',  'eleve_representant_nom',       $edit->representant_nom       ?? '', 'text', true );
-                        $f2( 'Téléphone(s)',        'eleve_representant_telephone', $edit->representant_telephone ?? '' );
+                        $f_statut( 'eleve_repres1_statut', $extra_representants[0]['statut'] ?? '' );
+                        $f2( 'Nom',                'eleve_repres1_nom',       $edit->representant_nom       ?? '', 'text', true );
+                        $f2( 'Prénom',             'eleve_repres1_prenom',    $edit->representant_prenom    ?? '' );
+                        $f2( 'Téléphone',          'eleve_repres1_telephone', $edit->representant_telephone ?? '' );
+                        $f2( 'Email',              'eleve_repres1_email',     $extra_representants[0]['email'] ?? '', 'email' );
+                        ?>
+                        </div>
+                    </div>
+
+                    <!-- ── Représentant légal 2 (optionnel) ── -->
+                    <div style="padding:14px 16px;border:1px solid #e5e7eb;background:#fff;">
+                        <p style="margin:0 0 12px;font-weight:700;font-size:13px;color:#6b7280;">
+                            👨‍👩‍👧 2<sup>e</sup> représentant légal <span style="font-weight:400;font-size:11px;">(facultatif)</span>
+                        </p>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">
+                        <?php
+                        $f_statut( 'eleve_repres2_statut', $repres2['statut'] ?? '' );
+                        $f2( 'Nom',       'eleve_repres2_nom',       $repres2['nom']       ?? '' );
+                        $f2( 'Prénom',    'eleve_repres2_prenom',    $repres2['prenom']    ?? '' );
+                        $f2( 'Téléphone', 'eleve_repres2_telephone', $repres2['telephone'] ?? '' );
+                        $f2( 'Email',     'eleve_repres2_email',     $repres2['email']     ?? '', 'email' );
                         ?>
                         </div>
                     </div>
 
                     <!-- ── Contact urgence ── -->
-                    <div style="padding:14px 16px;border:2px solid <?php echo $est_mineur ? '#dc2626' : '#e5e7eb'; ?>;border-radius:0 0 8px 8px;background:#fff;">
+                    <div style="padding:14px 16px;border:2px solid <?php echo $est_mineur ? '#dc2626' : '#e5e7eb'; ?>;border-radius:0 0 8px 8px;background:#f9fafb;">
                         <p style="margin:0 0 12px;font-weight:700;font-size:13px;color:#374151;">
                             🚨 Contact d'urgence
-                            <span style="font-weight:400;font-size:11px;color:#888;margin-left:6px;">(peut être différent du représentant légal)</span>
+                            <span style="font-weight:400;font-size:11px;color:#888;margin-left:6px;">(peut être différent du/des représentant(s) légal/légaux)</span>
                         </p>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">
                         <?php
-                        $f2( 'Nom(s)',        'eleve_urgence_nom',       $edit->urgence_nom       ?? '' );
-                        $f2( 'Téléphone(s)', 'eleve_urgence_telephone', $edit->urgence_telephone ?? '' );
-                        $f2( 'Email(s)',      'eleve_urgence_email',     $edit->urgence_email     ?? '', 'email' );
+                        $f_statut( 'eleve_urgence_statut', $extra_urgence['statut'] ?? '' );
+                        $f2( 'Nom',       'eleve_urgence_nom',       $edit->urgence_nom       ?? '' );
+                        $f2( 'Prénom',    'eleve_urgence_prenom',    $edit->urgence_prenom    ?? '' );
+                        $f2( 'Téléphone', 'eleve_urgence_telephone', $edit->urgence_telephone ?? '' );
+                        $f2( 'Email',     'eleve_urgence_email',     $edit->urgence_email     ?? '', 'email' );
                         ?>
                         </div>
                     </div>
@@ -610,10 +748,15 @@ class SP_Cal_Members {
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Adresse</label>
                         <input type="text" name="eleve_adresse" value="<?php echo esc_attr($edit->adresse ?? ''); ?>" class="regular-text" style="width:100%;">
                     </div>
-                    <!-- Droit à l'image -->
+                    <!-- Autorisation photos/vidéos (prise de vue — distincte de la diffusion ci-dessous) -->
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:8px;">
+                        <input type="checkbox" name="eleve_autorisation_photo" value="1" <?php checked( ! empty( $extra['autorisation_photo'] ) ); ?>>
+                        <span>📷 Autorise la prise de photos/vidéos lors des activités du club</span>
+                    </label>
+                    <!-- Droit à l'image (diffusion) -->
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:8px;">
                         <input type="checkbox" name="eleve_droit_image" value="1" <?php checked(intval($edit->droit_image ?? 1), 1); ?>>
-                        <span>✅ Droit à l'image accordé</span>
+                        <span>✅ Droit à l'image accordé <span style="font-weight:400;color:#888;">(diffusion sur les supports du club)</span></span>
                     </label>
                     <!-- Autorisation repartir seul(e) -->
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
@@ -685,6 +828,80 @@ class SP_Cal_Members {
                             $('#eleve_photo_url').val('');
                             $('#sp-eleve-photo-img').attr('src','').hide();
                             $('#sp-eleve-photo-placeholder').show();
+                            $(this).hide();
+                        });
+                    }(jQuery));
+                    </script>
+                </div>
+
+                <!-- Pass'Sport, CAF & Documents — ajouté 09/09/2026, présents sur le formulaire
+                     public depuis début septembre mais jusqu'ici invisibles/non modifiables ici -->
+                <div style="max-width:860px;margin:18px 0 12px;padding:14px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;">
+                    <p style="margin:0 0 12px;font-weight:700;font-size:13px;color:#374151;">💳 Pass'Sport, CAF &amp; documents</p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin-bottom:6px;">
+                        <div style="margin-bottom:10px;">
+                            <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Code Pass'Sport</label>
+                            <input type="text" name="eleve_pass_sport_code" value="<?php echo esc_attr( $extra['pass_sport_code'] ?? '' ); ?>" class="regular-text" style="width:100%;">
+                        </div>
+                        <div style="margin-bottom:10px;">
+                            <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Date du certificat médical</label>
+                            <input type="date" name="eleve_date_certificat_medical" value="<?php echo esc_attr( $extra['date_certificat_medical'] ?? '' ); ?>" style="width:100%;">
+                        </div>
+                    </div>
+
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:14px;">
+                        <input type="checkbox" name="eleve_qs_sport_confirme" value="1" <?php checked( ! empty( $extra['qs_sport_confirme'] ) ); ?>>
+                        <span>🩺 Questionnaire de santé QS-Sport confirmé <span style="font-weight:400;color:#888;">(Renforcement musculaire, réponses négatives à toutes les questions)</span></span>
+                    </label>
+
+                    <?php
+                    // Un champ "document" = hidden URL + bouton médiathèque + lien "voir" + bouton
+                    // supprimer, sur le même principe que la photo de profil ci-dessus, mais sans
+                    // aperçu image (souvent des PDF) — juste un lien de consultation.
+                    $doc_field = function( $label, $field_id, $post_name, $url ) {
+                        ?>
+                        <div style="margin-bottom:12px;">
+                            <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;"><?php echo esc_html( $label ); ?></label>
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <input type="hidden" name="<?php echo esc_attr( $post_name ); ?>" id="<?php echo esc_attr( $field_id ); ?>" value="<?php echo esc_attr( $url ); ?>">
+                                <button type="button" class="button sp-eleve-doc-btn" data-target="<?php echo esc_attr( $field_id ); ?>">📁 <?php echo $url ? 'Remplacer' : 'Choisir un fichier'; ?></button>
+                                <a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" class="sp-eleve-doc-link" id="<?php echo esc_attr( $field_id ); ?>_link" style="<?php echo $url ? '' : 'display:none;'; ?>">📄 Voir le document</a>
+                                <button type="button" class="button sp-eleve-doc-clear" data-target="<?php echo esc_attr( $field_id ); ?>" style="color:#dc2626;<?php echo $url ? '' : 'display:none;'; ?>">✕ Supprimer</button>
+                            </div>
+                        </div>
+                        <?php
+                    };
+                    $doc_field( 'Certificat médical',                 'eleve_doc_certificat_medical', 'eleve_doc_certificat_medical', $extra_documents['certificat_medical'] ?? '' );
+                    $doc_field( "Attestation de responsabilité civile", 'eleve_doc_attestation_rc',     'eleve_doc_attestation_rc',     $extra_documents['attestation_rc']     ?? '' );
+                    $doc_field( "Décharge sur l'honneur",              'eleve_doc_decharge_honneur',   'eleve_doc_decharge_honneur',   $extra_documents['decharge_honneur']   ?? '' );
+                    $doc_field( 'Bon CAF',                             'eleve_doc_bon_caf',            'eleve_doc_bon_caf',            $extra_documents['bon_caf']            ?? '' );
+                    ?>
+                    <script>
+                    (function($){
+                        var frame;
+                        $('.sp-eleve-doc-btn').on('click', function(e){
+                            e.preventDefault();
+                            var targetId = $(this).data('target');
+                            var $input   = $('#' + targetId);
+                            var $link    = $('#' + targetId + '_link');
+                            var $clear   = $('.sp-eleve-doc-clear[data-target="' + targetId + '"]');
+                            var $btn     = $(this);
+                            var f = wp.media({ title: 'Choisir un document', button: { text: 'Utiliser ce fichier' }, multiple: false });
+                            f.on('select', function(){
+                                var att = f.state().get('selection').first().toJSON();
+                                $input.val(att.url);
+                                $link.attr('href', att.url).show();
+                                $clear.show();
+                                $btn.text('📁 Remplacer');
+                            });
+                            f.open();
+                        });
+                        $('.sp-eleve-doc-clear').on('click', function(){
+                            var targetId = $(this).data('target');
+                            $('#' + targetId).val('');
+                            $('#' + targetId + '_link').hide();
+                            $('.sp-eleve-doc-btn[data-target="' + targetId + '"]').text('📁 Choisir un fichier');
                             $(this).hide();
                         });
                     }(jQuery));
