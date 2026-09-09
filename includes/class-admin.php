@@ -8,6 +8,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-front-adhesion.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-adhesions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -75,6 +76,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         SP_Admin_Adhesions::get_instance();
         SP_Cal_Renouvellement::get_instance( $this->db );
         SP_Cal_Roles::get_instance();
+        SP_Cal_Trainer_App::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -2479,7 +2481,11 @@ function spCalBufToB64u(buf) {
                         <button type="button" class="button button-small sp-btn-send-trainer-app"
                             data-id="<?php echo intval( $t->id ); ?>"
                             data-nom="<?php echo esc_attr( $t->nom ); ?>"
-                            title="Envoyer le lien application">📲</button>
+                            title="Envoyer le lien application pointage">📲</button>
+                        <button type="button" class="button button-small sp-btn-send-dispo-app"
+                            data-id="<?php echo intval( $t->id ); ?>"
+                            data-nom="<?php echo esc_attr( $t->nom ); ?>"
+                            title="Envoyer le lien Disponibilités">🗓️</button>
                         <?php endif; ?>
                         <a href="<?php echo esc_url( $del ); ?>" class="button button-small sp-btn-del" onclick="return confirm('Supprimer cet entraîneur ?')">🗑️</a>
                     </td>
@@ -2508,6 +2514,25 @@ function spCalBufToB64u(buf) {
                     } else {
                         alert('Erreur : ' + (r.data || 'Envoi échoué'));
                         $btn.prop('disabled',false).text('📲');
+                    }
+                });
+            });
+            $('.sp-btn-send-dispo-app').on('click', function() {
+                var id  = $(this).data('id');
+                var nom = $(this).data('nom');
+                if (!confirm('Envoyer le lien Disponibilités à ' + nom + ' ?')) return;
+                var $btn = $(this).prop('disabled', true).text('⏳');
+                $.post(ajaxurl, {
+                    action:     'sp_cal_send_dispo_app_link',
+                    trainer_id: id,
+                    nonce: '<?php echo wp_create_nonce("sp_cal_admin_nonce"); ?>'
+                }, function(r) {
+                    if (r.success) {
+                        $btn.text('✅').css('color','#15803d');
+                        setTimeout(function(){ $btn.prop('disabled',false).text('🗓️').css('color',''); }, 3000);
+                    } else {
+                        alert('Erreur : ' + (r.data || 'Envoi échoué'));
+                        $btn.prop('disabled',false).text('🗓️');
                     }
                 });
             });
