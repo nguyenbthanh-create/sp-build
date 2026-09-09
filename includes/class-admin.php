@@ -2273,31 +2273,23 @@ function spCalBufToB64u(buf) {
     }
 
     /* ══════════════════════════════════════════════════════════
-       PAGE : Lien vers le planning (front-end) — pour les profils qui
-       n'ont accès qu'à la consultation (ex. trésorière), cf. doleances.md
-       09/09/2026. Un lien wp-admin plutôt qu'une URL à retenir/mettre en
-       favori, pour ne jamais casser si la page change de nom un jour —
-       l'URL réelle est recalculée depuis l'option à chaque affichage.
+       PAGE : Planning — pour les profils qui n'ont accès qu'à la
+       consultation (ex. trésorière), cf. doleances.md 09/09/2026.
+       Affiche directement le calendrier (même shortcode que la page
+       principale) plutôt qu'un bouton vers une page front-end séparée —
+       première version avec un simple lien de sortie, mais pour un
+       compte sans manage_options le menu "SP Calendar" et ce sous-menu
+       "Planning" pointent de toute façon vers la même unique page
+       accessible (comportement standard de wp-admin), donc le clic sur
+       le bouton ne faisait qu'y revenir en boucle. Intégrer directement
+       le calendrier supprime cette étape inutile.
     ══════════════════════════════════════════════════════════ */
     public function page_planning_lien() {
         if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) wp_die( 'Accès refusé' );
 
-        $url  = get_option( 'sp_cal_public_link', home_url( '/planning/' ) );
-        $club = get_option( 'blogname', 'Club' );
-        ?>
-        <div class="wrap sp-cal-wrap">
-            <h1>📅 Planning</h1>
-            <div class="sp-box" style="max-width:560px;text-align:center;padding:32px;">
-                <p style="font-size:14px;color:#6b7280;margin-bottom:20px;">
-                    Consultez le planning des cours et la présence des entraîneurs de <?php echo esc_html( $club ); ?>.
-                </p>
-                <a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" class="button button-primary button-hero">
-                    Voir le planning →
-                </a>
-                <p class="sp-muted" style="margin-top:16px;font-size:12px;">Ouvre le planning dans un nouvel onglet.</p>
-            </div>
-        </div>
-        <?php
+        echo '<div class="wrap sp-cal-wrap"><h1>📅 Planning</h1>';
+        echo do_shortcode( '[sp_cal_calendar]' );
+        echo '</div>';
     }
 
     /* ══════════════════════════════════════════════════════════
