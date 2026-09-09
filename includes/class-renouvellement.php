@@ -33,6 +33,7 @@ class SP_Cal_Renouvellement {
 		add_action( 'admin_post_sp_renouv_lancer',         [ $this, 'handle_lancer' ] );
 		add_action( 'admin_post_sp_renouv_annuler',        [ $this, 'handle_annuler' ] );
 		add_action( 'admin_post_sp_renouv_relance',        [ $this, 'handle_relance' ] );
+		add_action( 'admin_post_sp_renouv_relancer_un',    [ $this, 'handle_relancer_un' ] );
 		add_action( 'admin_post_sp_renouv_desactiver_lot', [ $this, 'handle_desactiver_lot' ] );
 		add_action( 'admin_post_sp_renouv_desactiver_un',  [ $this, 'handle_desactiver_un' ] );
 
@@ -107,18 +108,20 @@ class SP_Cal_Renouvellement {
 		// directement toucher les adhérents, la désactivation restant une étape séparée et
 		// volontaire, déclenchée plus tard depuis le tableau de bord.
 		$eleves = $this->get_non_renouveles();
+		$envoyes = 0;
 		foreach ( $eleves as $el ) {
-			$this->envoyer_rappel_lancement( $el );
+			if ( $this->envoyer_rappel_lancement( $el ) ) $envoyes++;
 		}
+		$sans_email = count( $eleves ) - $envoyes;
 
-		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_lance=' . count( $eleves ) ) );
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_lance=' . $envoyes . '&renouv_lance_sans_email=' . $sans_email ) );
 		exit;
 	}
 
 	/** Rappel de renouvellement envoyé au lancement — n'affecte pas l'accès (actif inchangé). */
-	private function envoyer_rappel_lancement( object $el ): void {
+	private function envoyer_rappel_lancement( object $el ): bool {
 		$dest = $el->email_parent ?: $el->email;
-		if ( ! $dest || ! is_email( $dest ) ) return;
+		if ( ! $dest || ! is_email( $dest ) ) return false;
 
 		global $wpdb;
 		$tel = $this->table_eleves();
@@ -144,7 +147,7 @@ class SP_Cal_Renouvellement {
 		         . "Votre accès à l'espace personnel reste actif en attendant — pas d'inquiétude à avoir.\n\n"
 		         . "À bientôt sur les tatamis !\n— L'équipe {$club}";
 
-		wp_mail( $dest, $subject, $body );
+		return wp_mail( $dest, $subject, $body );
 	}
 
 	public function handle_annuler(): void {
@@ -169,6 +172,27 @@ class SP_Cal_Renouvellement {
 		update_option( 'sp_cal_renouv_relance_le', current_time( 'Y-m-d' ) );
 
 		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_relance_envoyee=1' ) );
+		exit;
+	}
+
+	/**
+	 * Relance individuelle — même rappel que le lancement (n'affecte pas l'accès), mais pour
+	 * un seul adhérent. Sert notamment quand un email a été renseigné après coup sur la fiche
+	 * pour un adhérent qui n'en avait pas au moment du lancement (cf. doléances.md 09/09/2026) :
+	 * évite d'avoir à ré-envoyer le rappel à toute la liste pour rattraper un seul cas.
+	 */
+	public function handle_relancer_un(): void {
+		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! check_admin_referer( 'sp_renouv_relancer_un' ) ) wp_die( 'Nonce invalide.' );
+
+		global $wpdb;
+		$eleve_id = intval( $_GET['eleve_id'] ?? 0 );
+		$tel      = $this->table_eleves();
+		$el       = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$tel} WHERE id = %d", $eleve_id ) );
+
+		$ok = $el ? $this->envoyer_rappel_lancement( $el ) : false;
+
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_relance_un=' . ( $ok ? '1' : '0' ) ) );
 		exit;
 	}
 
@@ -282,8 +306,13 @@ class SP_Cal_Renouvellement {
 	// ══════════════════════════════════════════════════════════════════════
 	public function render_box(): void {
 		if ( isset( $_GET['renouv_lance'] ) ) {
-			$n = intval( $_GET['renouv_lance'] );
-			echo '<div class="notice notice-success is-dismissible"><p>✅ Renouvellement de saison lancé — rappel envoyé à ' . $n . ' adhérent(s) (comptes non désactivés).</p></div>';
+			$n           = intval( $_GET['renouv_lance'] );
+			$sans_email  = intval( $_GET['renouv_lance_sans_email'] ?? 0 );
+			$msg = '✅ Renouvellement de saison lancé — rappel envoyé à ' . $n . ' adhérent(s) (comptes non désactivés).';
+			if ( $sans_email > 0 ) {
+				$msg .= ' ⚠️ <strong>' . $sans_email . '</strong> adhérent(s) n\'ont pas reçu ce rappel faute d\'email renseigné — repérables ci-dessous (badge "pas d\'email"), à compléter puis relancer individuellement.';
+			}
+			echo '<div class="notice notice-success is-dismissible"><p>' . $msg . '</p></div>';
 		}
 		if ( isset( $_GET['renouv_annule'] ) ) {
 			echo '<div class="notice notice-warning is-dismissible"><p>⚠️ Campagne de renouvellement annulée.</p></div>';
@@ -297,6 +326,13 @@ class SP_Cal_Renouvellement {
 		if ( isset( $_GET['renouv_desactive'] ) ) {
 			$n = intval( $_GET['renouv_desactive'] );
 			echo '<div class="notice notice-success is-dismissible"><p>✅ ' . $n . ' compte(s) désactivé(s) — lien de renouvellement envoyé.</p></div>';
+		}
+		if ( isset( $_GET['renouv_relance_un'] ) ) {
+			if ( $_GET['renouv_relance_un'] === '1' ) {
+				echo '<div class="notice notice-success is-dismissible"><p>✅ Rappel envoyé à cet adhérent.</p></div>';
+			} else {
+				echo '<div class="notice notice-error is-dismissible"><p>❌ Impossible d\'envoyer le rappel — vérifiez qu\'un email valide est renseigné sur sa fiche.</p></div>';
+			}
 		}
 
 		echo '<div class="sp-box" style="margin-bottom:20px;">';
@@ -425,19 +461,42 @@ class SP_Cal_Renouvellement {
 			</form>
 
 			<table class="wp-list-table widefat striped">
-				<thead><tr><th>Nom</th><th>Catégorie</th><th style="width:120px;">Action</th></tr></thead>
+				<thead><tr><th>Nom</th><th>Catégorie</th><th>Email</th><th style="width:220px;">Action</th></tr></thead>
 				<tbody>
 				<?php foreach ( $non_renouv as $el ) :
-					$url = wp_nonce_url(
+					$dest        = $el->email_parent ?: $el->email;
+					$a_email     = $dest && is_email( $dest );
+					$url_desact  = wp_nonce_url(
 						admin_url( 'admin-post.php?action=sp_renouv_desactiver_un&eleve_id=' . intval( $el->id ) ),
 						'sp_renouv_desactiver_un'
+					);
+					$url_relance = wp_nonce_url(
+						admin_url( 'admin-post.php?action=sp_renouv_relancer_un&eleve_id=' . intval( $el->id ) ),
+						'sp_renouv_relancer_un'
 					);
 				?>
 					<tr>
 						<td><?php echo esc_html( $el->prenom . ' ' . $el->nom ); ?></td>
 						<td><?php echo esc_html( $el->categorie_age ); ?></td>
 						<td>
-							<a href="<?php echo esc_url( $url ); ?>" class="button button-small"
+							<?php if ( $a_email ) : ?>
+								<?php echo esc_html( $dest ); ?>
+							<?php else : ?>
+								<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;">⚠️ pas d'email</span>
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php if ( $a_email ) : ?>
+							<a href="<?php echo esc_url( $url_relance ); ?>" class="button button-small"
+							   onclick="return confirm('Renvoyer le rappel de renouvellement à <?php echo esc_js( $el->prenom . ' ' . $el->nom ); ?> (sans désactiver son compte) ?');">
+								📧 Relancer
+							</a>
+							<?php else : ?>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-eleves&sp_edit_eleve=' . intval( $el->id ) ) ); ?>" class="button button-small" title="Ajouter un email sur la fiche pour pouvoir le relancer">
+								✏️ Compléter la fiche
+							</a>
+							<?php endif; ?>
+							<a href="<?php echo esc_url( $url_desact ); ?>" class="button button-small"
 							   onclick="return confirm('Désactiver <?php echo esc_js( $el->prenom . ' ' . $el->nom ); ?> et lui envoyer le lien de renouvellement ?');">
 								Désactiver
 							</a>
