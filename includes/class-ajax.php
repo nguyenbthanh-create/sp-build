@@ -157,6 +157,11 @@ class SpCalPro_Ajax {
     private function nonce()         { check_ajax_referer( 'sp_cal_admin_nonce', 'nonce' ); }
     private function require_admin() { if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Accès refusé', 403 ); }
 
+    // Élargit l'accès à la capacité "gestion adhésions" (rôle Secrétaire, cf. class-roles.php
+    // et doleances.md 09/09/2026), sans toucher require_admin() qui reste manage_options-only
+    // pour tous les autres points d'entrée AJAX sans rapport (jury, examens, pointage...).
+    private function require_gestion_adhesions() { if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_send_json_error( 'Accès refusé', 403 ); }
+
     /* ══════════════════════════════════════════════════════════
        GET EVENTS — calendrier mensuel (events ponctuels + occurrences slots + anniversaires)
     ══════════════════════════════════════════════════════════ */
@@ -666,7 +671,7 @@ class SpCalPro_Ajax {
 
     public function delete_csv_grade() {
         $this->nonce();
-        $this->require_admin();
+        $this->require_gestion_adhesions();
         global $wpdb;
         $tel      = $this->db->table_eleves();
         $eleve_id = intval( $_POST['eleve_id'] ?? 0 );
@@ -705,7 +710,7 @@ class SpCalPro_Ajax {
 
     public function edit_csv_grade() {
         $this->nonce();
-        $this->require_admin();
+        $this->require_gestion_adhesions();
         global $wpdb;
         $tel       = $this->db->table_eleves();
         $eleve_id  = intval( $_POST['eleve_id']  ?? 0 );
@@ -744,7 +749,7 @@ class SpCalPro_Ajax {
 
     public function import_csv() {
         $this->nonce();
-        $this->require_admin();
+        $this->require_gestion_adhesions();
         if ( empty( $_FILES['sp_csv_file']['tmp_name'] ) ) wp_send_json_error( 'Aucun fichier reçu.' );
 
         $raw = file_get_contents( $_FILES['sp_csv_file']['tmp_name'] );

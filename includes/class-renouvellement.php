@@ -85,7 +85,7 @@ class SP_Cal_Renouvellement {
 	// LANCEMENT / ANNULATION
 	// ══════════════════════════════════════════════════════════════════════
 	public function handle_lancer(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_lancer' ) ) wp_die( 'Nonce invalide.' );
 
 		$saison_cible = sanitize_text_field( $_POST['renouv_saison_cible'] ?? '' );
@@ -151,7 +151,7 @@ class SP_Cal_Renouvellement {
 	}
 
 	public function handle_annuler(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_annuler' ) ) wp_die( 'Nonce invalide.' );
 
 		update_option( 'sp_cal_renouv_en_cours', '0' );
@@ -164,7 +164,7 @@ class SP_Cal_Renouvellement {
 	// RELANCE BUREAU — bouton à effet immédiat, au moment choisi par le bureau
 	// ══════════════════════════════════════════════════════════════════════
 	public function handle_relance(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_relance' ) ) wp_die( 'Nonce invalide.' );
 		if ( ! $this->en_cours() ) wp_die( 'Aucune campagne en cours.' );
 
@@ -182,7 +182,7 @@ class SP_Cal_Renouvellement {
 	 * évite d'avoir à ré-envoyer le rappel à toute la liste pour rattraper un seul cas.
 	 */
 	public function handle_relancer_un(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_relancer_un' ) ) wp_die( 'Nonce invalide.' );
 
 		global $wpdb;
@@ -229,7 +229,7 @@ class SP_Cal_Renouvellement {
 	// DÉSACTIVATION — déclenchement manuel, en lot ou individuel
 	// ══════════════════════════════════════════════════════════════════════
 	public function handle_desactiver_lot(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_desactiver_lot' ) ) wp_die( 'Nonce invalide.' );
 
 		$eleves = $this->get_non_renouveles();
@@ -242,7 +242,7 @@ class SP_Cal_Renouvellement {
 	}
 
 	public function handle_desactiver_un(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 		if ( ! check_admin_referer( 'sp_renouv_desactiver_un' ) ) wp_die( 'Nonce invalide.' );
 
 		global $wpdb;

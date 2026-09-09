@@ -36,13 +36,22 @@ class SP_Cal_Members {
         // Hooks propres au module (retirés de SpCalPro_Admin::__construct)
         add_action( 'admin_init',                        array( $this, 'maybe_print_cartes' ) );
         add_action( 'wp_ajax_sp_cal_send_trainer_app',   array( $this, 'ajax_send_trainer_app_link' ) );
+        // handle_request() (sauvegarde/suppression de fiches élève) tourne désormais sur son
+        // propre hook admin_init avec sa propre capacité — cf. doleances.md 09/09/2026. Avant,
+        // c'était SpCalPro_Admin::handle_requests() qui l'appelait, mais ce dispatcher est gardé
+        // par un simple manage_options global qui aurait aussi bloqué le rôle Secrétaire : plutôt
+        // que d'ouvrir ce gros dispatcher partagé (jury, examens, réglages...) à cette capacité,
+        // on isole ce module comme le font déjà SP_Front_Adhesion/SP_Admin_Adhesions/SP_Cal_Renouvellement.
+        add_action( 'admin_init', array( $this, 'handle_request' ) );
     }
 
     /* ══════════════════════════════════════════════════════════
-       DISPATCH — appelé depuis SpCalPro_Admin::handle_requests()
+       DISPATCH — sur son propre hook admin_init (voir constructeur)
     ══════════════════════════════════════════════════════════ */
 
     public function handle_request() {
+        if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) return;
+
         global $wpdb;
         $tel = $this->db->table_eleves();
 
@@ -254,7 +263,7 @@ class SP_Cal_Members {
     ══════════════════════════════════════════════════════════ */
 
     public function page_eleves() {
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé' );
+        if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé' );
         global $wpdb;
         $tel       = $this->db->table_eleves();
         $eleves    = $this->db->get_eleves();
@@ -2963,7 +2972,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     ══════════════════════════════════════════════════════════ */
 
     public function page_fiche_eleve() {
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé' );
+        if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé' );
 
         global $wpdb;
         $tel      = $this->db->table_eleves();
@@ -3615,7 +3624,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     ══════════════════════════════════════════════════════════ */
 
     public function page_licences() {
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé' );
+        if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé' );
 
         $saisons       = $this->db->get_saisons();
         $saison        = sanitize_text_field( $_GET['saison'] ?? '' );

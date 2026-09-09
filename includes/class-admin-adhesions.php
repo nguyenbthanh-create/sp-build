@@ -49,7 +49,7 @@ class SP_Admin_Adhesions {
 			'sp-cal-pro',
 			"Demandes d'adhésion",
 			$label,
-			'manage_options',
+			SP_Cal_Roles::CAP_GESTION_ADHESIONS,
 			'sp_adhesions',
 			[ $this, 'render_page' ]
 		);
@@ -57,7 +57,7 @@ class SP_Admin_Adhesions {
 
 	// ─── Page principale ─────────────────────────────────────────────────────
 	public function render_page(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) {
 			wp_die( 'Accès refusé.' );
 		}
 
@@ -489,7 +489,7 @@ class SP_Admin_Adhesions {
 	// HANDLER — VALIDER
 	// ══════════════════════════════════════════════════════════════════════════
 	public function handle_valider(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
 		$id = absint( $_GET['id'] ?? 0 );
 
@@ -553,7 +553,7 @@ class SP_Admin_Adhesions {
 	// HANDLER — REFUSER
 	// ══════════════════════════════════════════════════════════════════════════
 	public function handle_refuser(): void {
-		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
 		$id          = absint( $_POST['id'] ?? 0 );
 		$refus_motif = sanitize_textarea_field( $_POST['refus_motif'] ?? '' );

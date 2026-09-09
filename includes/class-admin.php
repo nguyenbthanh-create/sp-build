@@ -7,6 +7,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-admin-jury.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-front-adhesion.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-adhesions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -73,6 +74,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
 		SP_Front_Adhesion::get_instance();
         SP_Admin_Adhesions::get_instance();
         SP_Cal_Renouvellement::get_instance( $this->db );
+        SP_Cal_Roles::get_instance();
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -87,8 +89,8 @@ $this->jury = new SP_Cal_Jury( $this->db );
         );
         add_submenu_page( 'sp-cal-pro', 'Entraîneurs & Bureau', 'Entraîneurs & Bureau', 'manage_options', 'sp-cal-trainers', array( $this, 'page_trainers' ) );
         add_submenu_page( 'sp-cal-pro', 'Créneaux',       'Créneaux',       'manage_options', 'sp-cal-slots',       array( $this, 'page_slots' ) );
-        add_submenu_page( 'sp-cal-pro', 'Élèves & Import','Élèves & Import','manage_options', 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
-        add_submenu_page( 'sp-cal-pro', '🪪 Adhésions',   '🪪 Adhésions',   'manage_options', 'sp-cal-licences',    array( $this, 'page_licences' ) );
+        add_submenu_page( 'sp-cal-pro', 'Élèves & Import','Élèves & Import',SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
+        add_submenu_page( 'sp-cal-pro', '🪪 Adhésions',   '🪪 Adhésions',   SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-licences',    array( $this, 'page_licences' ) );
         add_submenu_page( 'sp-cal-pro', '🖨️ Cartes membres','🖨️ Cartes membres','manage_options', 'sp-cal-print-cartes', array( $this, 'page_print_cartes' ) );
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );
         add_submenu_page( 'sp-cal-pro', 'Palmarès',       '🏆 Palmarès',    'manage_options', 'sp-cal-palmares',    array( $this, 'page_palmares' ) );
@@ -100,7 +102,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         add_submenu_page( 'sp-cal-pro', '📅 Dates grades','📅 Dates grades','manage_options', 'sp-cal-dates-grades',array( $this, 'page_dates_grades' ) );
         add_submenu_page( 'sp-cal-pro', '📡 Pointage QR','📡 Pointage QR', 'manage_options', 'sp-cal-pointage',    array( $this, 'page_pointage' ) );
         // Fiche élève : sous-page masquée (pas dans le menu, accessible via URL)
-        add_submenu_page( null, 'Fiche élève', 'Fiche élève', 'manage_options', 'sp-cal-fiche-eleve', array( $this, 'page_fiche_eleve' ) );
+        add_submenu_page( null, 'Fiche élève', 'Fiche élève', SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-fiche-eleve', array( $this, 'page_fiche_eleve' ) );
         // Impression en lot des cartes : accessible via menu Élèves
         // Inscriptions événements : sous-page masquée
         add_submenu_page( 'sp-cal-pro', 'Inscriptions', '📋 Inscriptions', 'manage_options', 'sp-cal-inscriptions', array( $this, 'page_inscriptions' ) );
@@ -2223,8 +2225,10 @@ function spCalBufToB64u(buf) {
             }
         }
 
-        // Module membres — dispatch form submissions
-        $this->members->handle_request();
+        // Module membres — dispatch déplacé sur son propre hook admin_init avec sa propre
+        // capacité (cf. SP_Cal_Members::__construct(), doleances.md 09/09/2026) : ce
+        // dispatcher-ci reste manage_options uniquement, mais la Secrétaire doit pouvoir
+        // sauvegarder une fiche élève sans avoir cette capacité globale.
 
         // Module exam — dispatch form submissions
         $this->exam->handle_request();

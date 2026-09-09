@@ -1058,7 +1058,7 @@ class SpCalPro_Token {
 
     public function resend_token_ajax() {
         check_ajax_referer('sp_cal_admin_nonce','nonce');
-        if (!current_user_can('manage_options')) wp_send_json_error('Accès refusé',403);
+        if (!current_user_can(SP_Cal_Roles::CAP_GESTION_ADHESIONS)) wp_send_json_error('Accès refusé',403);
         $id   = intval($_POST['eleve_id'] ?? 0);
         $sent = $this->generate_and_send($id, true);
         wp_send_json_success($sent ? 'Email envoyé.' : 'Envoi impossible (email manquant ?).');
@@ -1066,7 +1066,7 @@ class SpCalPro_Token {
 
     public function generate_all_tokens_ajax() {
         check_ajax_referer('sp_cal_admin_nonce','nonce');
-        if (!current_user_can('manage_options')) wp_send_json_error('Accès refusé',403);
+        if (!current_user_can(SP_Cal_Roles::CAP_GESTION_ADHESIONS)) wp_send_json_error('Accès refusé',403);
         global $wpdb;
         $tel    = $this->db->table_eleves();
         $eleves = $wpdb->get_results("SELECT id FROM $tel WHERE actif=1 AND (token IS NULL OR token='')");
