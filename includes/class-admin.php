@@ -85,7 +85,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
 
     public function add_menu() {
         add_menu_page(
-            'SP Calendar PRO', 'SP Calendar', 'manage_options',
+            'SP Calendar PRO', 'SP Calendar', SP_Cal_Roles::CAP_VOIR_PLANNING,
             'sp-cal-pro', array( $this, 'page_main' ),
             'dashicons-calendar-alt', 30
         );
@@ -93,7 +93,6 @@ $this->jury = new SP_Cal_Jury( $this->db );
         add_submenu_page( 'sp-cal-pro', 'Créneaux',       'Créneaux',       'manage_options', 'sp-cal-slots',       array( $this, 'page_slots' ) );
         add_submenu_page( 'sp-cal-pro', 'Élèves & Import','Élèves & Import',SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
         add_submenu_page( 'sp-cal-pro', '🪪 Adhésions',   '🪪 Adhésions',   SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-licences',    array( $this, 'page_licences' ) );
-        add_submenu_page( 'sp-cal-pro', '📅 Planning',    '📅 Planning',    SP_Cal_Roles::CAP_VOIR_PLANNING, 'sp-cal-planning-lien', array( $this, 'page_planning_lien' ) );
         add_submenu_page( 'sp-cal-pro', '🖨️ Cartes membres','🖨️ Cartes membres','manage_options', 'sp-cal-print-cartes', array( $this, 'page_print_cartes' ) );
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );
         add_submenu_page( 'sp-cal-pro', 'Palmarès',       '🏆 Palmarès',    'manage_options', 'sp-cal-palmares',    array( $this, 'page_palmares' ) );
@@ -2241,8 +2240,14 @@ function spCalBufToB64u(buf) {
        PAGE : Calendrier principal
     ══════════════════════════════════════════════════════════ */
 
+    // Page unique pour tout le monde ayant au moins un droit de consultation du
+    // planning (manage_options, secrétaire ou trésorière) — cf. doleances.md
+    // 09/09/2026 : il y avait auparavant un sous-menu "📅 Planning" séparé, mais pour
+    // un compte n'ayant accès qu'à une seule page, le menu parent "SP Calendar" et ce
+    // sous-menu pointaient de toute façon vers la même destination (comportement
+    // standard de wp-admin) — doublon inutile dans la barre latérale, supprimé.
     public function page_main() {
-        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé' );
+        if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) wp_die( 'Accès refusé' );
 
         // Injecter le compteur d'annulations groupées en attente dans SpCal
         $pending_count = count( get_option( 'sp_cal_annul_pending', array() ) );
@@ -2250,46 +2255,30 @@ function spCalBufToB64u(buf) {
 
         echo '<div class="wrap sp-cal-wrap"><h1>Calendrier de gestion</h1>';
 
-        // Bandeau adhésions
-        $saison_active = get_option( 'sp_cal_saison', '' );
-        $adh = $this->db->get_adhesions_counts( $saison_active );
-        $adh_url = admin_url('admin.php?page=sp-cal-licences');
-        $banner_parts = array();
-        if ( $adh['inactif'] > 0 )
-            $banner_parts[] = '<strong style="color:#b91c1c;">' . $adh['inactif'] . ' adhérent(s) inactif(s)</strong>';
-        $adh_alerte = intval( get_option( 'sp_cal_alerte_jours', 60 ) );
-        if ( $adh['jours_fin'] !== null && $adh['jours_fin'] <= $adh_alerte && $adh['jours_fin'] >= 0 )
-            $banner_parts[] = '<span style="color:#b45309;">Fin de saison dans <strong>' . $adh['jours_fin'] . ' jours</strong> (' . date('d/m/Y', strtotime($adh['fin_saison'])) . ')</span>';
-        elseif ( $adh['jours_fin'] !== null && $adh['jours_fin'] < 0 )
-            $banner_parts[] = '<strong style="color:#b91c1c;">Saison terminée depuis ' . abs($adh['jours_fin']) . ' jours</strong>';
-        if ( ! empty($banner_parts) ) {
-            echo '<div class="sp-lic-banner">';
-            echo '<span class="sp-lic-banner-icon">🪪</span>';
-            echo implode(' · ', $banner_parts);
-            echo ' — <a href="' . esc_url($adh_url) . '">Gérer les adhésions →</a>';
-            echo '</div>';
+        // Bandeau adhésions — uniquement pour les profils qui gèrent réellement les
+        // adhésions (le lien "Gérer les adhésions" serait un cul-de-sac "Accès refusé"
+        // pour une trésorière qui n'a que le droit de consultation du planning).
+        if ( current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) {
+            $saison_active = get_option( 'sp_cal_saison', '' );
+            $adh = $this->db->get_adhesions_counts( $saison_active );
+            $adh_url = admin_url('admin.php?page=sp-cal-licences');
+            $banner_parts = array();
+            if ( $adh['inactif'] > 0 )
+                $banner_parts[] = '<strong style="color:#b91c1c;">' . $adh['inactif'] . ' adhérent(s) inactif(s)</strong>';
+            $adh_alerte = intval( get_option( 'sp_cal_alerte_jours', 60 ) );
+            if ( $adh['jours_fin'] !== null && $adh['jours_fin'] <= $adh_alerte && $adh['jours_fin'] >= 0 )
+                $banner_parts[] = '<span style="color:#b45309;">Fin de saison dans <strong>' . $adh['jours_fin'] . ' jours</strong> (' . date('d/m/Y', strtotime($adh['fin_saison'])) . ')</span>';
+            elseif ( $adh['jours_fin'] !== null && $adh['jours_fin'] < 0 )
+                $banner_parts[] = '<strong style="color:#b91c1c;">Saison terminée depuis ' . abs($adh['jours_fin']) . ' jours</strong>';
+            if ( ! empty($banner_parts) ) {
+                echo '<div class="sp-lic-banner">';
+                echo '<span class="sp-lic-banner-icon">🪪</span>';
+                echo implode(' · ', $banner_parts);
+                echo ' — <a href="' . esc_url($adh_url) . '">Gérer les adhésions →</a>';
+                echo '</div>';
+            }
         }
 
-        echo do_shortcode( '[sp_cal_calendar]' );
-        echo '</div>';
-    }
-
-    /* ══════════════════════════════════════════════════════════
-       PAGE : Planning — pour les profils qui n'ont accès qu'à la
-       consultation (ex. trésorière), cf. doleances.md 09/09/2026.
-       Affiche directement le calendrier (même shortcode que la page
-       principale) plutôt qu'un bouton vers une page front-end séparée —
-       première version avec un simple lien de sortie, mais pour un
-       compte sans manage_options le menu "SP Calendar" et ce sous-menu
-       "Planning" pointent de toute façon vers la même unique page
-       accessible (comportement standard de wp-admin), donc le clic sur
-       le bouton ne faisait qu'y revenir en boucle. Intégrer directement
-       le calendrier supprime cette étape inutile.
-    ══════════════════════════════════════════════════════════ */
-    public function page_planning_lien() {
-        if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) wp_die( 'Accès refusé' );
-
-        echo '<div class="wrap sp-cal-wrap"><h1>📅 Planning</h1>';
         echo do_shortcode( '[sp_cal_calendar]' );
         echo '</div>';
     }
