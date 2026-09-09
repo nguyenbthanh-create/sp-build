@@ -4087,7 +4087,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
         $t  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tt WHERE id = %d LIMIT 1", $trainer_id ) );
         if ( ! $t || empty( $t->email ) ) wp_send_json_error( 'Entraineur ou email introuvable', 404 );
 
-        $pin     = $this->pointage_pin();
+        $pin = get_option( 'sp_cal_pointage_pin', '' );
+        if ( ! $pin ) {
+            $pin = substr( str_shuffle( '0123456789' ), 0, 4 );
+            update_option( 'sp_cal_pointage_pin', $pin );
+        }
         $app_url = add_query_arg( 'pin', $pin, trailingslashit( home_url( '/app/' ) ) );
         $club    = get_option( 'blogname', 'Club' );
 
