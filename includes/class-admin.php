@@ -590,6 +590,18 @@ SWJS;
         ob_start();
         ?>
 <script>window.SPCAL = <?php echo $config_js; // phpcs:ignore ?>;</script>
+<script>
+// Diagnostic temporaire (doléances 10/09/2026) : le scan QR reste muet sur iPhone/Firefox
+// sans aucune erreur visible, et les devtools ne sont pas facilement accessibles sur iOS --
+// ce filet affiche à l'écran toute erreur JS non interceptée ailleurs, pour obtenir la
+// vraie cause au prochain test plutôt que deviner une nouvelle fois. À retirer une fois
+// la cause confirmée.
+window.addEventListener('error', function(e) {
+    if (window.__spCalErrShown) return;
+    window.__spCalErrShown = true;
+    alert('Erreur JS : ' + e.message + '\n' + (e.filename || '') + ':' + (e.lineno || '?'));
+});
+</script>
 
 <style>
 /* ── RESET & BASE PWA ───────────────────────────────────────── */
@@ -1663,27 +1675,44 @@ function spCalLoadJsQR(cb) {
     tryLoad();
 }
 
+function spCalScanShowError(titre, detail) {
+    var fb = document.getElementById('spcal-scan-feedback');
+    fb.className = 'spcal-scan-err';
+    fb.style.display = 'block';
+    document.getElementById('spcal-scan-nom').textContent = titre;
+    document.getElementById('spcal-scan-msg').textContent = detail;
+}
+
 function spCalStartScan() {
     if (gScanActive) return;
     gScanActive = true;
     var video = document.getElementById('spcal-qr-video');
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    .then(function(stream) {
-        gScanStream = stream;
-        video.srcObject = stream;
-        video.play();
-        if (typeof BarcodeDetector !== 'undefined') {
-            spCalScanWithBarcodeDetector(video);
-        } else {
-            spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
-        }
-    })
-    .catch(function(e) {
-        document.getElementById('spcal-scan-feedback').className = 'spcal-scan-err';
-        document.getElementById('spcal-scan-feedback').style.display = 'block';
-        document.getElementById('spcal-scan-nom').textContent = '📷 Caméra inaccessible';
-        document.getElementById('spcal-scan-msg').textContent = 'Autorisez l&#39;acc&egrave;s &agrave; la cam&eacute;ra.';
-    });
+    // Diagnostic temporaire (doléances 10/09/2026) : navigator.mediaDevices peut être
+    // absent selon le contexte iOS/WebKit -- appeler .getUserMedia() dessus lèverait
+    // alors une exception synchrone AVANT la promesse, donc jamais interceptée par le
+    // .catch() ci-dessous -- d'où le "rien ne se passe" sans la moindre erreur visible.
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        spCalScanShowError('📷 API caméra indisponible', 'navigator.mediaDevices absent sur ce navigateur/contexte.');
+        return;
+    }
+    try {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(function(stream) {
+            gScanStream = stream;
+            video.srcObject = stream;
+            video.play();
+            if (typeof BarcodeDetector !== 'undefined') {
+                spCalScanWithBarcodeDetector(video);
+            } else {
+                spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
+            }
+        })
+        .catch(function(e) {
+            spCalScanShowError('📷 Caméra inaccessible', (e && (e.name + ' : ' + e.message)) || 'Autorisez l\'accès à la caméra.');
+        });
+    } catch (e) {
+        spCalScanShowError('📷 Erreur scan', (e && (e.name + ' : ' + e.message)) || String(e));
+    }
 }
 
 function spCalStopScan() {
