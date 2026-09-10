@@ -1701,11 +1701,12 @@ function spCalStartScan() {
             gScanStream = stream;
             video.srcObject = stream;
             video.play();
-            if (typeof BarcodeDetector !== 'undefined') {
-                spCalScanWithBarcodeDetector(video);
-            } else {
-                spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
-            }
+            // BarcodeDetector désactivé temporairement (doléances 10/09/2026) : présent mais
+            // potentiellement peu fiable selon la version WebKit -- jsQR est la méthode déjà
+            // éprouvée en production sur le scanner /pointage/?pin= (class-token.php) depuis
+            // avril 2026. À réactiver (remettre la condition BarcodeDetector) une fois confirmé
+            // que ce n'était pas la cause.
+            spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
         })
         .catch(function(e) {
             spCalScanShowError('📷 Caméra inaccessible', (e && (e.name + ' : ' + e.message)) || 'Autorisez l\'accès à la caméra.');
