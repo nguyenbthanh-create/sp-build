@@ -1640,7 +1640,29 @@ window.spCalPinLogout = function() {
     document.getElementById('spcal-pin-screen').style.display = 'block';
 };
 
-/* ── Scanner QR (API BarcodeDetector ou jsQR) ─────────────────── */
+/* ── Scanner QR (API BarcodeDetector ou jsQR, repli multi-CDN) ──
+   jsQR depuis cdnjs.cloudflare.com est bloqué silencieusement par l'hébergeur
+   OVH (cf. md/SPCalendarPRO(sp-build)—Bug.md, 17/04/2026 — même bug déjà
+   résolu sur le scanner /pointage/?pin= de class-token.php, jamais reporté
+   ici) : on charge depuis jsdelivr puis unpkg en repli, jamais cdnjs. ── */
+function spCalLoadJsQR(cb) {
+    if (typeof jsQR !== 'undefined') { cb(); return; }
+    var cdns = [
+        'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
+        'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js'
+    ];
+    var idx = 0;
+    function tryLoad() {
+        if (idx >= cdns.length) { cb(); return; }
+        var s = document.createElement('script');
+        s.src = cdns[idx++];
+        s.onload = cb;
+        s.onerror = tryLoad;
+        document.head.appendChild(s);
+    }
+    tryLoad();
+}
+
 function spCalStartScan() {
     if (gScanActive) return;
     gScanActive = true;
@@ -1650,7 +1672,7 @@ function spCalStartScan() {
         gScanStream = stream;
         video.srcObject = stream;
         video.play();
-        if (window.BarcodeDetector) {
+        if (typeof BarcodeDetector !== 'undefined') {
             spCalScanWithBarcodeDetector(video);
         } else {
             spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
@@ -1672,19 +1694,14 @@ function spCalStopScan() {
     }
 }
 
-function spCalLoadJsQR(cb) {
-    if (window.jsQR) { cb(); return; }
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js';
-    s.onload = cb;
-    document.head.appendChild(s);
-}
-
 function spCalScanWithBarcodeDetector(video) {
-    var detector = new BarcodeDetector({ formats: ['qr_code'] });
+    var detector;
+    try { detector = new BarcodeDetector({ formats: ['qr_code'] }); }
+    catch (e) { spCalLoadJsQR(function(){ spCalScanWithJsQR(video); }); return; }
     function tick() {
         if (!gScanActive) return;
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // iOS : readyState n'atteint pas toujours HAVE_ENOUGH_DATA (4), >=2 suffit
+        if (video.readyState >= 2 && video.videoWidth > 0) {
             detector.detect(video).then(function(codes) {
                 if (codes.length > 0) spCalHandleScanResult(codes[0].rawValue);
             }).catch(function(){});
@@ -1699,7 +1716,9 @@ function spCalScanWithJsQR(video) {
     var ctx = canvas.getContext('2d');
     function tick() {
         if (!gScanActive) return;
-        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // typeof jsQR !== 'undefined' : si les deux CDN de repli ont aussi échoué,
+        // on évite une ReferenceError silencieuse qui arrêterait la boucle sans erreur visible
+        if (video.readyState >= 2 && video.videoWidth > 0 && typeof jsQR !== 'undefined') {
             canvas.height = video.videoHeight;
             canvas.width  = video.videoWidth;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
