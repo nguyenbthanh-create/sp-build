@@ -91,7 +91,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         );
         add_submenu_page( 'sp-cal-pro', 'Entraîneurs & Bureau', 'Entraîneurs & Bureau', 'manage_options', 'sp-cal-trainers', array( $this, 'page_trainers' ) );
         add_submenu_page( 'sp-cal-pro', 'Créneaux',       'Créneaux',       'manage_options', 'sp-cal-slots',       array( $this, 'page_slots' ) );
-        add_submenu_page( 'sp-cal-pro', 'Élèves & Import','Élèves & Import',SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
+        add_submenu_page( 'sp-cal-pro', 'Adhérents','Adhérents',SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-eleves',      array( $this, 'page_eleves' ) );
         add_submenu_page( 'sp-cal-pro', '🪪 Adhésions',   '🪪 Adhésions',   SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-licences',    array( $this, 'page_licences' ) );
         add_submenu_page( 'sp-cal-pro', '🖨️ Cartes membres','🖨️ Cartes membres','manage_options', 'sp-cal-print-cartes', array( $this, 'page_print_cartes' ) );
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );

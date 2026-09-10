@@ -291,7 +291,7 @@ class SP_Cal_Members {
         $extra_documents     = $extra['documents']            ?? array();
         ?>
         <div class="wrap sp-cal-wrap">
-        <h1>Élèves &amp; Import</h1>
+        <h1>Adhérents</h1>
         <a href="<?php echo esc_url( admin_url('admin.php?page=sp-cal-print-cartes') ); ?>"
            class="button" style="margin-bottom:16px;display:inline-flex;align-items:center;gap:6px;">
             🖨️ Impression en lot des cartes
@@ -444,8 +444,18 @@ class SP_Cal_Members {
         </script>
         <?php endif; ?>
 
-        <!-- FORMULAIRE ÉLÈVE -->
-        <div class="sp-box">
+        <!-- FORMULAIRE ÉLÈVE : masqué derrière un bouton + fenêtre modale (10/09/2026) pour que
+             la page affiche d'abord la liste des adhérents, pas un énorme formulaire de saisie. -->
+        <?php if ( ! $edit ) : ?>
+        <p>
+            <button type="button" id="sp-eleve-add-btn" class="button button-primary button-hero">➕ Ajouter un adhérent</button>
+        </p>
+        <?php endif; ?>
+
+        <div id="sp-eleve-form-modal-overlay" class="sp-modal-overlay" style="<?php echo $edit ? '' : 'display:none;'; ?>">
+        <div class="sp-modal-panel">
+        <button type="button" id="sp-eleve-form-modal-close" class="sp-modal-close" aria-label="Fermer">✕</button>
+        <div class="sp-box" style="max-width:900px;margin:0 auto;">
             <h2><?php echo $edit ? '✏️ Modifier l\'élève' : '➕ Ajouter un élève'; ?></h2>
             <form method="post">
                 <?php wp_nonce_field( 'sp_cal_save_eleve' ); ?>
@@ -1158,10 +1168,30 @@ class SP_Cal_Members {
 
             <?php endif; // $edit ?>
         </div><!-- /.sp-box formulaire élève -->
+        </div><!-- /.sp-modal-panel -->
+        </div><!-- /.sp-modal-overlay -->
+
+        <style>
+        .sp-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;}
+        .sp-modal-panel{position:relative;background:#fff;border-radius:10px;max-width:920px;width:100%;padding:8px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+        .sp-modal-close{position:absolute;top:10px;right:10px;background:#fff;border:1px solid #d1d5db;border-radius:50%;width:32px;height:32px;font-size:16px;line-height:1;cursor:pointer;z-index:2;}
+        .sp-modal-close:hover{background:#f3f4f6;}
+        </style>
+        <script>
+        (function(){
+            var overlay  = document.getElementById('sp-eleve-form-modal-overlay');
+            var openBtn  = document.getElementById('sp-eleve-add-btn');
+            var closeBtn = document.getElementById('sp-eleve-form-modal-close');
+            if ( openBtn ) openBtn.addEventListener('click', function(){ overlay.style.display = 'flex'; });
+            if ( closeBtn ) closeBtn.addEventListener('click', function(){ overlay.style.display = 'none'; });
+            overlay.addEventListener('click', function(e){ if ( e.target === overlay ) overlay.style.display = 'none'; });
+            document.addEventListener('keydown', function(e){ if ( e.key === 'Escape' && overlay.style.display !== 'none' ) overlay.style.display = 'none'; });
+        })();
+        </script>
 
         <!-- LISTE ÉLÈVES -->
         <div class="sp-box">
-            <h2><span class="dashicons dashicons-list-view"></span> Élèves (<?php echo count( $eleves ); ?>)
+            <h2><span class="dashicons dashicons-list-view"></span> Adhérents (<?php echo count( $eleves ); ?>)
                 <a href="<?php echo esc_url( wp_nonce_url(
                     add_query_arg(array('sp_cal_print'=>'liste_appel','saison'=>($saisons[0]??'')), home_url('/') ),
                     'sp_cal_print'
