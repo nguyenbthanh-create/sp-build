@@ -837,7 +837,11 @@ class SP_Admin_Adhesions {
 			// Ne remplace la photo existante que si l'adhérent en a re-déposé une (renouvellement =
 			// facultatif ici) — sinon on garde celle déjà présente sur la fiche.
 			'photo_url'              => ( $row->photo_url ?? '' ) !== '' ? $row->photo_url : ( $existing->photo_url ?? '' ),
-			'actif'                  => 1,
+			// Valider la demande n'active pas le compte : comme pour une premiere adhesion
+			// (create_member() ci-dessus), le bureau doit d'abord verifier les pieces (certificat
+			// medical a jour, etc.) puis cocher "Actif" a la main sur la fiche - decision confirmee
+			// le 12/09/2026, cf. doleance cotisations/vue globale.
+			'actif'                  => 0,
 			'extra_data'             => wp_json_encode( $extra ),
 		];
 

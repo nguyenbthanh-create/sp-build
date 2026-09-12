@@ -61,6 +61,10 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 - Désactivation temporaire de `BarcodeDetector`, bascule forcée sur `jsQR` (solution pragmatique en attendant mieux).
 - Page Adhérents : renommage + ajout d'un formulaire d'ajout dans une fenêtre modale.
 
+## 12/09/2026
+
+- Correctif `update_member_renouvellement()` (`class-admin-adhesions.php`) : la validation d'une demande de **renouvellement** forçait `actif = 1` immédiatement, sans repasser par la case "Actif" de la fiche membre — contrairement à une première adhésion (`create_member()`), qui elle attend bien cette activation manuelle après vérification des pièces (certificat médical, etc.). Mis en cohérence : les deux flux exigent désormais la même activation manuelle, décidée avec l'utilisateur suite à une doléance sur l'affichage de la Vue globale de `tkd-cotisations` à la bascule de saison.
+
 ---
 
-*Dernière mise à jour de ce fichier : 11/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+*Dernière mise à jour de ce fichier : 12/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
