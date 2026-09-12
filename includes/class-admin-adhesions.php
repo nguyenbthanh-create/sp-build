@@ -697,7 +697,10 @@ class SP_Admin_Adhesions {
 			'motif_inactif'          => '',
 			'palmares'               => '',
 			'photo_url'              => $row->photo_url ?? '',
-			'actif'                  => 0,
+			// La validation par le bureau EST la vérification administrative (pièces, certificat
+			// médical, etc.) : l'adhérent est donc actif dès la validation, sans étape manuelle
+			// supplémentaire — décision confirmée le 12/09/2026.
+			'actif'                  => 1,
 			'rang'                   => 0,
 			'nb_licences'            => 0,
 			'eligible_dan'           => 0,
@@ -837,11 +840,12 @@ class SP_Admin_Adhesions {
 			// Ne remplace la photo existante que si l'adhérent en a re-déposé une (renouvellement =
 			// facultatif ici) — sinon on garde celle déjà présente sur la fiche.
 			'photo_url'              => ( $row->photo_url ?? '' ) !== '' ? $row->photo_url : ( $existing->photo_url ?? '' ),
-			// Valider la demande n'active pas le compte : comme pour une premiere adhesion
-			// (create_member() ci-dessus), le bureau doit d'abord verifier les pieces (certificat
-			// medical a jour, etc.) puis cocher "Actif" a la main sur la fiche - decision confirmee
-			// le 12/09/2026, cf. doleance cotisations/vue globale.
-			'actif'                  => 0,
+			// La validation par le bureau EST la vérification administrative (comme pour une
+			// première adhésion, create_member() ci-dessus) : l'adhérent est donc réactivé dès la
+			// validation du renouvellement, sans étape manuelle supplémentaire — revu le
+			// 12/09/2026 (une première version exigeait une activation manuelle séparée, ce qui
+			// faisait manquer les adhérents renouvelés dans la Vue globale de tkd-cotisations).
+			'actif'                  => 1,
 			'extra_data'             => wp_json_encode( $extra ),
 		];
 
