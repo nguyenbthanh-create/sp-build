@@ -226,8 +226,8 @@ class SpCalPro_DB {
                 taille_cm varchar(10) NOT NULL DEFAULT '',
                 poids_kg varchar(10) NOT NULL DEFAULT '',
                 pointure varchar(10) NOT NULL DEFAULT '',
-                taille_tshirt varchar(10) NOT NULL DEFAULT '',
-                taille_pantalon varchar(10) NOT NULL DEFAULT '',
+                taille_tshirt varchar(20) NOT NULL DEFAULT '',
+                taille_pantalon varchar(20) NOT NULL DEFAULT '',
                 droit_image tinyint(1) NOT NULL DEFAULT 1,
                 PRIMARY KEY (id)
             ) $charset;",
@@ -522,8 +522,8 @@ class SpCalPro_DB {
                 'taille_cm'       => "varchar(10)  NOT NULL DEFAULT ''",
                 'poids_kg'        => "varchar(10)  NOT NULL DEFAULT ''",
                 'pointure'        => "varchar(10)  NOT NULL DEFAULT ''",
-                'taille_tshirt'   => "varchar(10)  NOT NULL DEFAULT ''",
-                'taille_pantalon' => "varchar(10)  NOT NULL DEFAULT ''",
+                'taille_tshirt'   => "varchar(20)  NOT NULL DEFAULT ''",
+                'taille_pantalon' => "varchar(20)  NOT NULL DEFAULT ''",
                 'droit_image'     => "tinyint(1)   NOT NULL DEFAULT 1",
             ) as $col => $def ) {
                 if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE '$col'" ) )
@@ -612,6 +612,19 @@ class SpCalPro_DB {
             ) as $col => $def ) {
                 if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel3` LIKE '$col'" ) )
                     $wpdb->query( "ALTER TABLE `$tel3` ADD COLUMN `$col` $def" );
+            }
+        }
+
+        // v10.19 : élargir taille_tshirt / taille_pantalon (varchar(10) trop court —
+        // une valeur comme "14 ans / xs" dépasse la limite et fait échouer l'INSERT
+        // en mode strict MySQL lors de la création/mise à jour de la fiche élève)
+        $tel4 = $this->table_eleves();
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '$tel4'" ) ) {
+            foreach ( array( 'taille_tshirt', 'taille_pantalon' ) as $col ) {
+                $current = $wpdb->get_row( "SHOW COLUMNS FROM `$tel4` LIKE '$col'" );
+                if ( $current && false !== strpos( $current->Type, 'varchar(10)' ) ) {
+                    $wpdb->query( "ALTER TABLE `$tel4` MODIFY COLUMN `$col` varchar(20) NOT NULL DEFAULT ''" );
+                }
             }
         }
     }
