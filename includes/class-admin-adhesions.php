@@ -206,7 +206,7 @@ class SP_Admin_Adhesions {
 					</td>
 					<td><?= esc_html( $row->email ) ?></td>
 					<td><?= esc_html( $row->categorie ) ?></td>
-					<td><?= esc_html( $row->discipline ) ?></td>
+					<td><?= esc_html( SP_Front_Adhesion::discipline_label( $row->discipline ) ) ?></td>
 					<td><?= $this->badge_statut( $row->statut ) ?></td>
 					<td><a href="<?= $view_url ?>" class="button button-small">👁 Voir</a></td>
 				</tr>
@@ -330,7 +330,7 @@ class SP_Admin_Adhesions {
 
 		$sections2 = [
 			'🥋 Club' => [
-				'Discipline'         => $row->discipline,
+				'Discipline'         => SP_Front_Adhesion::discipline_label( $row->discipline ),
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
 				'Questionnaire QS-Sport' => $row->discipline === 'RENFO'

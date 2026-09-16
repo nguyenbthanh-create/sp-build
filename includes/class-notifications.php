@@ -39,6 +39,24 @@ class SpCalPro_Notifications {
         add_action( 'wp_ajax_sp_cal_send_notif_now',            array( $this, 'send_now_ajax' ) );
         add_action( 'wp_ajax_sp_cal_send_trainer_reminder_now', array( $this, 'send_trainer_reminder_now_ajax' ) );
         add_action( 'wp_ajax_sp_cal_send_recap_now',            array( $this, 'send_recap_now_ajax' ) );
+
+        // Point d'intégration documenté pour le module IK de sp-compta (trésorerie) — évite de
+        // dupliquer l'algorithme d'expansion des créneaux récurrents + disponibilités dans un
+        // autre plugin. sp-compta lit directement les tables trainers/km_exceptionnels/l'option
+        // tarif_km (simples valeurs), mais appelle ce filtre pour le nombre d'AR/mois, seul calcul
+        // non trivial — garantit que le montant affiché en trésorerie correspond toujours à celui
+        // de l'email récapitulatif mensuel (cf. échange du 16/09/2026).
+        add_filter( 'sp_cal_interventions_par_trainer', array( $this, 'filter_interventions_par_trainer' ), 10, 3 );
+    }
+
+    /**
+     * @param array $default  Valeur par défaut (tableau vide) si le filtre n'est pas surchargé.
+     * @param int   $year
+     * @param int   $month
+     * @return array  [ trainer_id => nombre d'interventions ] pour le mois donné.
+     */
+    public function filter_interventions_par_trainer( $default, $year, $month ) {
+        return $this->db->get_interventions_par_trainer( intval( $year ), intval( $month ) );
     }
 
     public function add_schedules( $schedules ) {

@@ -1,4 +1,4 @@
-<?php 
+﻿<?php 
 if ( ! defined( 'ABSPATH' ) ) exit;
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-inscriptions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-exam.php';
@@ -308,17 +308,7 @@ public function enqueue( $hook ) {
             if ( $jr < 0 ) $adhesion = 'expire';
             elseif ( $jr <= $alerte ) $adhesion = 'expire_bientot';
         }
-        $parcours_raw = $this->db->get_parcours_eleve( $el );
-        $parcours_out = array(
-            'pct'       => $parcours_raw['pct']      ?? 0,
-            'nb_passes' => $parcours_raw['nb_passes'] ?? 0,
-            'nb_total'  => $parcours_raw['nb_total']  ?? 0,
-            'prochain'  => $parcours_raw['prochain']  ?? '',
-            'objectif'  => $parcours_raw['objectif']  ?? '',
-            'steps'     => array_map( static function( $s ) {
-                return array( 'grade' => $s['grade'], 'statut' => $s['statut'], 'date' => $s['date'] ?? null );
-            }, $parcours_raw['steps'] ?? array() ),
-        );
+        $grade_vise = $this->db->get_grade_vise_eleve( $el );
         return rest_ensure_response( array(
             'id' => intval( $el->id ), 'prenom' => $el->prenom, 'nom' => mb_strtoupper( $el->nom ),
             'grade' => $el->grade ?? '', 'categorie_age' => $el->categorie_age ?? '',
@@ -329,7 +319,7 @@ public function enqueue( $hook ) {
             'nb_licences' => intval( $el->nb_licences ?? 0 ),
             'adhesion'   => array( 'statut' => $adhesion, 'jours' => $jours, 'fin' => $fin_saison ),
             'assiduite'  => array( 'present' => $nb_present, 'total' => $nb_total, 'taux' => $taux ),
-            'parcours'   => $parcours_out,
+            'grade_vise' => $grade_vise ?: '',
             'carte' => array(
                 'qr_url'        => home_url( '/' ) . '?token=' . rawurlencode( $el->token ?? '' ),
                 'club_nom'      => get_option( 'blogname', '' ),
@@ -699,25 +689,11 @@ window.addEventListener('error', function(e) {
 .spcal-evt-card.statut-info{border-left-color:rgba(255,255,255,.15);opacity:.75;}
 .spcal-evt-loading{font-size:12px;color:rgba(255,255,255,.4);font-style:italic;}
 
-/* ── PROGRESSION GRADE ────────────────────────────────────────── */
+/* ── PROCHAIN GRADE ───────────────────────────────────────────── */
 #spcal-grade-progression{margin-top:20px;}
 .spcal-grade-section-title{font-size:12px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;}
-.spcal-grade-progress-wrap{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:14px;}
-.spcal-grade-progress-label{font-size:12px;color:rgba(255,255,255,.45);margin-bottom:8px;display:flex;justify-content:space-between;}
-.spcal-grade-progress-bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-bottom:8px;}
-.spcal-grade-progress-fill{height:100%;border-radius:3px;background:#0f70b7;transition:width .8s ease;}
 .spcal-grade-next{font-size:13px;color:rgba(255,255,255,.7);}
 .spcal-grade-next strong{color:#0f70b7;}
-.spcal-grade-steps{display:flex;flex-direction:column;gap:6px;}
-.spcal-grade-step{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;}
-.spcal-grade-step.passe{background:rgba(34,197,94,.08);}
-.spcal-grade-step.actuel{background:rgba(15,112,183,.18);border:1px solid rgba(15,112,183,.4);}
-.spcal-grade-step.futur{background:rgba(255,255,255,.04);opacity:.5;}
-.spcal-grade-step-ico{font-size:16px;flex-shrink:0;width:22px;text-align:center;}
-.spcal-grade-step-info{flex:1;min-width:0;}
-.spcal-grade-step-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.spcal-grade-step.actuel .spcal-grade-step-name{color:#60a5fa;}
-.spcal-grade-step-date{font-size:11px;color:rgba(255,255,255,.35);margin-top:1px;}
 
 /* ── CARTE ───────────────────────────────────────────────────── */
 #spcal-carte{padding:20px 16px;}
@@ -1353,49 +1329,14 @@ function renderCalendrier() {
     document.getElementById('spcal-cal-list').innerHTML = html;
 }
 
-/* ── Progression de grade (onglet Carte) ─────────────────────── */
+/* ── Prochain grade (onglet Carte) ───────────────────────────── */
 function renderGradeProgression() {
     var el   = gEleve;
-    var parc = el.parcours || {};
     var wrap = document.getElementById('spcal-grade-progression');
     if (!wrap) return;
-    if (!parc.nb_total || parc.nb_total < 2) { wrap.innerHTML = ''; return; }
-
-    var stepsHtml = '';
-    (parc.steps || []).forEach(function(s) {
-        var ico = s.statut === 'passe'   ? '\u2705'
-                : s.statut === 'actuel'  ? '\ud83c\udfaf'
-                :                          '\u25cb';
-        var dateStr = s.date ? ('<div class="spcal-grade-step-date">' + fmtDate(s.date) + '</div>') : '';
-        stepsHtml +=
-            '<div class="spcal-grade-step ' + s.statut + '">' +
-            '<span class="spcal-grade-step-ico">' + ico + '</span>' +
-            '<div class="spcal-grade-step-info">' +
-            '<div class="spcal-grade-step-name">' + esc(s.grade) + '</div>' +
-            dateStr +
-            '</div>' +
-            '</div>';
-    });
-
-    var nextHtml = parc.prochain
-        ? '<div class="spcal-grade-next">Prochain objectif\u00a0: <strong>' + esc(parc.prochain) + '</strong></div>'
-        : (parc.grade_courant === parc.objectif
-            ? '<div class="spcal-grade-next" style="color:#4ade80;">\ud83c\udfc6 Grade maximum atteint</div>'
-            : '');
-
-    wrap.innerHTML =
-        '<div class="spcal-grade-section-title">\ud83e\udd4b Progression de grade</div>' +
-        '<div class="spcal-grade-progress-wrap">' +
-            '<div class="spcal-grade-progress-label">' +
-                '<span>' + parc.nb_passes + '\u00a0/\u00a0' + (parc.nb_total - 1) + ' grades</span>' +
-                '<span>' + (parc.pct || 0) + '%</span>' +
-            '</div>' +
-            '<div class="spcal-grade-progress-bar">' +
-                '<div class="spcal-grade-progress-fill" style="width:' + (parc.pct || 0) + '%;"></div>' +
-            '</div>' +
-            nextHtml +
-        '</div>' +
-        '<div class="spcal-grade-steps">' + stepsHtml + '</div>';
+    if (!el.grade_vise) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = '<div class="spcal-grade-section-title">Prochain grade</div>' +
+        '<div class="spcal-grade-next"><strong>' + esc(el.grade_vise) + '</strong></div>';
 }
 
 /* ── Événements & Inscriptions ───────────────────────────────── */

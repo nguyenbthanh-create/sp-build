@@ -90,6 +90,22 @@ class SP_Cal_Members {
 
             $urgence_statut = sanitize_text_field( wp_unslash( $_POST['eleve_urgence_statut'] ?? '' ) );
 
+            // Grade / Catégorie d'âge / Discipline pratiquée : ces 3 listes déroulantes envoient
+            // "__autre__" quand la valeur n'est pas dans leurs options — on utilise alors le champ
+            // texte libre associé (cf. formulaire ci-dessous).
+            $grade_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_grade'] ?? '' ) );
+            if ( $grade_saisi === '__autre__' ) {
+                $grade_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_grade_autre'] ?? '' ) );
+            }
+            $cat_age_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_cat'] ?? '' ) );
+            if ( $cat_age_saisi === '__autre__' ) {
+                $cat_age_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_cat_autre'] ?? '' ) );
+            }
+            $cat_saisie_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_cat_saisie'] ?? '' ) );
+            if ( $cat_saisie_saisi === '__autre__' ) {
+                $cat_saisie_saisi = sanitize_text_field( wp_unslash( $_POST['eleve_cat_saisie_autre'] ?? '' ) );
+            }
+
             $extra = array_merge( $extra_existant, array(
                 'sexe'                    => sanitize_text_field( wp_unslash( $_POST['eleve_sexe'] ?? '' ) ),
                 'autorisation_photo'      => isset( $_POST['eleve_autorisation_photo'] ) ? 1 : 0,
@@ -117,9 +133,9 @@ class SP_Cal_Members {
                 'prenom'           => sanitize_text_field( wp_unslash( $_POST['eleve_prenom']       ?? '' ) ),
                 'date_naissance'   => sanitize_text_field( wp_unslash( $_POST['eleve_ddn']          ?? '' ) ),
                 'annee_naissance'  => sanitize_text_field( wp_unslash( $_POST['eleve_annee']        ?? '' ) ),
-                'grade'            => $this->db->normaliser_grade( sanitize_text_field( wp_unslash( $_POST['eleve_grade'] ?? '' ) ), sanitize_text_field( wp_unslash( $_POST['eleve_cat'] ?? '' ) ) ),
-                'categorie_age'    => sanitize_text_field( wp_unslash( $_POST['eleve_cat']          ?? '' ) ),
-                'categorie_saisie' => sanitize_text_field( wp_unslash( $_POST['eleve_cat_saisie']   ?? '' ) ),
+                'grade'            => $this->db->normaliser_grade( $grade_saisi, $cat_age_saisi ),
+                'categorie_age'    => $cat_age_saisi,
+                'categorie_saisie' => $cat_saisie_saisi,
                 'saison'           => sanitize_text_field( wp_unslash( $_POST['eleve_saison']       ?? '' ) ),
                 'rang'             => intval(              $_POST['eleve_rang']          ?? 0  ),
                 'palmares'         => sanitize_textarea_field( wp_unslash( $_POST['eleve_palmares'] ?? '' ) ),
@@ -245,6 +261,40 @@ class SP_Cal_Members {
             }
             wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&tokens_sent=' . $sent . '&tokens_skipped=' . $skipped ) ); exit;
         }
+
+        /* ── Bulk passage de grade : Admis(e) / Ajourné(e) ──
+           Rattaché à un examen (event_id) pour garder la traçabilité de la date de passage
+           dans l'historique de la fiche/token — un club a 2-3 sessions de passage par saison,
+           il faut pouvoir les distinguer (cf. échange du 16/09/2026). */
+        if ( isset( $_POST['sp_bulk_action'] ) && in_array( $_POST['sp_bulk_action'], array( 'admis', 'ajourne' ), true )
+             && check_admin_referer( 'sp_cal_bulk_eleves' ) ) {
+            $ids      = array_map( 'intval', $_POST['sp_bulk_ids'] ?? array() );
+            $event_id = intval( $_POST['sp_bulk_event_id'] ?? 0 );
+            $recu     = ( $_POST['sp_bulk_action'] === 'admis' ) ? 1 : 0;
+            $done     = 0;
+            if ( $event_id ) {
+                foreach ( $ids as $eid ) {
+                    if ( ! $eid ) continue;
+                    $el = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE id=%d", $eid ) );
+                    if ( ! $el ) continue;
+                    // Grade suivant calculé automatiquement depuis le référentiel (Jury → Grades) ;
+                    // si l'élève n'a pas de correspondance dans le référentiel, on garde son grade actuel.
+                    $nouveau_grade = $recu ? ( $this->db->get_grade_vise_eleve( $el ) ?: $el->grade ) : '';
+                    $this->db->save_exam_passage( $event_id, $eid, $recu, $nouveau_grade );
+                    $done++;
+                }
+            }
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&passages_done=' . $done ) ); exit;
+        }
+
+        /* ── Export CSV — colonnes choisies point par point ──
+           GET (pas POST) pour que le lien de téléchargement fonctionne comme un simple clic ;
+           hooké sur admin_init comme le reste de handle_request() pour pouvoir envoyer les
+           en-têtes CSV avant que la page admin ne commence à écrire du HTML. */
+        if ( isset( $_GET['sp_export_eleves_csv'] ) && check_admin_referer( 'sp_cal_export_eleves_csv' ) ) {
+            $this->export_eleves_csv();
+            exit;
+        }
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -255,6 +305,88 @@ class SP_Cal_Members {
         if ( isset( $_GET[ $key ] ) ) {
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $message ) . '</p></div>';
         }
+    }
+
+    /**
+     * Champs disponibles pour l'export CSV des adhérents — clé colonne DB => libellé affiché.
+     * Point unique partagé entre le panneau de sélection (page_eleves) et l'export (export_eleves_csv).
+     */
+    private function csv_eleves_champs() {
+        return array(
+            'nom'                    => 'Nom',
+            'prenom'                 => 'Prénom',
+            'categorie_saisie'       => 'Discipline pratiquée',
+            'categorie_age'          => 'Catégorie âge',
+            'grade'                  => 'Grade',
+            'date_naissance'         => 'Date de naissance',
+            'saison'                 => 'Saison',
+            'licence'                => 'N° Licence',
+            'num_passeport'          => 'Passeport FFTDA',
+            'actif'                  => 'Statut adhésion',
+            'email'                  => 'Email',
+            'email_parent'           => 'Email parent',
+            'telephone'              => 'Téléphone',
+            'representant_nom'       => 'Représentant nom',
+            'representant_prenom'    => 'Représentant prénom',
+            'representant_telephone' => 'Représentant téléphone',
+            'urgence_nom'            => 'Urgence nom',
+            'urgence_prenom'         => 'Urgence prénom',
+            'urgence_telephone'      => 'Urgence téléphone',
+            'urgence_email'          => 'Urgence email',
+            'adresse'                => 'Adresse',
+            'nationalite'            => 'Nationalité',
+            'lieu_naissance'         => 'Lieu de naissance',
+            'taille_cm'              => 'Taille (cm)',
+            'poids_kg'               => 'Poids (kg)',
+            'pointure'               => 'Pointure',
+            'taille_tshirt'          => 'T-shirt',
+            'taille_pantalon'        => 'Pantalon',
+        );
+    }
+
+    /**
+     * Génère et envoie le CSV des adhérents avec uniquement les colonnes cochées dans le panneau
+     * d'export (cf. doléance 09/2026 : pouvoir choisir point par point ce qu'on retrouve dans le
+     * tableau, plutôt qu'un export figé).
+     */
+    private function export_eleves_csv() {
+        $champs_dispo = $this->csv_eleves_champs();
+        $champs = array_values( array_intersect(
+            array_map( 'sanitize_text_field', wp_unslash( $_GET['champs'] ?? array() ) ),
+            array_keys( $champs_dispo )
+        ) );
+        if ( empty( $champs ) ) {
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&csv_error=1' ) );
+            return;
+        }
+
+        $eleves = $this->db->get_eleves();
+
+        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Disposition: attachment; filename="adherents_' . date( 'Ymd' ) . '.csv"' );
+        header( 'Pragma: no-cache' );
+
+        echo "\xEF\xBB\xBF"; // BOM UTF-8 pour Excel
+
+        $out = fopen( 'php://output', 'w' );
+        fputcsv( $out, array_map( function( $k ) use ( $champs_dispo ) { return $champs_dispo[ $k ]; }, $champs ), ';' );
+
+        foreach ( $eleves as $el ) {
+            $line = array();
+            foreach ( $champs as $key ) {
+                if ( $key === 'categorie_saisie' ) {
+                    $line[] = $this->db->label_discipline( $el->categorie_saisie );
+                } elseif ( $key === 'date_naissance' ) {
+                    $line[] = trim( $el->date_naissance . ( $el->annee_naissance ? '/' . $el->annee_naissance : '' ), '/' );
+                } elseif ( $key === 'actif' ) {
+                    $line[] = intval( $el->actif ) ? 'Actif' : 'Inactif';
+                } else {
+                    $line[] = wp_unslash( $el->$key ?? '' );
+                }
+            }
+            fputcsv( $out, $line, ';' );
+        }
+        fclose( $out );
     }
 
 
@@ -270,6 +402,11 @@ class SP_Cal_Members {
         $cats      = $this->db->get_categories_eleves();
         $cats_saisie = $this->db->get_categories_saisie();
         $saisons   = $this->db->get_saisons();
+        $grades_ref = $this->db->get_grades_referentiel();
+        $te_examens = $this->db->table_events();
+        $examens_events = $wpdb->get_results(
+            "SELECT id, titre, date FROM $te_examens WHERE type='examen' ORDER BY date DESC LIMIT 50"
+        );
 
         $edit = null;
         if ( isset( $_GET['sp_edit_eleve'] ) ) {
@@ -299,6 +436,12 @@ class SP_Cal_Members {
 
         <?php $this->notice_flash( 'saved', 'Élève enregistré.' ); ?>
         <?php $this->notice_flash( 'deleted', 'Élève(s) supprimé(s).' ); ?>
+        <?php if ( isset( $_GET['passages_done'] ) ) : ?>
+        <div class="notice notice-success is-dismissible"><p>✅ Passage de grade enregistré pour <strong><?php echo intval($_GET['passages_done']); ?></strong> élève(s).</p></div>
+        <?php endif; ?>
+        <?php if ( isset( $_GET['csv_error'] ) ) : ?>
+        <div class="notice notice-error is-dismissible"><p>⚠️ Sélectionnez au moins une colonne avant d'exporter.</p></div>
+        <?php endif; ?>
         <?php
         // ── Bascule catégories septembre ──────────────────────────────────
         $mois_courant = intval(date('n'));
@@ -473,7 +616,43 @@ class SP_Cal_Members {
                 // Colonne gauche
                 $f( 'Nom',                    'eleve_nom',          $edit->nom             ?? '', 'text', '',       true );
                 $f( 'Prénom',                  'eleve_prenom',       $edit->prenom          ?? '' );
-                $f( 'Grade actuel',            'eleve_grade',        $edit->grade           ?? '' );
+                ?>
+                <!-- Grade actuel — liste déroulante groupée par catégorie d'âge (référentiel
+                     Jury → Grades), pour harmoniser la saisie. "Autre" en secours si le grade
+                     ne figure pas dans le référentiel (cf. doleances.md). -->
+                <div style="margin-bottom:12px;">
+                    <?php $grade_edit = $edit->grade ?? ''; $grade_in_ref = false; ?>
+                    <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Grade actuel</label>
+                    <select name="eleve_grade" id="sp-eleve-grade-select" class="regular-text" style="width:100%;">
+                        <option value="">—</option>
+                        <?php foreach ( $grades_ref as $cat => $chain ) : ?>
+                        <optgroup label="<?php echo esc_attr($cat); ?>">
+                            <?php foreach ( $chain as $g ) :
+                                if ( $g === $grade_edit ) $grade_in_ref = true;
+                            ?>
+                            <option value="<?php echo esc_attr($g); ?>" <?php selected( $grade_edit, $g ); ?>><?php echo esc_html($g); ?></option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                        <?php endforeach; ?>
+                        <option value="__autre__" <?php selected( $grade_edit && ! $grade_in_ref, true ); ?>>Autre…</option>
+                    </select>
+                    <input type="text" name="eleve_grade_autre" id="sp-eleve-grade-autre"
+                           value="<?php echo ( $grade_edit && ! $grade_in_ref ) ? esc_attr($grade_edit) : ''; ?>"
+                           placeholder="Préciser le grade"
+                           class="regular-text"
+                           style="width:100%;margin-top:6px;<?php echo ( $grade_edit && ! $grade_in_ref ) ? '' : 'display:none;'; ?>">
+                    <script>
+                    (function(){
+                        var sel = document.getElementById('sp-eleve-grade-select');
+                        var txt = document.getElementById('sp-eleve-grade-autre');
+                        if (!sel || !txt) return;
+                        sel.addEventListener('change', function(){
+                            txt.style.display = sel.value === '__autre__' ? '' : 'none';
+                        });
+                    })();
+                    </script>
+                </div>
+                <?php
                 $f( 'N° Licence',              'eleve_licence',      $edit->licence         ?? '' );
                 ?>
                 <!-- Statut adhésion -->
@@ -506,15 +685,33 @@ class SP_Cal_Members {
                 $f( 'Passeport FFTDA',         'eleve_num_passeport', $edit->num_passeport   ?? '' );
                 $f( 'Saison',                  'eleve_saison',       $edit->saison          ?? '', 'text', '2025/2026' );
                 ?>
-                    <!-- Catégorie saisie (droite col 1) -->
+                    <!-- Discipline pratiquée (droite col 1) — mêmes codes que le formulaire public
+                         d'adhésion (TKD/RENFO, cf. SP_Front_Adhesion::DISCIPLINES) pour que la fiche
+                         admin et les inscriptions en ligne alimentent la même colonne sans divergence. -->
                     <div style="margin-bottom:12px;">
-                        <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie saisie</label>
-                        <input type="text" name="eleve_cat_saisie" list="sp-cat-saisie-list"
-                               value="<?php echo esc_attr($edit->categorie_saisie ?? ''); ?>"
-                               placeholder="TKD, RENFO…" class="regular-text" style="width:100%;">
-                        <datalist id="sp-cat-saisie-list">
-                            <?php foreach ( $cats_saisie as $c ) echo '<option value="' . esc_attr($c) . '">'; ?>
-                        </datalist>
+                        <?php $disc_edit = $edit->categorie_saisie ?? ''; $disc_connue = in_array( $disc_edit, array('TKD','RENFO'), true ); ?>
+                        <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Discipline pratiquée</label>
+                        <select name="eleve_cat_saisie" id="sp-eleve-disc-select" class="regular-text" style="width:100%;">
+                            <option value="">—</option>
+                            <option value="TKD"   <?php selected( $disc_edit, 'TKD' ); ?>>Taekwondo</option>
+                            <option value="RENFO" <?php selected( $disc_edit, 'RENFO' ); ?>>Renforcement musculaire</option>
+                            <option value="__autre__" <?php selected( $disc_edit && ! $disc_connue, true ); ?>>Autre…</option>
+                        </select>
+                        <input type="text" name="eleve_cat_saisie_autre" id="sp-eleve-disc-autre"
+                               value="<?php echo ( $disc_edit && ! $disc_connue ) ? esc_attr($disc_edit) : ''; ?>"
+                               placeholder="Préciser la discipline"
+                               class="regular-text"
+                               style="width:100%;margin-top:6px;<?php echo ( $disc_edit && ! $disc_connue ) ? '' : 'display:none;'; ?>">
+                        <script>
+                        (function(){
+                            var sel = document.getElementById('sp-eleve-disc-select');
+                            var txt = document.getElementById('sp-eleve-disc-autre');
+                            if (!sel || !txt) return;
+                            sel.addEventListener('change', function(){
+                                txt.style.display = sel.value === '__autre__' ? '' : 'none';
+                            });
+                        })();
+                        </script>
                     </div>
                 <?php
                 // Colonne droite
@@ -551,15 +748,38 @@ class SP_Cal_Members {
                             </label>
                         </div>
                     </div>
-                    <!-- Catégorie d'âge -->
+                    <!-- Catégorie d'âge — liste déroulante sourcée sur le même référentiel que les
+                         grades (Jury → Grades) + les valeurs déjà utilisées sur d'autres fiches,
+                         pour rester cohérent avec le regroupement des grades par catégorie. -->
                     <div style="margin-bottom:12px;">
+                        <?php
+                        $cat_edit    = $edit->categorie_age ?? '';
+                        $cats_dispo  = array_unique( array_merge( array_keys( $grades_ref ), $cats ) );
+                        $cat_connue  = in_array( $cat_edit, $cats_dispo, true );
+                        ?>
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie d'âge</label>
-                        <input type="text" name="eleve_cat" list="sp-cat-list"
-                               value="<?php echo esc_attr($edit->categorie_age ?? ''); ?>"
-                               placeholder="Baby, Enfant, Ado/adulte…" class="regular-text" style="width:100%;">
-                        <datalist id="sp-cat-list">
-                            <?php foreach ( $cats as $c ) echo '<option value="' . esc_attr($c) . '">'; ?>
-                        </datalist>
+                        <select name="eleve_cat" id="sp-eleve-cat-select" class="regular-text" style="width:100%;">
+                            <option value="">—</option>
+                            <?php foreach ( $cats_dispo as $c ) : ?>
+                            <option value="<?php echo esc_attr($c); ?>" <?php selected( $cat_edit, $c ); ?>><?php echo esc_html($c); ?></option>
+                            <?php endforeach; ?>
+                            <option value="__autre__" <?php selected( $cat_edit && ! $cat_connue, true ); ?>>Autre…</option>
+                        </select>
+                        <input type="text" name="eleve_cat_autre" id="sp-eleve-cat-autre"
+                               value="<?php echo ( $cat_edit && ! $cat_connue ) ? esc_attr($cat_edit) : ''; ?>"
+                               placeholder="Préciser la catégorie"
+                               class="regular-text"
+                               style="width:100%;margin-top:6px;<?php echo ( $cat_edit && ! $cat_connue ) ? '' : 'display:none;'; ?>">
+                        <script>
+                        (function(){
+                            var sel = document.getElementById('sp-eleve-cat-select');
+                            var txt = document.getElementById('sp-eleve-cat-autre');
+                            if (!sel || !txt) return;
+                            sel.addEventListener('change', function(){
+                                txt.style.display = sel.value === '__autre__' ? '' : 'none';
+                            });
+                        })();
+                        </script>
                     </div>
                     <!-- Rang -->
                     <div style="margin-bottom:12px;">
@@ -1198,7 +1418,53 @@ class SP_Cal_Members {
                 ) ); ?>" target="_blank" class="button button-small" style="margin-left:12px;font-size:12px;">
                     🖨️ Liste d'appel PDF
                 </a>
+                <button type="button" id="sp-csv-export-toggle" class="button button-small" style="margin-left:6px;font-size:12px;">
+                    ⬇️ Export CSV
+                </button>
             </h2>
+
+            <!-- Export CSV — sélection des champs -->
+            <?php
+            $csv_champs = $this->csv_eleves_champs();
+            $csv_defaut = array( 'nom', 'prenom', 'categorie_saisie', 'categorie_age', 'grade', 'date_naissance', 'licence' );
+            ?>
+            <div id="sp-csv-export-panel" class="sp-box" style="display:none;background:#f8fafc;margin-bottom:14px;">
+                <form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
+                    <input type="hidden" name="page" value="sp-cal-eleves">
+                    <input type="hidden" name="sp_export_eleves_csv" value="1">
+                    <?php wp_nonce_field( 'sp_cal_export_eleves_csv' ); ?>
+                    <p style="margin-top:0;font-weight:600;font-size:13px;">Choisir les colonnes à exporter :</p>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px 16px;">
+                        <?php foreach ( $csv_champs as $key => $label ) : ?>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" name="champs[]" value="<?php echo esc_attr($key); ?>" <?php checked( in_array($key, $csv_defaut, true) ); ?>>
+                            <?php echo esc_html($label); ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <p style="margin-bottom:0;">
+                        <a href="#" id="sp-csv-all">Tout cocher</a>
+                        <a href="#" id="sp-csv-none" style="margin-left:10px;">Tout décocher</a>
+                        <button type="submit" class="button button-primary button-small" style="margin-left:16px;">⬇️ Générer le CSV</button>
+                    </p>
+                </form>
+            </div>
+            <script>
+            (function(){
+                var toggle = document.getElementById('sp-csv-export-toggle');
+                var panel  = document.getElementById('sp-csv-export-panel');
+                if (toggle && panel) toggle.addEventListener('click', function(){
+                    panel.style.display = panel.style.display === 'none' ? '' : 'none';
+                });
+                var all  = document.getElementById('sp-csv-all');
+                var none = document.getElementById('sp-csv-none');
+                function setAll(checked){
+                    document.querySelectorAll('#sp-csv-export-panel input[type=checkbox]').forEach(function(c){ c.checked = checked; });
+                }
+                if (all)  all.addEventListener('click',  function(e){ e.preventDefault(); setAll(true); });
+                if (none) none.addEventListener('click', function(e){ e.preventDefault(); setAll(false); });
+            })();
+            </script>
 
             <!-- Filtres -->
             <div class="sp-filter-bar" style="flex-wrap:wrap;gap:8px;">
@@ -1208,8 +1474,8 @@ class SP_Cal_Members {
                     <?php foreach ( $cats as $c ) echo '<option value="' . esc_attr($c) . '">' . esc_html($c) . '</option>'; ?>
                 </select>
                 <select id="sp-flt-cat-saisie">
-                    <option value="">— Catégorie saisie —</option>
-                    <?php foreach ( $cats_saisie as $c ) echo '<option value="' . esc_attr($c) . '">' . esc_html($c) . '</option>'; ?>
+                    <option value="">— Discipline pratiquée —</option>
+                    <?php foreach ( $cats_saisie as $c ) echo '<option value="' . esc_attr($c) . '">' . esc_html( $this->db->label_discipline($c) ) . '</option>'; ?>
                 </select>
                 <?php if ( ! empty( $saisons ) ) : ?>
                 <select id="sp-flt-saison">
@@ -1231,7 +1497,17 @@ class SP_Cal_Members {
                         <select id="sp-bulk-action-top" class="sp-input" style="height:30px;min-width:200px;">
                             <option value="">— Actions groupées —</option>
                             <option value="send_token">📧 Envoyer le lien d'accès</option>
+                            <option value="admis">✅ Admis(e) — passage de grade</option>
+                            <option value="ajourne">➖ Ajourné(e)</option>
                             <option value="delete">🗑️ Supprimer</option>
+                        </select>
+                        <select id="sp-bulk-event-top" class="sp-input sp-bulk-event-select" style="height:30px;min-width:220px;display:none;">
+                            <option value="">— Choisir l'examen —</option>
+                            <?php foreach ( $examens_events as $ev ) :
+                                $ev_lbl = ($ev->date ? date_create($ev->date)->format('d/m/Y') . ' — ' : '') . $ev->titre;
+                            ?>
+                            <option value="<?php echo intval($ev->id); ?>"><?php echo esc_html($ev_lbl); ?></option>
+                            <?php endforeach; ?>
                         </select>
                         <button type="button" class="button sp-bulk-apply-btn" data-target="top">
                             Appliquer
@@ -1252,9 +1528,9 @@ class SP_Cal_Members {
                         <td class="check-column" style="width:36px;">
                             <input type="checkbox" id="sp-check-all-top" title="Tout sélectionner / désélectionner">
                         </td>
-                        <th>Nom</th>
+                        <th id="sp-sort-nom" style="cursor:pointer;user-select:none;" title="Trier par ordre alphabétique">Nom <span id="sp-sort-nom-ico" style="color:#9ca3af;">↕</span></th>
                         <th>Prénom</th>
-                        <th>Cat. saisie</th>
+                        <th>Discipline pratiquée</th>
                         <th>Cat. âge</th>
                         <th>Grade</th>
                         <th>Naissance</th>
@@ -1299,7 +1575,7 @@ class SP_Cal_Members {
                         </th>
                         <td><strong><?php echo esc_html($el->nom); ?></strong></td>
                         <td><?php echo esc_html($el->prenom); ?></td>
-                        <td><?php if($el->categorie_saisie) echo '<span class="sp-badge-blue">' . esc_html($el->categorie_saisie) . '</span>'; ?></td>
+                        <td><?php if($el->categorie_saisie) echo '<span class="sp-badge-blue">' . esc_html( $this->db->label_discipline($el->categorie_saisie) ) . '</span>'; ?></td>
                         <td><?php if($el->categorie_age) echo '<span class="sp-badge-blue" style="background:#6366f1;color:#fff;">' . esc_html($el->categorie_age) . '</span>'; ?></td>
                         <td>
                             <?php echo esc_html($el->grade); ?>
@@ -1335,7 +1611,17 @@ class SP_Cal_Members {
                                     <select id="sp-bulk-action-bottom" class="sp-input" style="height:30px;min-width:200px;">
                                         <option value="">— Actions groupées —</option>
                                         <option value="send_token">📧 Envoyer le lien d'accès</option>
+                                        <option value="admis">✅ Admis(e) — passage de grade</option>
+                                        <option value="ajourne">➖ Ajourné(e)</option>
                                         <option value="delete">🗑️ Supprimer</option>
+                                    </select>
+                                    <select id="sp-bulk-event-bottom" class="sp-input sp-bulk-event-select" style="height:30px;min-width:220px;display:none;">
+                                        <option value="">— Choisir l'examen —</option>
+                                        <?php foreach ( $examens_events as $ev ) :
+                                            $ev_lbl = ($ev->date ? date_create($ev->date)->format('d/m/Y') . ' — ' : '') . $ev->titre;
+                                        ?>
+                                        <option value="<?php echo intval($ev->id); ?>"><?php echo esc_html($ev_lbl); ?></option>
+                                        <?php endforeach; ?>
                                     </select>
                                     <button type="button" class="button sp-bulk-apply-btn" data-target="bottom">
                                         Appliquer
@@ -1350,6 +1636,7 @@ class SP_Cal_Members {
 
                 <!-- Champs hidden pour soumission via JS -->
                 <input type="hidden" name="sp_bulk_delete_eleves_trigger" id="sp-bulk-delete-trigger" value="">
+                <input type="hidden" name="sp_bulk_event_id" id="sp-bulk-event-id-final" value="">
             </form>
             <?php endif; ?>
         </div>
@@ -1381,6 +1668,23 @@ class SP_Cal_Members {
             if(fCat)    fCat.addEventListener('change',   applyFilter);
             if(fCatS)   fCatS.addEventListener('change',  applyFilter);
             if(fSaison) fSaison.addEventListener('change',applyFilter);
+
+            /* ── Tri alphabétique (clic sur l'en-tête "Nom") ──────── */
+            var sortTh  = document.getElementById('sp-sort-nom');
+            var sortIco = document.getElementById('sp-sort-nom-ico');
+            var sortDir = null; // null = ordre par défaut (rang), 'asc', 'desc'
+            if (sortTh) {
+                sortTh.addEventListener('click', function(){
+                    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+                    sortIco.textContent = sortDir === 'asc' ? '▲' : '▼';
+                    var tbody   = document.querySelector('#sp-eleves-table tbody');
+                    var sorted  = Array.prototype.slice.call(rows).sort(function(a, b){
+                        var cmp = a.dataset.name.localeCompare(b.dataset.name, 'fr');
+                        return sortDir === 'asc' ? cmp : -cmp;
+                    });
+                    sorted.forEach(function(r){ tbody.appendChild(r); });
+                });
+            }
 
             /* ── Cases à cocher ─────────────────────────────────── */
             function getVisibleCheckboxes(){
@@ -1434,6 +1738,15 @@ class SP_Cal_Members {
                 c.addEventListener('change', syncCheckAll);
             });
 
+            /* ── Afficher le sélecteur d'examen pour admis/ajourné ── */
+            ['top','bottom'].forEach(function(target){
+                var actionSel = document.getElementById('sp-bulk-action-' + target);
+                var eventSel  = document.getElementById('sp-bulk-event-' + target);
+                if (!actionSel || !eventSel) return;
+                actionSel.addEventListener('change', function(){
+                    eventSel.style.display = (actionSel.value === 'admis' || actionSel.value === 'ajourne') ? '' : 'none';
+                });
+            });
 
             /* ── Boutons "Appliquer" ─────────────────────────────── */
             document.querySelectorAll('.sp-bulk-apply-btn').forEach(function(btn){
@@ -1457,6 +1770,18 @@ class SP_Cal_Members {
                         if(!confirm(msg)) return;
                         // Le champ hidden sp_bulk_action est la seule valeur lue par PHP
                         document.getElementById('sp-bulk-action-final').value = 'send_token';
+                        document.getElementById('sp-eleves-form').submit();
+
+                    } else if(action === 'admis' || action === 'ajourne'){
+                        var eventSelId = target === 'top' ? 'sp-bulk-event-top' : 'sp-bulk-event-bottom';
+                        var eventId    = document.getElementById(eventSelId).value;
+                        if(!eventId){ alert('Choisissez l\'examen concerné dans le menu déroulant.'); return; }
+                        var label = action === 'admis' ? 'Admis(e)' : 'Ajourné(e)';
+                        var msg   = 'Marquer ' + checked.length + ' élève' + (checked.length>1?'s':'') + ' « ' + label + ' » pour cet examen ?';
+                        if(action === 'admis') msg += '\n\nLe grade suivant (calculé depuis le référentiel) sera appliqué automatiquement.';
+                        if(!confirm(msg)) return;
+                        document.getElementById('sp-bulk-action-final').value  = action;
+                        document.getElementById('sp-bulk-event-id-final').value = eventId;
                         document.getElementById('sp-eleves-form').submit();
 
                     } else if(action === 'delete'){
@@ -2201,10 +2526,11 @@ class SP_Cal_Members {
                     PAL.epreuves.forEach(function(ep){
                         PAL.resultats[ep.id] = JSON.parse(JSON.stringify(ep.resultats || {}));
                     });
-                    // Filtre catégorie saisie
+                    // Filtre discipline pratiquée
+                    var discLabels = { TKD: 'Taekwondo', RENFO: 'Renforcement musculaire' };
                     var cats = {}; PAL.eleves.forEach(function(el){ if(el.categorie_saisie) cats[el.categorie_saisie]=1; });
                     var opts = '<option value="">— Tous</option>';
-                    Object.keys(cats).sort().forEach(function(c){ opts += '<option value="'+escHtml(c)+'">'+escHtml(c)+'</option>'; });
+                    Object.keys(cats).sort().forEach(function(c){ opts += '<option value="'+escHtml(c)+'">'+escHtml(discLabels[c] || c)+'</option>'; });
                     $('#sp-comp-popup-flt-saisie').html(opts);
                     $('#sp-comp-popup-epreuves-wrap, #sp-comp-popup-resultats-wrap').show();
                     palRenderEpreuves();
@@ -3080,7 +3406,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <div class="sp-fiche-nav-title">
                 <?php if($el->categorie_saisie): ?>
                 <span class="sp-fiche-pill" style="background:<?php echo esc_attr($cat_color); ?>;">
-                    <?php echo esc_html( ($cat_icon ? $cat_icon . ' ' : '') . $el->categorie_saisie ); ?>
+                    <?php echo esc_html( ($cat_icon ? $cat_icon . ' ' : '') . $this->db->label_discipline($el->categorie_saisie) ); ?>
                 </span>
                 <?php endif; ?>
                 <?php if($el->categorie_age): ?>
@@ -3380,16 +3706,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             </div>
         </div><!-- #sp-fiche-comp-link-box -->
 
-        <!-- Parcours de progression -->
+        <!-- Grade actuel / prochain grade -->
         <div class="sp-box">
-            <h2>🥋 Chemin de ceinture</h2>
-            <?php
-            $parcours_data = $this->db->get_parcours_eleve($el);
-            $uid     = 'admin' . intval($eleve_id);
-            $eleve   = $el;
-            $parcours = $parcours_data;
-            include SP_CAL_PRO_PATH . 'templates/parcours-progression.php';
-            ?>
+            <h2>🥋 Grade</h2>
+            <div style="display:flex;gap:32px;flex-wrap:wrap;">
+                <div>
+                    <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Grade actuel</div>
+                    <div style="font-size:20px;font-weight:700;"><?php echo $el->grade ? esc_html($el->grade) : '—'; ?></div>
+                </div>
+                <?php $grade_vise = $this->db->get_grade_vise_eleve($el); if ( $grade_vise ) : ?>
+                <div>
+                    <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Prochain grade</div>
+                    <div style="font-size:20px;font-weight:700;color:#0f70b7;"><?php echo esc_html($grade_vise); ?></div>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
 
         <!-- Passages de grade -->
@@ -3965,7 +4296,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 ?>
                 <div class="sp-stats-bar-row">
                     <div class="sp-stats-bar-label">
-                        <span><?php echo esc_html($r->categorie_saisie); ?></span>
+                        <span><?php echo esc_html( $this->db->label_discipline($r->categorie_saisie) ); ?></span>
                         <span class="sp-muted"><?php echo intval($r->nb_eleves); ?> élèves</span>
                     </div>
                     <div class="sp-stats-bar-track">

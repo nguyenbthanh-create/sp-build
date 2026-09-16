@@ -1437,6 +1437,11 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		return self::STATUTS_CONTACT[ $key ] ?? ( $key !== '' ? $key : '—' );
 	}
 
+	public static function discipline_label( string $code ): string {
+		$labels = [ 'TKD' => 'Taekwondo', 'RENFO' => 'Renforcement musculaire' ];
+		return $labels[ $code ] ?? ( $code !== '' ? $code : '—' );
+	}
+
 	// ─── Création de la table ─────────────────────────────────────────────────
 	public static function create_table(): void {
 		global $wpdb;

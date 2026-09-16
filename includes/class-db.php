@@ -932,9 +932,30 @@ class SpCalPro_DB {
         );
     }
 
+    /**
+     * Libellé lisible d'un code de discipline (TKD/RENFO, cf. SP_Front_Adhesion::DISCIPLINES).
+     * Point central pour l'affichage — évite de dupliquer le mapping code → libellé dans
+     * chaque template (fiche, token, PDF, PWA...) et de les laisser diverger.
+     */
+    public function label_discipline( $code ) {
+        $labels = array( 'TKD' => 'Taekwondo', 'RENFO' => 'Renforcement musculaire' );
+        return $labels[ $code ] ?? $code;
+    }
+
     public function get_categories_saisie() {
         global $wpdb;
         return $wpdb->get_col( "SELECT DISTINCT categorie_saisie FROM {$this->table_eleves()} WHERE categorie_saisie != '' ORDER BY categorie_saisie ASC" );
+    }
+
+    /**
+     * Catégories déjà utilisées sur des événements du calendrier — sert à peupler la liste
+     * déroulante "Catégorie" du formulaire d'événement. La plupart des clubs n'utilisent jamais
+     * la page Réglages > Couleurs catégories (sp_cal_cat_colors), donc on ne peut pas se fier à
+     * cette seule option : on reconstruit la liste depuis ce qui a réellement été saisi.
+     */
+    public function get_categories_events() {
+        global $wpdb;
+        return $wpdb->get_col( "SELECT DISTINCT categorie FROM {$this->table_events()} WHERE categorie != '' ORDER BY categorie ASC" );
     }
 
     public function get_saisons() {
@@ -2247,6 +2268,10 @@ public function save_note_admin( $event_id, $eleve_id, $epreuve_id, $aire_id, $j
         global $wpdb;
         $t = $this->table_exam_grade_progression();
 
+        // Normaliser pour matcher la forme canonique stockée par save_grade_progression() :
+        // eleve.grade peut avoir été écrit par un flux qui ne normalise pas (voir class-ajax.php).
+        $grade_actuel = $this->normaliser_grade( $grade_actuel, $categorie_age );
+
         // Chercher d'abord dans la categorie specifique
         if ( $categorie_age ) {
             $result = $wpdb->get_var( $wpdb->prepare(
@@ -2779,224 +2804,50 @@ if ( empty($notes_eleve) ) {
 
 
     /* ══════════════════════════════════════════════════════════
-       PARCOURS DE PROGRESSION — FICHE ÉLÈVE
+       RÉFÉRENTIEL DE GRADES — FICHE ÉLÈVE (liste déroulante)
     ══════════════════════════════════════════════════════════ */
 
     /**
-     * Construit le parcours complet d'un élève :
-     * chaîne de grades depuis le début jusqu'à l'objectif final,
-     * avec pour chaque grade : statut (passé/actuel/futur),
-     * date de passage réelle si disponible, épreuves requises.
+     * Retourne, pour chaque categorie_age configurée dans la table de progression,
+     * la chaîne ordonnée complète des grades (du premier grade jusqu'à l'objectif final).
+     * Sert à peupler la liste déroulante de saisie de grade sur la fiche élève —
+     * remplace l'ancien "Chemin de ceinture" (jauge + étapes), jugé trop complexe.
      *
-     * @param  object $eleve   Ligne de la table eleves
-     * @return array           Tableau de steps + meta (pct, nb_passes, objectif_final)
+     * @return array  [ categorie_age => [ grade1, grade2, ... ] ]
      */
-    public function get_parcours_eleve( $eleve ) {
+    public function get_grades_referentiel() {
         global $wpdb;
-        $tgp  = $this->table_exam_grade_progression();
-        $tep  = $this->table_exam_epreuves();
-        $tpass= $this->table_exam_passages();
-        $te   = $this->table_events();
+        $tgp = $this->table_exam_grade_progression();
+        $categories = $wpdb->get_col( "SELECT DISTINCT categorie_age FROM $tgp WHERE categorie_age != '' ORDER BY categorie_age ASC" );
 
-        // ── 1. Construire la chaîne complète depuis le début ──────────
-        // Filtrer par categorie_age pour éviter les mélanges Baby/Enfant/Ado
-        $categorie_age = $eleve->categorie_age ?? '';
-        if ( $categorie_age ) {
-            $all_prog = $wpdb->get_results( $wpdb->prepare(
+        $result = array();
+        foreach ( $categories as $cat ) {
+            $rows = $wpdb->get_results( $wpdb->prepare(
                 "SELECT grade_actuel, grade_suivant FROM $tgp WHERE categorie_age = %s ORDER BY id ASC",
-                $categorie_age
+                $cat
             ) );
-        } else {
-            $all_prog = $wpdb->get_results(
-                "SELECT grade_actuel, grade_suivant FROM $tgp WHERE categorie_age = '' ORDER BY id ASC"
-            );
-        }
-        if ( empty($all_prog) ) return array();
+            if ( empty( $rows ) ) continue;
 
-        // Index forward et backward
-        $next_of = array(); // grade → grade suivant
-        $prev_of = array(); // grade → grade précédent
-        foreach ( $all_prog as $row ) {
-            $next_of[ $row->grade_actuel ]  = $row->grade_suivant;
-            $prev_of[ $row->grade_suivant ] = $row->grade_actuel;
-        }
+            $next_of = array();
+            $prev_of = array();
+            foreach ( $rows as $r ) {
+                $next_of[ $r->grade_actuel ]  = $r->grade_suivant;
+                $prev_of[ $r->grade_suivant ] = $r->grade_actuel;
+            }
+            $departs = array_diff( array_keys( $next_of ), array_keys( $prev_of ) );
+            $depart  = reset( $departs ) ?: '';
 
-        // Trouver le grade de départ de la chaîne contenant le grade actuel de l'élève
-        $grade_courant = $eleve->grade ?? '';
-        if ( ! $grade_courant ) {
-            // Pas de grade : on prend le premier grade de la table (début absolu)
-            $departs = array_diff( array_keys($next_of), array_keys($prev_of) );
-            $depart  = reset($departs) ?: '';
-        } else {
-            // Remonter jusqu'au grade sans prédécesseur
-            $depart = $grade_courant;
+            $chain = array();
+            $g = $depart;
             $security = 0;
-            while ( isset($prev_of[$depart]) && $security < 30 ) {
-                $depart = $prev_of[$depart];
+            while ( $g && $security < 50 ) {
+                $chain[] = $g;
+                $g = $next_of[ $g ] ?? null;
                 $security++;
             }
+            if ( $chain ) $result[ $cat ] = $chain;
         }
-
-        // Construire la liste ordonnée de tous les grades
-        $chain = array();
-        $g = $depart;
-        $security = 0;
-        while ( $g && $security < 50 ) {
-            $chain[] = $g;
-            $g = $next_of[$g] ?? null;
-            $security++;
-        }
-        if ( empty($chain) ) return array();
-
-        // ── 2. Passages réels de l'élève ───────────────────────────
-        $passages = $wpdb->get_results( $wpdb->prepare(
-            "SELECT p.nouveau_grade, p.recu, e.date, e.titre
-             FROM $tpass p
-             LEFT JOIN $te e ON e.id = p.event_id
-             WHERE p.eleve_id = %d AND p.recu = 1
-             ORDER BY e.date ASC",
-            intval($eleve->id)
-        ) );
-        $grade_dates = array(); // grade → date passage
-        foreach ( $passages as $p ) {
-            if ( $p->nouveau_grade && $p->recu )
-                $grade_dates[ $p->nouveau_grade ] = array(
-                    'date'  => $p->date,
-                    'titre' => $p->titre,
-                );
-        }
-
-        // ── 3. Épreuves par grade ──────────────────────────────────
-        $epreuves_raw = $wpdb->get_results(
-            "SELECT * FROM $tep WHERE actif=1 ORDER BY categorie_age ASC, ordre ASC"
-        );
-        // Index [grade] = array of épreuves (on match sur categorie_age = grade)
-        $ep_by_grade = array();
-        foreach ( $epreuves_raw as $ep ) {
-            $ep_by_grade[ $ep->categorie_age ][] = $ep;
-        }
-
-        // ── 4. Construire les steps ────────────────────────────────
-        $grade_idx   = array_search( $grade_courant, $chain );
-        $nb_total    = count($chain);
-        // grade_idx = position du grade actuel (déjà obtenu)
-        // nb_passes = nombre de grades obtenus = grade_idx + 1
-        $nb_passes   = ($grade_idx !== false) ? $grade_idx + 1 : 0;
-        $objectif    = end($chain);
-
-        $steps = array();
-        foreach ( $chain as $idx => $grade ) {
-            if ( $grade_courant && $idx < $grade_idx ) {
-                $statut = 'passe';
-            } elseif ( $grade_courant && $idx === $grade_idx ) {
-                $statut = 'passe'; // grade actuel = déjà obtenu = passé
-            } elseif ( $grade_courant && $idx === $grade_idx + 1 ) {
-                $statut = 'actuel'; // prochain grade à viser = actuel
-            } else {
-                $statut = 'futur';
-            }
-            $steps[] = array(
-                'grade'     => $grade,
-                'statut'    => $statut,
-                'date'      => $grade_dates[$grade]['date']  ?? null,
-                'examen'    => $grade_dates[$grade]['titre'] ?? null,
-                'epreuves'  => $ep_by_grade[$grade] ?? array(),
-                'is_objectif' => ($idx === $nb_total - 1),
-            );
-        }
-
-        $pct = $nb_total > 1 ? round($nb_passes / ($nb_total - 1) * 100) : 100;
-        // Prochain = grade suivant le grade actuel
-        $prochain = $next_of[$grade_courant] ?? null;
-
-        // ── 5. Construire l'historique des catégories précédentes ─────
-        // Ordre des catégories : Baby → Enfant → Ado/adulte → Adulte
-        $cat_order    = array('Baby', 'Enfant', 'Ado/adulte', 'Adulte');
-        $cat_idx_curr = array_search($categorie_age, $cat_order);
-
-        // Extraire les dates depuis extra_data (import CSV)
-        $extra_dates  = array(); // grade → date (depuis extra_data.grades)
-        $extra_raw    = $eleve->extra_data ?? '';
-        if ( $extra_raw ) {
-            $extra = json_decode($extra_raw, true);
-            if ( isset($extra['grades']) && is_array($extra['grades']) ) {
-                foreach ( $extra['grades'] as $date_str => $grade_val ) {
-                    // date_str format JJ/MM/AAAA, convertir en Y-m-d
-                    $parts = explode('/', $date_str);
-                    if ( count($parts) === 3 ) {
-                        $date_ymd = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
-                        // Garder la date la plus récente pour chaque grade
-                        if ( ! isset($extra_dates[$grade_val]) || $date_ymd > $extra_dates[$grade_val] ) {
-                            $extra_dates[$grade_val] = $date_ymd;
-                        }
-                    }
-                }
-            }
-        }
-
-        $historique = array();
-        if ( $cat_idx_curr !== false && $cat_idx_curr > 0 ) {
-            // Construire l'historique pour chaque catégorie précédente
-            for ( $ci = 0; $ci < $cat_idx_curr; $ci++ ) {
-                $cat_hist = $cat_order[$ci];
-                $prog_hist = $wpdb->get_results( $wpdb->prepare(
-                    "SELECT grade_actuel, grade_suivant FROM $tgp WHERE categorie_age = %s ORDER BY id ASC",
-                    $cat_hist
-                ) );
-                if ( empty($prog_hist) ) continue;
-
-                // Construire la chaîne de la catégorie historique
-                $next_hist = array();
-                $prev_hist = array();
-                foreach ( $prog_hist as $r ) {
-                    $next_hist[$r->grade_actuel] = $r->grade_suivant;
-                    $prev_hist[$r->grade_suivant] = $r->grade_actuel;
-                }
-                $departs_hist = array_diff(array_keys($next_hist), array_keys($prev_hist));
-                $dep_hist     = reset($departs_hist) ?: '';
-                $chain_hist   = array();
-                $g = $dep_hist;
-                $sec = 0;
-                while ( $g && $sec < 50 ) {
-                    $chain_hist[] = $g;
-                    $g = $next_hist[$g] ?? null;
-                    $sec++;
-                }
-
-                // Afficher toute la chaîne de la catégorie historique
-                // Les dates sont affichées uniquement si disponibles (extra_data ou exam_passages)
-                $steps_hist = array();
-                foreach ( $chain_hist as $grade ) {
-                    $date_hist = $grade_dates[$grade]['date'] ?? $extra_dates[$grade] ?? null;
-                    $steps_hist[] = array(
-                        'grade'  => $grade,
-                        'date'   => $date_hist,
-                        'statut' => 'passe',
-                    );
-                }
-
-                if ( ! empty($steps_hist) ) {
-                    $historique[] = array(
-                        'categorie' => $cat_hist,
-                        'steps'     => $steps_hist,
-                    );
-                }
-            }
-        }
-
-        return array(
-            'steps'       => $steps,
-            'pct'         => $pct,
-            'nb_passes'   => $nb_passes,
-            'nb_total'    => $nb_total,
-            'grade_courant'=> $grade_courant,
-            'objectif'    => $objectif,
-            'prochain'    => $prochain,
-            'historique'  => $historique,
-            'epreuves_prochain' => $next_of[$grade_courant]
-                ? ($ep_by_grade[ $next_of[$grade_courant] ] ?? array())
-                : array(),
-        );
+        return $result;
     }
 
     /* ══════════════════════════════════════════════════════════

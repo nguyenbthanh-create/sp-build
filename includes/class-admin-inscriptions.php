@@ -521,7 +521,7 @@ class SP_Cal_Inscriptions {
                         <label style="display:flex;align-items:center;gap:5px;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px;">
                             <input type="checkbox" class="sp-insc-cat-cb" value="<?php echo esc_attr($cat); ?>"
                                 <?php checked($checked); ?>>
-                            <?php echo esc_html($cat); ?>
+                            <?php echo esc_html( $this->db->label_discipline($cat) ); ?>
                         </label>
                         <?php endforeach; ?>
                     </div>
@@ -615,7 +615,7 @@ class SP_Cal_Inscriptions {
                     <td><input type="checkbox" class="sp-insc-cb" value="<?php echo intval($insc->eleve_id); ?>"
                         <?php echo is_null($insc->statut) ? 'disabled title="Non encore invité"' : ''; ?>></td>
                     <td><strong><?php echo esc_html( $insc->prenom . ' ' . mb_strtoupper($insc->nom) ); ?></strong></td>
-                    <td><?php echo esc_html( $insc->categorie_age ?: $insc->categorie_saisie ?: '—' ); ?></td>
+                    <td><?php echo esc_html( $insc->categorie_age ?: $this->db->label_discipline( $insc->categorie_saisie ?: '' ) ?: '—' ); ?></td>
                     <td style="font-size:12px;"><?php echo $email_affiche; ?></td>
                     <td id="sp-statut-<?php echo intval($insc->eleve_id); ?>"><?php echo $badge; ?></td>
                     <td><?php echo $insc->date_reponse ? esc_html( date_create($insc->date_reponse)->format('d/m/Y H:i') ) : '—'; ?></td>
@@ -718,11 +718,12 @@ class SP_Cal_Inscriptions {
                             + '<th style="padding:4px 8px;text-align:left;">Tranche d\'âge</th>'
                             + '<th style="padding:4px 8px;text-align:center;" title="A une adresse email">✉️</th>'
                             + '</tr></thead><tbody>';
+                        var discLabels = { TKD: 'Taekwondo', RENFO: 'Renforcement musculaire' };
                         r.data.eleves.forEach(function(el, i){
                             var bg = i % 2 === 0 ? '#fff' : '#f8fafc';
                             html += '<tr style="background:' + bg + ';">'
                                 + '<td style="padding:4px 8px;">' + el.prenom + ' <strong>' + el.nom.toUpperCase() + '</strong></td>'
-                                + '<td style="padding:4px 8px;">' + (el.categorie_saisie || '—') + '</td>'
+                                + '<td style="padding:4px 8px;">' + (discLabels[el.categorie_saisie] || el.categorie_saisie || '—') + '</td>'
                                 + '<td style="padding:4px 8px;">' + (el.categorie_age    || '—') + '</td>'
                                 + '<td style="padding:4px 8px;text-align:center;">' + (el.has_email ? '✅' : '⚠️') + '</td>'
                                 + '</tr>';
@@ -1306,7 +1307,7 @@ class SP_Cal_Inscriptions {
             'date_naissance'         => 'Date naissance',
             'annee_naissance'        => 'Année',
             'categorie_age'          => 'Catégorie âge',
-            'categorie_saisie'       => 'Catégorie saisie',
+            'categorie_saisie'       => 'Discipline pratiquée',
             'grade'                  => 'Grade',
             'licence'                => 'Licence',
             'email'                  => 'Email',
@@ -1367,6 +1368,8 @@ class SP_Cal_Inscriptions {
                 $val = '';
                 if ( $key === 'statut' ) {
                     $val = $statut_labels[ $row->statut ] ?? $row->statut;
+                } elseif ( $key === 'categorie_saisie' ) {
+                    $val = $this->db->label_discipline( $row->categorie_saisie ?? '' );
                 } elseif ( $key === 'date_reponse' ) {
                     $val = $row->date_reponse ? date_create($row->date_reponse)->format('d/m/Y H:i') : '';
                 } elseif ( $key === 'droit_image' ) {

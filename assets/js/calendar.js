@@ -40,6 +40,7 @@
         /* ═══════════════════════════════ INIT */
         init: function () {
             try { CAL.catColors = JSON.parse(SpCal.catColors || '{}'); } catch(e) {}
+            try { CAL.catsEvents = JSON.parse(SpCal.catsEvents || '[]'); } catch(e) { CAL.catsEvents = []; }
             try { CAL.vacances  = JSON.parse(SpCal.vacances  || '[]'); } catch(e) {}
             CAL.weColor  = SpCal.weColor  || '#f3f4f6';
             CAL.vacColor = SpCal.vacColor || '#fef9c3';
@@ -247,6 +248,9 @@
 			$('#ev-type').on('change', function(){
 			$('#ev-niveau-wrap').toggle($(this).val() === 'competition');
 			});
+            $('#ev-categorie').on('change', function(){
+                $('#ev-categorie-autre').toggle($(this).val() === '__autre__');
+            });
             $('#btn-delete-event').on('click', CAL.deleteEvent);
             // Compétition
             $(document).on('click', '#btn-add-epreuve', function(){
@@ -641,7 +645,14 @@
 			$('#ev-niveau-wrap').toggle(displayType === 'competition');
             $('#ev-debut').val(ev?CAL.toTimeInput(ev.heure_debut):'');
             $('#ev-fin').val(ev?CAL.toTimeInput(ev.heure_fin):'');
-            $('#ev-categorie').val(ev?ev.categorie:'');
+            var evCat = ev ? (ev.categorie || '') : '';
+            if (evCat && !CAL.catColors[evCat]) {
+                $('#ev-categorie').val('__autre__');
+                $('#ev-categorie-autre').val(evCat).show();
+            } else {
+                $('#ev-categorie').val(evCat);
+                $('#ev-categorie-autre').val('').hide();
+            }
             $('#ev-couleur').val(ev?ev.couleur:'#3B82F6');
             $('#ev-description').val(ev?(ev.description||''):'');
             $('#btn-delete-event').toggle(!!ev);
@@ -810,7 +821,7 @@
                 CAL.elevesAll=res.data.eleves; CAL.elevesByGroup=res.data.grouped; CAL.catsSaisie=res.data.cats_saisie||[];
                 res.data.eleves.forEach(function(el){ if(el.present!==null) CAL.presences[el.id]=el.present; });
                 var opts='<option value="">— Tous les groupes —</option>';
-                CAL.catsSaisie.forEach(function(c){ opts+='<option value="'+CAL.esc(c)+'">'+CAL.esc(c)+'</option>'; });
+                CAL.catsSaisie.forEach(function(c){ opts+='<option value="'+CAL.esc(c)+'">'+CAL.esc(CAL.discLabel(c))+'</option>'; });
                 $('#pres-flt-saisie').html(opts).val('');
                 CAL.renderPresences();
             });
@@ -824,7 +835,7 @@
                     html+='<label class="sp-pres-row" data-name="'+CAL.esc(fn.toLowerCase())+'" data-saisie="'+CAL.esc(saisie)+'">'
                         +'<input type="checkbox" value="'+el.id+'" '+ch+'>'
                         +'<span class="sp-pres-name">'+CAL.esc(fn)+'</span>'
-                        +(saisie?'<span class="sp-pres-saisie-badge">'+CAL.esc(saisie)+'</span>':'')
+                        +(saisie?'<span class="sp-pres-saisie-badge">'+CAL.esc(CAL.discLabel(saisie))+'</span>':'')
                         +(el.grade?'<span class="sp-pres-grade">'+CAL.esc(el.grade)+'</span>':'')
                         +'</label>';
                 });
@@ -863,7 +874,7 @@
                     if(el.note)          CAL.notes[el.id]=el.note;
                 });
                 var opts='<option value="">— Tous les groupes —</option>';
-                CAL.catsSaisie.forEach(function(c){ opts+='<option value="'+CAL.esc(c)+'">'+CAL.esc(c)+'</option>'; });
+                CAL.catsSaisie.forEach(function(c){ opts+='<option value="'+CAL.esc(c)+'">'+CAL.esc(CAL.discLabel(c))+'</option>'; });
                 $('#exam-flt-saisie').html(opts).val('');
                 CAL.renderExamen();
             });
@@ -883,7 +894,7 @@
                     html+='<div class="sp-exam-row" data-name="'+CAL.esc(fn.toLowerCase())+'" data-saisie="'+CAL.esc(saisie)+'">'
                         +'<input type="checkbox" class="sp-exam-chk" value="'+el.id+'" '+ch+' title="Candidat">'
                         +'<span class="sp-pres-name">'+CAL.esc(fn)+'</span>'
-                        +(saisie?'<span class="sp-pres-saisie-badge">'+CAL.esc(saisie)+'</span>':'')
+                        +(saisie?'<span class="sp-pres-saisie-badge">'+CAL.esc(CAL.discLabel(saisie))+'</span>':'')
                         +'<span class="sp-pres-grade sp-exam-grade-current" title="Grade actuel">'+CAL.esc(el.grade||'—')+'</span>'
                         +'<span class="sp-exam-arrow">→</span>'
                         +'<input type="text" class="sp-exam-note sp-input" value="'+CAL.esc(noteVal)+'" placeholder="Grade obtenu…" data-id="'+el.id+'">'
@@ -946,6 +957,9 @@
             var eventId  = hasRealId ? parseInt(rawId, 10) : 0;
             var slotId   = (ev && ev.slot_id) ? parseInt(ev.slot_id, 10) : 0;
 
+            var catVal = $('#ev-categorie').val();
+            if (catVal === '__autre__') catVal = $('#ev-categorie-autre').val().trim();
+
             var btn=$('#btn-save-event').prop('disabled',true).text('Enregistrement…');
             $.post(SpCal.ajaxurl,{
                 action:'sp_cal_save_event', nonce:SpCal.nonce,
@@ -955,7 +969,7 @@
                 heure_debut: $('#ev-debut').val(),
                 heure_fin:   $('#ev-fin').val(),
                 titre:       titre,
-                categorie:   $('#ev-categorie').val().trim(),
+                categorie:   catVal,
                 couleur:     $('#ev-couleur').val(),
                 type:        $('#ev-type').val(),
                 description: $('#ev-description').val().trim(),
@@ -1046,7 +1060,7 @@
                     if (el.categorie_saisie && cats.indexOf(el.categorie_saisie)===-1) cats.push(el.categorie_saisie);
                 });
                 var opts = '<option value="">— Tous —</option>';
-                cats.forEach(function(c){ opts += '<option value="'+CAL.esc(c)+'">'+CAL.esc(c)+'</option>'; });
+                cats.forEach(function(c){ opts += '<option value="'+CAL.esc(c)+'">'+CAL.esc(CAL.discLabel(c))+'</option>'; });
                 $('#comp-flt-saisie').html(opts);
                 CAL.renderCompEpreuves();
                 CAL.renderCompResultats();
@@ -1583,7 +1597,7 @@
                     var chk = (!selectedDisciplines || !selectedDisciplines.length || selectedDisciplines.indexOf(cat) !== -1) ? ' checked' : '';
                     html += '<label style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid #d1d5db;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:12px;border-left:3px solid #0f70b7;">'
                           + '<input type="checkbox" class="sp-insc-disc-cb" value="' + CAL.esc(cat) + '"' + chk + '>'
-                          + CAL.esc(cat) + '</label>';
+                          + CAL.esc(CAL.discLabel(cat)) + '</label>';
                 });
             }
 
@@ -1709,8 +1723,23 @@
         esc: function (s) {
             return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         },
+        // Libellé lisible d'un code de discipline (TKD/RENFO) — cf. SpCalPro_DB::label_discipline()
+        discLabel: function (code) {
+            var labels = { TKD: 'Taekwondo', RENFO: 'Renforcement musculaire' };
+            return labels[code] || code;
+        },
         populateCatDatalist: function () {
-            $('#ev-cat-list').html(Object.keys(CAL.catColors).map(function(c){return '<option value="'+CAL.esc(c)+'">';}).join(''));
+            // Union des catégories déjà utilisées sur des événements et de celles ayant une
+            // couleur configurée (Réglages) — la plupart des clubs n'utilisent que la 1ère source.
+            var cats = {};
+            (CAL.catsEvents || []).forEach(function(c){ cats[c] = 1; });
+            Object.keys(CAL.catColors).forEach(function(c){ cats[c] = 1; });
+            var opts = '<option value="">— Choisir —</option>';
+            Object.keys(cats).sort().forEach(function(c){
+                opts += '<option value="'+CAL.esc(c)+'">'+CAL.esc(c)+'</option>';
+            });
+            opts += '<option value="__autre__">Autre…</option>';
+            $('#ev-categorie').html(opts);
         },
     };
 

@@ -327,7 +327,7 @@ class SpCalPro_Token {
                 <div class="sp-membre-identity">
                     <h1><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></h1>
                     <div class="sp-membre-meta">
-                        <?php if($el->categorie_saisie): ?><span class="sp-membre-tag sp-membre-tag-saisie"><?php echo esc_html($el->categorie_saisie); ?></span><?php endif; ?>
+                        <?php if($el->categorie_saisie): ?><span class="sp-membre-tag sp-membre-tag-saisie"><?php echo esc_html( $this->db->label_discipline($el->categorie_saisie) ); ?></span><?php endif; ?>
                         <?php if($el->categorie_age):   ?><span class="sp-membre-tag sp-membre-tag-age"><?php echo esc_html($el->categorie_age); ?></span><?php endif; ?>
                         <?php if($saison_courante):     ?><span class="sp-membre-saison"><?php echo esc_html($saison_courante); ?></span><?php endif; ?>
                     </div>
@@ -478,18 +478,6 @@ class SpCalPro_Token {
             <!-- PAGE IMPRESSION A4 — 8 cartes -->
             <div id="sp-carte-print-<?php echo intval($el->id); ?>" style="display:none;"></div>
 
-            <!-- Parcours de progression -->
-            <div class="sp-membre-section">
-                <h2>🥋 Chemin de ceinture</h2>
-                <?php
-                $parcours_pub = $this->db->get_parcours_eleve($el);
-                $uid     = 'pub' . intval($el->id);
-                $eleve   = $el;
-                $parcours = $parcours_pub;
-                include SP_CAL_PRO_PATH . 'templates/parcours-progression.php';
-                ?>
-            </div>
-
             <!-- Éligibilité 1e Dan -->
             <?php if ( in_array($el->categorie_age ?? '', ['Ado/adulte', 'Adulte']) ) :
                 $saison_elig     = get_option('tkd_saison_courante', '2025/2026');
@@ -555,10 +543,22 @@ class SpCalPro_Token {
             </div>
             <?php endif; ?>
 
-            <!-- Grade actuel -->
+            <!-- Grade actuel / prochain grade -->
             <div class="sp-membre-section">
-                <h2>🥋 Grade actuel</h2>
-                <?php if($el->grade): ?><div class="sp-membre-grade-current"><?php echo esc_html($el->grade); ?></div>
+                <h2>🥋 Grade</h2>
+                <?php if($el->grade): ?>
+                <div style="display:flex;gap:32px;flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Grade actuel</div>
+                        <div class="sp-membre-grade-current"><?php echo esc_html($el->grade); ?></div>
+                    </div>
+                    <?php $grade_vise = $this->db->get_grade_vise_eleve($el); if ( $grade_vise ) : ?>
+                    <div>
+                        <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Prochain grade</div>
+                        <div class="sp-membre-grade-current" style="color:#0f70b7;"><?php echo esc_html($grade_vise); ?></div>
+                    </div>
+                    <?php endif; ?>
+                </div>
                 <?php else: ?><p class="sp-membre-muted">Aucun grade renseigné.</p><?php endif; ?>
             </div>
 

@@ -216,7 +216,7 @@ body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background:
                     <td>
                         <strong><?php echo esc_html(mb_strtoupper($el->nom) . ' ' . $el->prenom); ?></strong>
                         <?php if ($el->categorie_saisie): ?>
-                            <span class="cat-badge-saisie"><?php echo esc_html($el->categorie_saisie); ?></span>
+                            <span class="cat-badge-saisie"><?php echo esc_html( $this->db->label_discipline($el->categorie_saisie) ); ?></span>
                         <?php endif; ?>
                     </td>
                     <td><?php echo esc_html($el->grade); ?></td>
@@ -291,7 +291,7 @@ body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background:
                     <div>
                         <h1><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></h1>
                         <p>
-                            <?php if($el->categorie_saisie) echo '<span class="cat-badge-saisie">'.esc_html($el->categorie_saisie).'</span> '; ?>
+                            <?php if($el->categorie_saisie) echo '<span class="cat-badge-saisie">'.esc_html( $this->db->label_discipline($el->categorie_saisie) ).'</span> '; ?>
                             <?php if($el->categorie_age)    echo '<span class="cat-badge">'.esc_html($el->categorie_age).'</span> '; ?>
                             <?php if($el->saison)           echo esc_html($el->saison); ?>
                         </p>

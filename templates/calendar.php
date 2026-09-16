@@ -164,8 +164,11 @@ $public_link = get_option( 'sp_cal_public_link', home_url('/planning/') );
                         </div>
                         <div class="sp-form-row">
                             <label>Catégorie</label>
-                            <input type="text" id="ev-categorie" list="ev-cat-list" class="sp-input" placeholder="TKD, Renfo…">
-                            <datalist id="ev-cat-list"></datalist>
+                            <select id="ev-categorie" class="sp-input">
+                                <option value="">— Choisir —</option>
+                                <option value="__autre__">Autre…</option>
+                            </select>
+                            <input type="text" id="ev-categorie-autre" class="sp-input" placeholder="Préciser la catégorie" style="margin-top:6px;display:none;">
                         </div>
                         <div class="sp-form-row">
                             <label>Couleur</label>
