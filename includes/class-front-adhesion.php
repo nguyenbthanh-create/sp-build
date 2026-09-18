@@ -1114,9 +1114,13 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 				const ddn  = ddnInput.value;
 				const disc = discInput.value;
 
+				// "Tout âge" : le Renforcement musculaire n'est pas subdivisé par âge, contrairement
+				// au Taekwondo — cf. échange du 18/09/2026. Avant cette correction, ce champ
+				// écrivait "RENFO" (un code de discipline, pas une catégorie d'âge), qui polluait
+				// ensuite le ciblage des emails d'inscription événements.
 				if ( disc === 'RENFO' ) {
-					hidden.value = 'RENFO';
-					display.innerHTML = '<strong class="sp-adh-cat-badge sp-adh-cat-renfo">Renforcement musculaire</strong>';
+					hidden.value = 'Tout âge';
+					display.innerHTML = '<strong class="sp-adh-cat-badge sp-adh-cat-renfo">Renforcement musculaire (Tout âge)</strong>';
 					return;
 				}
 				if ( ! ddn || disc !== 'TKD' ) {
@@ -1132,13 +1136,18 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 				let age = sept1.getFullYear() - birth.getFullYear();
 				if ( birth.getMonth() > 8 || (birth.getMonth() === 8 && birth.getDate() > 1) ) age--;
 
+				// 4 tranches (pas 3) pour rester cohérent avec la règle fédérale déjà codée côté
+				// admin (SpCalPro_DB::bascule_categories_septembre()) — Ado/adulte (11-14) et
+				// Adulte (15+) étaient jusqu'ici fusionnés en un seul "Ado/Adulte" ici.
 				let cat, label, cssClass;
 				if ( age < 6 ) {
 					cat = 'Baby'; label = 'Baby (moins de 6 ans au 1er sept.)'; cssClass = 'sp-adh-cat-baby';
 				} else if ( age < 11 ) {
 					cat = 'Enfant'; label = 'Enfant (6 à 10 ans au 1er sept.)'; cssClass = 'sp-adh-cat-enfant';
+				} else if ( age < 15 ) {
+					cat = 'Ado/adulte'; label = 'Ado / adulte (11 à 14 ans au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
 				} else {
-					cat = 'Ado/Adulte'; label = 'Ado / Adulte (11 ans et plus)'; cssClass = 'sp-adh-cat-adulte';
+					cat = 'Adulte'; label = 'Adulte (15 ans et plus au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
 				}
 				hidden.value = cat;
 				display.innerHTML = '<strong class="sp-adh-cat-badge ' + cssClass + '">' + label + '</strong>';

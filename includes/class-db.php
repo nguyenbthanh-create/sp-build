@@ -627,6 +627,22 @@ class SpCalPro_DB {
                 }
             }
         }
+
+        // 18/09/2026 : ciblage manuel d'élèves en plus des cases Discipline/Tranche d'âge sur
+        // l'invitation événement — cas ponctuels non couverts par une catégorie (ex : "tous les
+        // combattants, indépendamment de leur âge"). Liste d'IDs élèves séparés par virgule.
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$te` LIKE 'inscriptions_extra_eleves'" ) )
+            $wpdb->query( "ALTER TABLE `$te` ADD COLUMN `inscriptions_extra_eleves` text DEFAULT NULL" );
+
+        // 18/09/2026 : remplace l'ancien champ "categorie" fourre-tout (texte libre agrégé au fil du
+        // temps : TKD, RENFO, Général, Prépa CN, Sortie, Renfo & Ados / Adultes...) par deux axes
+        // propres — Discipline (Taekwondo/Renforcement musculaire/Autre) et Pour qui (tranche d'âge).
+        // "categorie" reste renseigné automatiquement (= Discipline) pour ne pas casser la couleur du
+        // calendrier, le badge de l'agenda public et le shortcode [sp_cal_evenements categorie="…"].
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$te` LIKE 'cours_discipline'" ) )
+            $wpdb->query( "ALTER TABLE `$te` ADD COLUMN `cours_discipline` text DEFAULT NULL" );
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$te` LIKE 'cours_age_categories'" ) )
+            $wpdb->query( "ALTER TABLE `$te` ADD COLUMN `cours_age_categories` text DEFAULT NULL" );
     }
 
     /* ── Membres de bureau ───────────────────────────────── */
@@ -948,14 +964,100 @@ class SpCalPro_DB {
     }
 
     /**
-     * Catégories déjà utilisées sur des événements du calendrier — sert à peupler la liste
-     * déroulante "Catégorie" du formulaire d'événement. La plupart des clubs n'utilisent jamais
-     * la page Réglages > Couleurs catégories (sp_cal_cat_colors), donc on ne peut pas se fier à
-     * cette seule option : on reconstruit la liste depuis ce qui a réellement été saisi.
+     * Traduit un fragment de l'ancien champ "categorie" libre d'un événement (TKD, RENFO,
+     * Général, Prépa CN, Sortie, Renfo & Ados / Adultes...) vers le nouveau modèle à deux axes
+     * Discipline (Taekwondo/Renforcement musculaire/Autre) × Pour qui (tranche d'âge) —
+     * cf. échange du 18/09/2026. Tout ce qui n'est pas reconnu comme discipline ou âge tombe
+     * dans Discipline="Autre" (sorties, fêtes... qui ne touchent pas l'objet sportif du club).
+     *
+     * @return array{discipline?:string,age?:string}
      */
-    public function get_categories_events() {
+    private function migrer_fragment_categorie_evenement( $fragment ) {
+        $f = mb_strtolower( trim( (string) $fragment ) );
+        $f = str_replace( array( ' / ', ' /', '/ ', '-' ), '/', $f );
+
+        $map = array(
+            'tkd'                     => array( 'discipline' => 'Taekwondo' ),
+            'taekwondo'               => array( 'discipline' => 'Taekwondo' ),
+            'renfo'                   => array( 'discipline' => 'Renforcement musculaire' ),
+            'renforcement musculaire' => array( 'discipline' => 'Renforcement musculaire' ),
+            'renfo & ados/adultes'    => array( 'discipline' => 'Renforcement musculaire', 'age' => 'Ado/adulte' ),
+            'renfo&ados/adultes'      => array( 'discipline' => 'Renforcement musculaire', 'age' => 'Ado/adulte' ),
+            'baby'                    => array( 'age' => 'Baby' ),
+            'babies'                  => array( 'age' => 'Baby' ),
+            'enfant'                  => array( 'age' => 'Enfant' ),
+            'ado/adulte'              => array( 'age' => 'Ado/adulte' ),
+            'ado/adultes'             => array( 'age' => 'Ado/adulte' ),
+            'adulte'                  => array( 'age' => 'Adulte' ),
+            'tout age'                => array( 'age' => 'Tout âge' ),
+            'tout âge'                => array( 'age' => 'Tout âge' ),
+        );
+
+        if ( isset( $map[ $f ] ) ) return $map[ $f ];
+        if ( $f === '' ) return array();
+        // Non reconnu (Général, Prépa CN, Sortie, "Autre…"...) → Discipline "Autre"
+        return array( 'discipline' => 'Autre' );
+    }
+
+    /**
+     * Aperçu de la bascule de l'ancien champ "categorie" (texte libre) vers les deux nouveaux
+     * champs cours_discipline / cours_age_categories — même principe dry-run que
+     * preview_normalisation_categorie_age(). Ne considère que les événements pas encore migrés
+     * (cours_discipline vide) pour rester rejouable sans dupliquer un travail déjà fait à la main.
+     */
+    public function preview_migration_cours_categories() {
         global $wpdb;
-        return $wpdb->get_col( "SELECT DISTINCT categorie FROM {$this->table_events()} WHERE categorie != '' ORDER BY categorie ASC" );
+        $te   = $this->table_events();
+        $rows = $wpdb->get_results(
+            "SELECT id, titre, categorie FROM $te
+             WHERE categorie != '' AND ( cours_discipline IS NULL OR cours_discipline = '' )
+             ORDER BY id ASC"
+        );
+
+        $apercu = array();
+        foreach ( $rows as $r ) {
+            $discipline = array();
+            $age        = array();
+            foreach ( explode( ',', $r->categorie ) as $fragment ) {
+                $res = $this->migrer_fragment_categorie_evenement( $fragment );
+                if ( ! empty( $res['discipline'] ) && ! in_array( $res['discipline'], $discipline, true ) ) $discipline[] = $res['discipline'];
+                if ( ! empty( $res['age'] )        && ! in_array( $res['age'],        $age,        true ) ) $age[]        = $res['age'];
+            }
+            $apercu[] = array(
+                'id'         => intval( $r->id ),
+                'titre'      => $r->titre,
+                'ancienne'   => $r->categorie,
+                'discipline' => implode( ',', $discipline ),
+                'age'        => implode( ',', $age ),
+            );
+        }
+        return $apercu;
+    }
+
+    /**
+     * Applique la bascule prévisualisée par preview_migration_cours_categories() — recalcule
+     * l'aperçu au moment de l'application plutôt que de faire confiance à un aperçu obsolète.
+     * "categorie" est réécrit à partir de la Discipline pour ne pas casser la couleur du
+     * calendrier, le badge de l'agenda public et le shortcode [sp_cal_evenements categorie="…"].
+     *
+     * @return int Nombre d'événements mis à jour.
+     */
+    public function appliquer_migration_cours_categories() {
+        global $wpdb;
+        $te      = $this->table_events();
+        $apercu  = $this->preview_migration_cours_categories();
+        foreach ( $apercu as $ligne ) {
+            $wpdb->update(
+                $te,
+                array(
+                    'cours_discipline'     => $ligne['discipline'],
+                    'cours_age_categories' => $ligne['age'],
+                    'categorie'            => $ligne['discipline'],
+                ),
+                array( 'id' => $ligne['id'] )
+            );
+        }
+        return count( $apercu );
     }
 
     public function get_saisons() {
@@ -2913,13 +3015,17 @@ if ( empty($notes_eleve) ) {
             array( 'min' => 15, 'max' => 999,'cat' => 'Adulte' ),
         );
 
-        // Récupérer tous les élèves actifs avec date de naissance
+        // Récupérer tous les élèves actifs avec date de naissance — le Renforcement musculaire
+        // (categorie_saisie='RENFO') n'est pas subdivisé par âge (catégorie "Tout âge" fixe,
+        // cf. échange du 18/09/2026) : on l'exclut pour ne pas lui écraser sa catégorie chaque
+        // rentrée avec une tranche d'âge qui ne le concerne pas.
         $eleves = $wpdb->get_results(
             "SELECT id, nom, prenom, date_naissance, annee_naissance, categorie_age
              FROM $tel
              WHERE actif = 1
                AND annee_naissance != ''
                AND date_naissance != ''
+               AND categorie_saisie != 'RENFO'
              ORDER BY nom ASC, prenom ASC"
         );
 
@@ -2964,6 +3070,118 @@ if ( empty($notes_eleve) ) {
             'updated' => $dry_run ? count($details) : $updated,
             'details' => $details,
         );
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       NORMALISATION ÉCRITURE CATÉGORIE D'ÂGE
+    ══════════════════════════════════════════════════════════ */
+
+    /**
+     * Normalise l'écriture d'une valeur de catégorie d'âge vers l'une des 4 catégories
+     * officielles (Baby / Enfant / Ado/adulte / Adulte — mêmes 4 que bascule_categories_septembre()).
+     * Ne touche jamais à QUELLE catégorie un élève appartient, seulement à son écriture — ex.
+     * "Babies", "baby", "BABY" deviennent tous "Baby" (cf. doléance 17/09/2026 : plusieurs
+     * écritures différentes en base cassaient le ciblage des emails d'inscription événements,
+     * qui compare des chaînes exactes).
+     *
+     * @param  string $valeur
+     * @return string|null  Le libellé canonique si reconnu, null si aucun alias ne correspond
+     *                       (valeur laissée intacte par l'appelant — nécessite une revue manuelle).
+     */
+    public function normaliser_categorie_age( $valeur ) {
+        $v = trim( (string) $valeur );
+        if ( $v === '' ) return $v;
+
+        $v_norm = mb_strtolower( $v );
+        $v_norm = str_replace( array( ' / ', ' /', '/ ', '-' ), '/', $v_norm );
+        $v_norm = trim( $v_norm );
+
+        $aliases = array(
+            'baby'         => 'Baby',
+            'babies'       => 'Baby',
+            'bebe'         => 'Baby',
+            'bebes'        => 'Baby',
+            'bébé'         => 'Baby',
+            'bébés'        => 'Baby',
+            'enfant'       => 'Enfant',
+            'enfants'      => 'Enfant',
+            'ado/adulte'   => 'Ado/adulte',
+            'ado/adultes'  => 'Ado/adulte',
+            'ados/adulte'  => 'Ado/adulte',
+            'ados/adultes' => 'Ado/adulte',
+            'ado'          => 'Ado/adulte',
+            'ados'         => 'Ado/adulte',
+            'adolescent'   => 'Ado/adulte',
+            'adolescents'  => 'Ado/adulte',
+            'adulte'       => 'Adulte',
+            'adultes'      => 'Adulte',
+            // "Tout âge" : catégorie propre au Renforcement musculaire, qui n'est pas subdivisé
+            // par âge contrairement au Taekwondo (Baby/Enfant/Ado-adulte/Adulte) — cf. échange
+            // du 18/09/2026. "RENFO" trouvé dans categorie_age n'est pas une erreur de saisie,
+            // c'est ce que ces élèves auraient dû avoir depuis le début.
+            'renfo'        => 'Tout âge',
+            'tout age'     => 'Tout âge',
+            'tout âge'     => 'Tout âge',
+            'tous age'     => 'Tout âge',
+            'tous âge'     => 'Tout âge',
+            'tous ages'    => 'Tout âge',
+            'tous âges'    => 'Tout âge',
+        );
+
+        return $aliases[ $v_norm ] ?? null;
+    }
+
+    /**
+     * Analyse toutes les valeurs de categorie_age actuellement en base (élèves) et propose une
+     * normalisation, sans rien modifier. Toujours recalculé à la demande (pas de cache) pour
+     * refléter l'état réel de la base au moment de l'aperçu.
+     *
+     * @return array{changements: array, non_reconnues: array}
+     *   - changements : [ ['avant'=>string, 'apres'=>string, 'nb'=>int], ... ] — valeurs reconnues
+     *     dont l'écriture diffère du libellé canonique.
+     *   - non_reconnues : [ ['valeur'=>string, 'nb'=>int], ... ] — valeurs qu'aucun alias ne
+     *     couvre, à corriger manuellement (fiche élève → dropdown Catégorie d'âge → "Autre").
+     */
+    public function preview_normalisation_categorie_age() {
+        global $wpdb;
+        $tel = $this->table_eleves();
+        $rows = $wpdb->get_results(
+            "SELECT categorie_age, COUNT(*) AS nb FROM $tel WHERE categorie_age != '' GROUP BY categorie_age ORDER BY categorie_age ASC"
+        );
+
+        $changements    = array();
+        $non_reconnues  = array();
+        foreach ( $rows as $r ) {
+            $canonique = $this->normaliser_categorie_age( $r->categorie_age );
+            if ( $canonique === null ) {
+                $non_reconnues[] = array( 'valeur' => $r->categorie_age, 'nb' => intval( $r->nb ) );
+                continue;
+            }
+            if ( $canonique === $r->categorie_age ) continue; // déjà correct
+            $changements[] = array( 'avant' => $r->categorie_age, 'apres' => $canonique, 'nb' => intval( $r->nb ) );
+        }
+
+        return array( 'changements' => $changements, 'non_reconnues' => $non_reconnues );
+    }
+
+    /**
+     * Applique la normalisation prévisualisée par preview_normalisation_categorie_age() —
+     * recalcule l'aperçu au moment de l'application plutôt que de faire confiance à un aperçu
+     * potentiellement obsolète (même principe que bascule_categories_septembre()).
+     * Ne touche jamais aux valeurs non reconnues.
+     *
+     * @return int  Nombre total d'élèves mis à jour.
+     */
+    public function appliquer_normalisation_categorie_age() {
+        global $wpdb;
+        $tel     = $this->table_eleves();
+        $preview = $this->preview_normalisation_categorie_age();
+        $total   = 0;
+        foreach ( $preview['changements'] as $c ) {
+            $wpdb->update( $tel, array( 'categorie_age' => $c['apres'] ), array( 'categorie_age' => $c['avant'] ) );
+            $total += $c['nb'];
+        }
+        return $total;
     }
 
 

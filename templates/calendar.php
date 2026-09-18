@@ -162,13 +162,11 @@ $public_link = get_option( 'sp_cal_public_link', home_url('/planning/') );
                             <label>Heure fin</label>
                             <input type="time" id="ev-fin" class="sp-input">
                         </div>
-                        <div class="sp-form-row">
-                            <label>Catégorie</label>
-                            <select id="ev-categorie" class="sp-input">
-                                <option value="">— Choisir —</option>
-                                <option value="__autre__">Autre…</option>
-                            </select>
-                            <input type="text" id="ev-categorie-autre" class="sp-input" placeholder="Préciser la catégorie" style="margin-top:6px;display:none;">
+                        <div class="sp-form-row sp-form-full">
+                            <label>Discipline &amp; public du cours
+                                <span style="font-weight:400;color:#6b7280;font-size:12px;">— couleur du calendrier, badge sur l'agenda public. Sans lien avec le ciblage de l'email d'inscription ci-dessous.</span>
+                            </label>
+                            <div id="ev-categorie-wrap" style="display:flex;flex-wrap:wrap;gap:6px;min-height:26px;"></div>
                         </div>
                         <div class="sp-form-row">
                             <label>Couleur</label>

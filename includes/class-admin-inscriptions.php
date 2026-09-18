@@ -921,37 +921,66 @@ class SP_Cal_Inscriptions {
             : array();
         $cats_post = array_filter( $cats_post );
 
-        // Construction de la requête élèves
-        $where_parts = array( "actif = 1", "( email != '' OR email_parent != '' )" );
-        $where_args  = array();
-
-        if ( ! empty( $cats_post ) ) {
-            $placeholders  = implode( ',', array_fill( 0, count( $cats_post ), '%s' ) );
-            $where_parts[] = "categorie_saisie IN ($placeholders)";
-            $where_args    = array_merge( $where_args, $cats_post );
-        }
-
         // Filtre tranches d'âge (AND avec les disciplines)
         $ages_post = isset( $_POST['age_categories'] ) && is_array( $_POST['age_categories'] )
             ? array_filter( array_map( 'sanitize_text_field', array_map( 'wp_unslash', $_POST['age_categories'] ) ) )
             : array();
 
-        if ( ! empty( $ages_post ) ) {
-            $placeholders_age = implode( ',', array_fill( 0, count( $ages_post ), '%s' ) );
-            $where_parts[]    = "categorie_age IN ($placeholders_age)";
-            $where_args       = array_merge( $where_args, array_values( $ages_post ) );
+        // Élèves ajoutés manuellement (cas ponctuels non couverts par une catégorie, ex "tous
+        // les combattants" indépendamment de l'âge — cf. 18/09/2026) — s'ajoutent en plus des
+        // catégories cochées, ou remplacent le "aucune case cochée = tous les actifs" par défaut
+        // si on ne veut QUE cette sélection manuelle (cases Discipline/Âge laissées vides).
+        $extra_ids = isset( $_POST['extra_eleve_ids'] ) && is_array( $_POST['extra_eleve_ids'] )
+            ? array_filter( array_map( 'intval', $_POST['extra_eleve_ids'] ) )
+            : array();
+
+        $has_cat_filter = ! empty( $cats_post ) || ! empty( $ages_post );
+
+        // Construction de la requête élèves
+        $where_parts = array( "actif = 1", "( email != '' OR email_parent != '' )" );
+        $where_args  = array();
+
+        if ( $has_cat_filter || empty( $extra_ids ) ) {
+            // Comportement inchangé : filtré par catégorie(s), ou "tout le monde" si aucune
+            // catégorie ET aucune sélection manuelle (cas historique par défaut).
+            if ( ! empty( $cats_post ) ) {
+                $placeholders  = implode( ',', array_fill( 0, count( $cats_post ), '%s' ) );
+                $where_parts[] = "categorie_saisie IN ($placeholders)";
+                $where_args    = array_merge( $where_args, $cats_post );
+            }
+            if ( ! empty( $ages_post ) ) {
+                $placeholders_age = implode( ',', array_fill( 0, count( $ages_post ), '%s' ) );
+                $where_parts[]    = "categorie_age IN ($placeholders_age)";
+                $where_args       = array_merge( $where_args, array_values( $ages_post ) );
+            }
+            $where_sql = implode( ' AND ', $where_parts );
+            $sql = "SELECT id, nom, prenom, email, email_parent, token, categorie_age, categorie_saisie
+                    FROM $tel WHERE $where_sql ORDER BY nom, prenom";
+            $eleves = empty( $where_args )
+                ? $wpdb->get_results( $sql )
+                : $wpdb->get_results( $wpdb->prepare( $sql, ...$where_args ) );
+        } else {
+            // Aucune catégorie cochée mais une sélection manuelle existe : ciblage EXCLUSIVEMENT
+            // sur cette sélection, sans retomber sur "tous les actifs".
+            $eleves = array();
         }
 
-        $where_sql = implode( ' AND ', $where_parts );
-        $sql = "SELECT id, nom, prenom, email, email_parent, token, categorie_age, categorie_saisie
-                FROM $tel WHERE $where_sql ORDER BY nom, prenom";
-
-        $eleves = empty( $where_args )
-            ? $wpdb->get_results( $sql )
-            : $wpdb->get_results( $wpdb->prepare( $sql, ...$where_args ) );
+        // Union avec la sélection manuelle (dédupliquée par id)
+        if ( ! empty( $extra_ids ) ) {
+            $placeholders_extra = implode( ',', array_fill( 0, count( $extra_ids ), '%d' ) );
+            $extra_eleves = $wpdb->get_results( $wpdb->prepare(
+                "SELECT id, nom, prenom, email, email_parent, token, categorie_age, categorie_saisie
+                 FROM $tel WHERE actif = 1 AND ( email != '' OR email_parent != '' ) AND id IN ($placeholders_extra)",
+                ...$extra_ids
+            ) );
+            $par_id = array();
+            foreach ( $eleves as $el )       { $par_id[ intval( $el->id ) ] = $el; }
+            foreach ( $extra_eleves as $el ) { $par_id[ intval( $el->id ) ] = $el; }
+            $eleves = array_values( $par_id );
+        }
 
         if ( empty( $eleves ) ) {
-            wp_send_json_error( 'Aucun élève trouvé pour les catégories sélectionnées.' );
+            wp_send_json_error( 'Aucun élève trouvé pour les catégories/élèves sélectionnés.' );
         }
 
         $deja_envoye = intval( $event->inscriptions_envoye );
@@ -1022,6 +1051,9 @@ class SP_Cal_Inscriptions {
         }
         if ( ! empty( $ages_post ) ) {
             $update_data['inscriptions_age_categories'] = implode( ',', array_values( $ages_post ) );
+        }
+        if ( ! empty( $extra_ids ) ) {
+            $update_data['inscriptions_extra_eleves'] = implode( ',', $extra_ids );
         }
         $wpdb->update( $te, $update_data, array( 'id' => $event_id ) );
 

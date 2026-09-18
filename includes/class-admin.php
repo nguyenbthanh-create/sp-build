@@ -349,13 +349,25 @@ public function enqueue( $hook ) {
 
         $out = array();
         foreach ( $events as $ev ) {
-            // Calcul éligibilité : discipline ET tranche d'âge doivent correspondre
-            // Si les champs sont vides → ouvert à tous → éligible
-            $cats = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_categories     ?? '' ) ) );
-            $ages = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_age_categories ?? '' ) ) );
-            $disc_ok = empty( $cats ) || ( $cat_saisie !== '' && in_array( $cat_saisie, $cats, true ) );
-            $age_ok  = empty( $ages ) || ( $cat_age    !== '' && in_array( $cat_age,    $ages, true ) );
-            $eligible = $disc_ok && $age_ok;
+            // Calcul éligibilité : discipline ET tranche d'âge doivent correspondre.
+            // Si les champs sont vides ET qu'aucune sélection manuelle n'existe → ouvert à tous.
+            // Si les champs sont vides MAIS qu'une sélection manuelle existe → ciblage exclusif
+            // sur cette sélection (même logique que l'envoi, cf. ajax_inscription_envoyer()) —
+            // sinon la case "Autre" laissée vide rendrait tout le monde éligible dans l'appli
+            // alors que l'email n'a été envoyé qu'aux élèves choisis à la main (18/09/2026).
+            $cats  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_categories     ?? '' ) ) );
+            $ages  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_age_categories ?? '' ) ) );
+            $extra = array_filter( array_map( 'intval', explode( ',', $ev->inscriptions_extra_eleves ?? '' ) ) );
+            $has_cat_filter = ! empty( $cats ) || ! empty( $ages );
+
+            if ( $has_cat_filter || empty( $extra ) ) {
+                $disc_ok  = empty( $cats ) || ( $cat_saisie !== '' && in_array( $cat_saisie, $cats, true ) );
+                $age_ok   = empty( $ages ) || ( $cat_age    !== '' && in_array( $cat_age,    $ages, true ) );
+                $eligible_categorie = $disc_ok && $age_ok;
+            } else {
+                $eligible_categorie = false; // ciblage exclusivement manuel
+            }
+            $eligible = $eligible_categorie || in_array( intval( $eid ), $extra, true );
 
             $out[] = array(
                 'id'                    => intval( $ev->id ),
@@ -414,7 +426,13 @@ public function enqueue( $hook ) {
         $cours    = array();
         foreach ( $occs as $occ ) {
             if ( $occ['annul_id'] ) continue;
-            if ( $cat !== '' && ! empty( $occ['categorie'] ) && $occ['categorie'] !== $cat ) continue;
+            // La catégorie d'un événement peut lister plusieurs groupes séparés par des virgules
+            // (ex "Enfant, Ado/adulte, Renfo") depuis qu'elle a une vraie case à cocher multiple —
+            // comparaison insensible à la casse car ces libellés restent tapés à la main.
+            if ( $cat !== '' && ! empty( $occ['categorie'] ) ) {
+                $cat_tokens = array_map( function( $t ) { return mb_strtoupper( trim( $t ) ); }, explode( ',', $occ['categorie'] ) );
+                if ( ! in_array( mb_strtoupper( $cat ), $cat_tokens, true ) ) continue;
+            }
             $cours[] = array(
                 'slot_id' => intval( $occ['slot_id'] ), 'mat_id' => $occ['mat_id'] ? intval( $occ['mat_id'] ) : null,
                 'date' => $occ['date'], 'heure_debut' => $occ['heure_debut'] ?? '', 'heure_fin' => $occ['heure_fin'] ?? '',
@@ -2151,6 +2169,18 @@ function spCalBufToB64u(buf) {
             wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&cleaned=' . $cleaned ) ); exit;
         }
 
+        /* ── Migration Discipline / Pour qui des événements (ex-champ "categorie" libre) ── */
+        if ( isset( $_POST['sp_migrer_cours_categories'] ) && check_admin_referer( 'sp_migrer_cours_categories' ) ) {
+            $dry = isset( $_POST['sp_migrer_preview'] );
+            if ( $dry ) {
+                $preview = $this->db->preview_migration_cours_categories();
+                set_transient( 'sp_migrer_cours_cat_preview_' . get_current_user_id(), $preview, 300 );
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&migration_cours_preview=1' ) ); exit;
+            }
+            $total = $this->db->appliquer_migration_cours_categories();
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&migration_cours_done=1&nb=' . $total ) ); exit;
+        }
+
         /* ── Reset élèves ── */
         if ( isset( $_POST['sp_reset_eleves'] ) && check_admin_referer( 'sp_reset_eleves' ) ) {
             $wpdb->query( "TRUNCATE TABLE {$this->db->table_eleves()}" );
@@ -3875,6 +3905,70 @@ function spCalBufToB64u(buf) {
                     <?php endif; ?>
                 </p>
             </form>
+        </div>
+
+        <!-- MIGRATION DISCIPLINE / POUR QUI DES ÉVÉNEMENTS -->
+        <?php
+        if ( isset($_GET['migration_cours_done']) ) {
+            $nb_mig = intval($_GET['nb']);
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Migration effectuée — <strong>' . $nb_mig . '</strong> événement(s) mis à jour.</p></div>';
+        }
+        if ( isset($_GET['migration_cours_preview']) ) {
+            $preview_mig = get_transient( 'sp_migrer_cours_cat_preview_' . get_current_user_id() );
+            if ( $preview_mig !== false ) :
+        ?>
+        <div class="notice notice-warning" style="padding:16px;">
+            <?php if ( empty($preview_mig) ) : ?>
+            <p><strong>👁️ Rien à migrer</strong> — tous les événements ont déjà une Discipline renseignée.</p>
+            <?php else : ?>
+            <p><strong>👁️ Aperçu de la migration — <?php echo count($preview_mig); ?> événement(s) concerné(s)</strong></p>
+            <table class="wp-list-table widefat fixed striped" style="max-width:800px;margin:10px 0;">
+                <thead><tr><th>Événement</th><th>Ancienne catégorie</th><th>Discipline</th><th>Pour qui</th></tr></thead>
+                <tbody>
+                <?php foreach ( array_slice($preview_mig, 0, 50) as $m ): ?>
+                <tr>
+                    <td><?php echo esc_html($m['titre']); ?></td>
+                    <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['ancienne']); ?></span></td>
+                    <td><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['discipline'] !== '' ? str_replace(',', ', ', $m['discipline']) : '—'); ?></span></td>
+                    <td><span style="background:#dbeafe;color:#1e3a8a;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['age'] !== '' ? str_replace(',', ', ', $m['age']) : '—'); ?></span></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if ( count($preview_mig) > 50 ): ?>
+            <p style="color:#64748b;font-size:12px;">… et <?php echo count($preview_mig) - 50; ?> de plus (non affichés, mais bien pris en compte à la confirmation).</p>
+            <?php endif; ?>
+            <form method="post" style="margin-top:8px;">
+                <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
+                <input type="hidden" name="sp_migrer_cours_categories" value="1">
+                <input type="submit" class="button button-primary" value="✅ Confirmer la migration">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=sp-cal-settings')); ?>" class="button" style="margin-left:8px;">Annuler</a>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php endif; } ?>
+
+        <div class="sp-box" style="border-left:4px solid #e5e7eb;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;">
+                    <strong>🎯 Migrer les événements vers Discipline / Pour qui</strong>
+                    <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
+                        Convertit l'ancien champ "Catégorie" en texte libre (TKD, RENFO, Général, Prépa CN, Sortie…)
+                        des événements existants vers les deux nouveaux menus du calendrier — <strong>Discipline</strong>
+                        (Taekwondo / Renforcement musculaire / Autre) et <strong>Pour qui</strong> (tranche d'âge).
+                        Les valeurs non reconnues (Général, Prépa CN, Sortie…) basculent en Discipline "Autre".
+                        Sans effet sur les événements déjà migrés.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <form method="post" style="margin:0;">
+                        <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
+                        <input type="hidden" name="sp_migrer_cours_categories" value="1">
+                        <input type="hidden" name="sp_migrer_preview" value="1">
+                        <input type="submit" class="button" value="👁️ Prévisualiser">
+                    </form>
+                </div>
+            </div>
         </div>
 
         <!-- NETTOYAGE DOUBLONS -->

@@ -38,6 +38,7 @@ class SpCalPro_Ajax {
         add_action( 'wp_ajax_sp_cal_link_comp',               array( $this, 'link_comp' ) );
         add_action( 'wp_ajax_sp_cal_unlink_comp',             array( $this, 'unlink_comp' ) );
         add_action( 'wp_ajax_sp_cal_send_annul_groupee',     array( $this, 'send_annul_groupee' ) );
+        add_action( 'wp_ajax_sp_cal_get_eleves_pour_ciblage', array( $this, 'get_eleves_pour_ciblage' ) );
         add_action( 'wp_ajax_sp_cal_ping',                    array( $this, 'ping' ) );
         add_action( 'wp_ajax_sp_cal_upload_event_doc',        array( $this, 'upload_event_doc' ) );
         add_action( 'wp_ajax_sp_cal_delete_event_doc',        array( $this, 'delete_event_doc' ) );
@@ -206,6 +207,9 @@ class SpCalPro_Ajax {
                 'inscriptions_message'     => $e->inscriptions_message     ?? '',
                 'inscriptions_categories'     => $e->inscriptions_categories     ?? '',
                 'inscriptions_age_categories' => $e->inscriptions_age_categories ?? '',
+                'inscriptions_extra_eleves'   => $e->inscriptions_extra_eleves   ?? '',
+                'cours_discipline'            => $e->cours_discipline           ?? '',
+                'cours_age_categories'        => $e->cours_age_categories       ?? '',
             );
         }
 
@@ -219,7 +223,7 @@ class SpCalPro_Ajax {
             // Clause IN avec entiers : intval() suffit, pas besoin de prepare()
             $ids_safe = implode( ',', array_map( 'intval', $mat_ids ) );
             $rows = $wpdb->get_results(
-                "SELECT id, document_url, document_nom, description FROM $te WHERE id IN ($ids_safe)"
+                "SELECT id, document_url, document_nom, description, cours_discipline, cours_age_categories FROM $te WHERE id IN ($ids_safe)"
             );
             foreach ( $rows as $r ) {
                 $mat_data[ intval($r->id) ] = $r;
@@ -253,6 +257,8 @@ class SpCalPro_Ajax {
                 'document_nom' => $mat ? ( $mat->document_nom ?? '' ) : '',
                 'recurrent'    => true,
                 'mat_id'       => $mat_id,  // toujours présent pour que JS sache
+                'cours_discipline'     => $mat ? ( $mat->cours_discipline     ?? '' ) : '',
+                'cours_age_categories' => $mat ? ( $mat->cours_age_categories ?? '' ) : '',
             );
         }
 
@@ -316,12 +322,29 @@ class SpCalPro_Ajax {
             if ( $exists ) wp_send_json_success( array( 'id' => intval($exists), 'action' => 'already_exists' ) );
         }
 
+        // Discipline (Taekwondo/Renforcement musculaire/Autre) × Pour qui (tranche d'âge) — remplace
+        // l'ancien champ "categorie" en texte libre (cf. échange du 18/09/2026). "categorie" reste
+        // renseigné automatiquement (= Discipline) pour la couleur du calendrier, le badge de
+        // l'agenda public et le shortcode [sp_cal_evenements categorie="…"].
+        $disc_raw = $_POST['cours_discipline'] ?? '';
+        $disc_arr = array_values( array_filter( array_map( 'trim', is_array( $disc_raw )
+            ? array_map( 'sanitize_text_field', array_map( 'wp_unslash', $disc_raw ) )
+            : explode( ',', sanitize_text_field( wp_unslash( $disc_raw ) ) )
+        ) ) );
+        $age_raw = $_POST['cours_age_categories'] ?? '';
+        $age_arr = array_values( array_filter( array_map( 'trim', is_array( $age_raw )
+            ? array_map( 'sanitize_text_field', array_map( 'wp_unslash', $age_raw ) )
+            : explode( ',', sanitize_text_field( wp_unslash( $age_raw ) ) )
+        ) ) );
+
         $data = array(
-            'date'        => $date,
-            'heure_debut' => sanitize_text_field( wp_unslash( $_POST['heure_debut'] ?? '' ) ),
-            'heure_fin'   => sanitize_text_field( wp_unslash( $_POST['heure_fin']   ?? '' ) ),
-            'titre'       => sanitize_text_field( wp_unslash( $_POST['titre']       ?? ( $type === 'annulation' ? 'Annulation' : '' ) ) ),
-            'categorie'   => sanitize_text_field( wp_unslash( $_POST['categorie']   ?? 'Général' ) ),
+            'date'                 => $date,
+            'heure_debut'          => sanitize_text_field( wp_unslash( $_POST['heure_debut'] ?? '' ) ),
+            'heure_fin'            => sanitize_text_field( wp_unslash( $_POST['heure_fin']   ?? '' ) ),
+            'titre'                => sanitize_text_field( wp_unslash( $_POST['titre']       ?? ( $type === 'annulation' ? 'Annulation' : '' ) ) ),
+            'cours_discipline'     => implode( ',', $disc_arr ),
+            'cours_age_categories' => implode( ',', $age_arr ),
+            'categorie'            => implode( ',', $disc_arr ),
             'couleur'     => sanitize_hex_color(  $_POST['couleur']     ?? '#3B82F6' ) ?: '#3B82F6',
             'type'        => $type,
 			'niveau'      => in_array( $type, array('competition') ) ? sanitize_text_field( wp_unslash( $_POST['niveau'] ?? 'departemental' ) ) : 'departemental',
@@ -352,6 +375,11 @@ class SpCalPro_Ajax {
             } else {
                 $data['inscriptions_age_categories'] = sanitize_text_field( wp_unslash( $ages_raw ) );
             }
+            // Élèves ajoutés manuellement au ciblage (cas ponctuels non couverts par une
+            // catégorie, ex "tous les combattants" indépendamment de l'âge — cf. 18/09/2026)
+            $extra_raw = sanitize_text_field( wp_unslash( $_POST['inscriptions_extra_eleves'] ?? '' ) );
+            $extra_ids = array_filter( array_map( 'intval', explode( ',', $extra_raw ) ) );
+            $data['inscriptions_extra_eleves'] = implode( ',', $extra_ids );
         }
 
         if ( $type !== 'annulation' && empty( $data['titre'] ) ) wp_send_json_error( 'Titre requis.' );
@@ -984,13 +1012,19 @@ class SpCalPro_Ajax {
                 }
             }
 
+            // Catégorie d'âge normalisée à l'import — c'est la source historique la plus probable
+            // des variantes d'écriture (chacun tapait midi à sa porte dans son propre tableur
+            // avant import), cf. échange du 17-18/09/2026.
+            $cat_age_brut = $col['cat_age'] !== false ? trim( $row[$col['cat_age']] ?? '' ) : '';
+            $cat_age_norm = $cat_age_brut !== '' ? $this->db->normaliser_categorie_age( $cat_age_brut ) : '';
+
             $data = array(
                 'nom'                => $nom,
                 'prenom'             => $pren,
                 'date_naissance'     => $ddn,
                 'annee_naissance'    => $annee,
                 'grade'              => $grade,
-                'categorie_age'      => $col['cat_age']    !== false ? trim($row[$col['cat_age']]    ?? '') : '',
+                'categorie_age'      => $cat_age_norm ?? $cat_age_brut,
                 'categorie_saisie'   => $col['cat_saisie'] !== false ? trim($row[$col['cat_saisie']] ?? '') : '',
                 'saison'             => $col['saison']     !== false ? trim($row[$col['saison']]     ?? '') : '',
                 'rang'               => $col['rang']       !== false ? intval($row[$col['rang']]     ?? 0)  : 0,
@@ -1898,6 +1932,26 @@ class SpCalPro_Ajax {
         delete_option( 'sp_cal_annul_pending' );
 
         wp_send_json_success( array( 'sent' => $sent ) );
+    }
+
+    /**
+     * Liste légère (id, nom, prénom) des élèves actifs — alimente le champ "Ajouter des élèves
+     * spécifiques" du ciblage d'invitation événement (recherche côté client), pour les cas
+     * ponctuels non couverts par les cases Discipline/Tranche d'âge (cf. échange du 18/09/2026).
+     */
+    public function get_eleves_pour_ciblage() {
+        $this->nonce();
+        $this->require_admin();
+
+        $eleves = $this->db->get_eleves( array( 'actif' => 1 ) );
+        $out = array();
+        foreach ( $eleves as $el ) {
+            $out[] = array(
+                'id'     => intval( $el->id ),
+                'nom'    => $el->prenom . ' ' . mb_strtoupper( $el->nom ),
+            );
+        }
+        wp_send_json_success( array( 'eleves' => $out ) );
     }
 
     /* ══════════════════════════════════════════════════════════

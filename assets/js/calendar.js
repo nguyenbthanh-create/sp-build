@@ -20,6 +20,8 @@
         elevesByGroup: {},
         catsSaisie:    [],      // categories saisie pour filtres presences/examen
         catsSaisieAge: [],      // tranches age (cache modale)
+        elevesPourCiblage: null, // [{id, nom}] — cache lazy pour "Ajouter des élèves spécifiques"
+        inscExtraIds:  [],      // IDs élèves ajoutés manuellement au ciblage de l'événement en cours
 
         // Disponibilités entraîneurs
         trainersList:  [],      // [{id, nom, nom_public}]
@@ -40,7 +42,6 @@
         /* ═══════════════════════════════ INIT */
         init: function () {
             try { CAL.catColors = JSON.parse(SpCal.catColors || '{}'); } catch(e) {}
-            try { CAL.catsEvents = JSON.parse(SpCal.catsEvents || '[]'); } catch(e) { CAL.catsEvents = []; }
             try { CAL.vacances  = JSON.parse(SpCal.vacances  || '[]'); } catch(e) {}
             CAL.weColor  = SpCal.weColor  || '#f3f4f6';
             CAL.vacColor = SpCal.vacColor || '#fef9c3';
@@ -51,7 +52,6 @@
             CAL.bindNav();
             if (SpCal.isAdmin === '1') {
                 CAL.bindAdmin();
-                CAL.populateCatDatalist();
                 // Afficher le badge si des annulations groupées sont en attente
                 var pending = parseInt(SpCal.annulPending || window._spCalAnnulPending || 0);
                 if (pending > 0) CAL.updatePendingBadge(pending);
@@ -248,9 +248,6 @@
 			$('#ev-type').on('change', function(){
 			$('#ev-niveau-wrap').toggle($(this).val() === 'competition');
 			});
-            $('#ev-categorie').on('change', function(){
-                $('#ev-categorie-autre').toggle($(this).val() === '__autre__');
-            });
             $('#btn-delete-event').on('click', CAL.deleteEvent);
             // Compétition
             $(document).on('click', '#btn-add-epreuve', function(){
@@ -645,14 +642,10 @@
 			$('#ev-niveau-wrap').toggle(displayType === 'competition');
             $('#ev-debut').val(ev?CAL.toTimeInput(ev.heure_debut):'');
             $('#ev-fin').val(ev?CAL.toTimeInput(ev.heure_fin):'');
-            var evCat = ev ? (ev.categorie || '') : '';
-            if (evCat && !CAL.catColors[evCat]) {
-                $('#ev-categorie').val('__autre__');
-                $('#ev-categorie-autre').val(evCat).show();
-            } else {
-                $('#ev-categorie').val(evCat);
-                $('#ev-categorie-autre').val('').hide();
-            }
+            CAL.renderCoursCategorieWrap(
+                ev && ev.cours_discipline     ? ev.cours_discipline.split(',').map(function(s){ return s.trim(); }).filter(Boolean)     : [],
+                ev && ev.cours_age_categories ? ev.cours_age_categories.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : []
+            );
             $('#ev-couleur').val(ev?ev.couleur:'#3B82F6');
             $('#ev-description').val(ev?(ev.description||''):'');
             $('#btn-delete-event').toggle(!!ev);
@@ -701,6 +694,12 @@
                 var ages_saved = (ev && ev.inscriptions_age_categories) ? ev.inscriptions_age_categories.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
                 var disc_saved = (ev && ev.inscriptions_categories)     ? ev.inscriptions_categories.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
                 CAL.populateInscCats({discipline: CAL.catsSaisie, age: CAL.catsSaisieAge||[]}, disc_saved, ages_saved);
+                CAL.inscExtraIds = (ev && ev.inscriptions_extra_eleves)
+                    ? ev.inscriptions_extra_eleves.split(',').map(function(s){ return parseInt(s.trim(), 10); }).filter(function(n){ return !isNaN(n); })
+                    : [];
+                $('#ev-insc-extra-search').val('');
+                $('#ev-insc-extra-results').hide().empty();
+                if (CAL.elevesPourCiblage === null) CAL.loadElevesPourCiblage(); else CAL.renderExtraChips();
                 $('#ev-insc-deadline').val(ev && ev.inscriptions_deadline ? ev.inscriptions_deadline : '');
                 $('#ev-insc-message').val(ev && ev.inscriptions_message ? ev.inscriptions_message : '');
                 // Lien liste + bouton envoi : visibles si inscriptions activées ET event sauvegardé
@@ -957,8 +956,8 @@
             var eventId  = hasRealId ? parseInt(rawId, 10) : 0;
             var slotId   = (ev && ev.slot_id) ? parseInt(ev.slot_id, 10) : 0;
 
-            var catVal = $('#ev-categorie').val();
-            if (catVal === '__autre__') catVal = $('#ev-categorie-autre').val().trim();
+            var coursDiscipline = []; $('#ev-categorie-wrap .sp-ev-disc-cb:checked').each(function(){ coursDiscipline.push($(this).val()); });
+            var coursAge        = []; $('#ev-categorie-wrap .sp-ev-age-cb:checked').each(function(){ coursAge.push($(this).val()); });
 
             var btn=$('#btn-save-event').prop('disabled',true).text('Enregistrement…');
             $.post(SpCal.ajaxurl,{
@@ -969,7 +968,8 @@
                 heure_debut: $('#ev-debut').val(),
                 heure_fin:   $('#ev-fin').val(),
                 titre:       titre,
-                categorie:   catVal,
+                cours_discipline:     coursDiscipline.join(','),
+                cours_age_categories: coursAge.join(','),
                 couleur:     $('#ev-couleur').val(),
                 type:        $('#ev-type').val(),
                 description: $('#ev-description').val().trim(),
@@ -985,6 +985,7 @@
                     return checked.join(',');
                 })(),
                 inscriptions_public:   '',
+                inscriptions_extra_eleves: CAL.inscExtraIds.join(','),
                 inscriptions_deadline: $('#ev-insc-deadline').length ? $('#ev-insc-deadline').val()       : '',
                 inscriptions_message:  $('#ev-insc-message').length  ? $('#ev-insc-message').val().trim() : ''
             },function(res){
@@ -1615,6 +1616,35 @@
             wrap.html(html);
         },
 
+        /* Charge une fois la liste (id, nom) des élèves actifs pour la recherche du ciblage
+           manuel — mise en cache dans CAL.elevesPourCiblage (null = pas encore chargé). */
+        loadElevesPourCiblage: function () {
+            $.post(SpCal.ajaxurl, { action: 'sp_cal_get_eleves_pour_ciblage', nonce: SpCal.nonce }, function(res){
+                if (res.success) {
+                    CAL.elevesPourCiblage = res.data.eleves || [];
+                    CAL.renderExtraChips(); // résout les noms des IDs déjà en attente (ouverture d'un event existant)
+                }
+            });
+        },
+
+        /* Affiche les "chips" (nom + croix pour retirer) des élèves ajoutés manuellement au
+           ciblage de l'événement en cours d'édition (CAL.inscExtraIds). */
+        renderExtraChips: function () {
+            var wrap = $('#ev-insc-extra-chips').empty();
+            if (!CAL.elevesPourCiblage) return;
+            var byId = {};
+            CAL.elevesPourCiblage.forEach(function(el){ byId[el.id] = el.nom; });
+            CAL.inscExtraIds.forEach(function(id){
+                var nom = byId[id] || ('#' + id);
+                wrap.append(
+                    '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:12px;padding:3px 6px 3px 10px;font-size:12px;">'
+                    + CAL.esc(nom)
+                    + ' <span class="sp-insc-extra-remove" data-id="' + id + '" style="cursor:pointer;font-weight:700;padding:0 4px;">×</span>'
+                    + '</span>'
+                );
+            });
+        },
+
         injectInscriptionFields: function () {
             if ($('#insc-section').length) return; // déjà injecté
             var html = '<div id="insc-section" style="margin-top:14px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">'
@@ -1627,9 +1657,15 @@
                 + '</label>'
                 + '<div id="insc-options" style="display:none;padding-top:8px;border-top:1px solid #e2e8f0;margin-top:4px;">'
                 +   '<div style="margin-bottom:8px;">'
-                +     '<label style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">🎯 Catégories ciblées <span style="font-weight:400;">(aucune cochée = tous les élèves actifs)</span></label>'
+                +     '<label style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">🎯 Public ciblé pour l\'email d\'inscription <span style="font-weight:400;">(aucune case cochée = tous les élèves actifs — sans lien avec le "Groupe / catégorie du cours" ci-dessus)</span></label>'
                 +     '<div id="ev-insc-cats-wrap" style="display:flex;flex-wrap:wrap;gap:6px;min-height:26px;margin-bottom:4px;"><span style="font-size:12px;color:#9ca3af;font-style:italic;">Chargement…</span></div>'
                 +     '<input type="hidden" id="ev-insc-public" value="">'
+                +   '</div>'
+                +   '<div style="margin-bottom:10px;">'
+                +     '<label style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">➕ Ajouter des élèves spécifiques <span style="font-weight:400;">(en plus des cases ci-dessus — pour un cas ponctuel, ex : "tous les combattants" indépendamment de l\'âge)</span></label>'
+                +     '<input type="text" id="ev-insc-extra-search" class="sp-input" placeholder="Rechercher un élève par nom…" style="width:100%;height:30px;" autocomplete="off">'
+                +     '<div id="ev-insc-extra-results" style="display:none;position:relative;z-index:5;border:1px solid #d1d5db;border-radius:5px;background:#fff;max-height:160px;overflow-y:auto;margin-top:2px;"></div>'
+                +     '<div id="ev-insc-extra-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>'
                 +   '</div>'
                 +   '<div style="margin-bottom:10px;">'
                 +     '<label style="font-size:12px;color:#6b7280;display:block;margin-bottom:3px;">Date limite de réponse <span style="font-weight:400;">(optionnel)</span></label>'
@@ -1658,6 +1694,41 @@
                 }
             });
 
+            // Recherche élèves pour le ciblage manuel ("Ajouter des élèves spécifiques")
+            $(document).on('input', '#ev-insc-extra-search', function(){
+                var q = $(this).val().trim().toLowerCase();
+                var results = $('#ev-insc-extra-results').empty();
+                if (!q || !CAL.elevesPourCiblage) { results.hide(); return; }
+                var matches = CAL.elevesPourCiblage.filter(function(el){
+                    return el.nom.toLowerCase().indexOf(q) !== -1 && CAL.inscExtraIds.indexOf(el.id) === -1;
+                }).slice(0, 8);
+                if (!matches.length) { results.hide(); return; }
+                matches.forEach(function(el){
+                    var row = $('<div></div>')
+                        .text(el.nom)
+                        .css({ padding:'6px 10px', cursor:'pointer', fontSize:'13px' })
+                        .on('mouseenter', function(){ $(this).css('background', '#f3f4f6'); })
+                        .on('mouseleave', function(){ $(this).css('background', '#fff'); })
+                        .on('mousedown', function(e){ e.preventDefault(); }) // évite le blur avant le click
+                        .on('click', function(){
+                            CAL.inscExtraIds.push(el.id);
+                            CAL.renderExtraChips();
+                            $('#ev-insc-extra-search').val('');
+                            $('#ev-insc-extra-results').hide().empty();
+                        });
+                    results.append(row);
+                });
+                results.show();
+            });
+            $(document).on('blur', '#ev-insc-extra-search', function(){
+                setTimeout(function(){ $('#ev-insc-extra-results').hide(); }, 150);
+            });
+            $(document).on('click', '.sp-insc-extra-remove', function(){
+                var id = parseInt($(this).data('id'), 10);
+                CAL.inscExtraIds = CAL.inscExtraIds.filter(function(i){ return i !== id; });
+                CAL.renderExtraChips();
+            });
+
             // Bouton envoi invitation depuis la modale
             $(document).on('click', '#insc-send-btn', function(){
                 var evId = $(this).data('event-id');
@@ -1681,7 +1752,8 @@
                         var checked = [];
                         $('#ev-insc-cats-wrap .sp-insc-age-cb:checked').each(function(){ checked.push($(this).val()); });
                         return checked;
-                    })()
+                    })(),
+                    extra_eleve_ids: CAL.inscExtraIds
                 }, function(res){
                     btn.prop('disabled', false).text('🔁 Renvoyer aux non-répondants');
                     if (res.success) {
@@ -1728,18 +1800,32 @@
             var labels = { TKD: 'Taekwondo', RENFO: 'Renforcement musculaire' };
             return labels[code] || code;
         },
-        populateCatDatalist: function () {
-            // Union des catégories déjà utilisées sur des événements et de celles ayant une
-            // couleur configurée (Réglages) — la plupart des clubs n'utilisent que la 1ère source.
-            var cats = {};
-            (CAL.catsEvents || []).forEach(function(c){ cats[c] = 1; });
-            Object.keys(CAL.catColors).forEach(function(c){ cats[c] = 1; });
-            var opts = '<option value="">— Choisir —</option>';
-            Object.keys(cats).sort().forEach(function(c){
-                opts += '<option value="'+CAL.esc(c)+'">'+CAL.esc(c)+'</option>';
+        // Discipline × Pour qui (tranche d'âge) — deux axes fixes remplaçant l'ancien champ texte
+        // libre (cf. échange du 18/09/2026). "Autre" couvre les sorties/fêtes qui ne relèvent pas
+        // de l'objet sportif du club.
+        COURS_DISCIPLINES: ['Taekwondo', 'Renforcement musculaire', 'Autre'],
+        COURS_AGES:        ['Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge'],
+
+        renderCoursCategorieWrap: function (selectedDiscipline, selectedAge) {
+            var html = '';
+
+            html += '<div style="width:100%;margin-bottom:4px;"><span style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;">Discipline</span></div>';
+            CAL.COURS_DISCIPLINES.forEach(function(d) {
+                var chk = (selectedDiscipline.indexOf(d) !== -1) ? ' checked' : '';
+                html += '<label style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid #d1d5db;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:12px;border-left:3px solid #0f70b7;">'
+                      + '<input type="checkbox" class="sp-ev-disc-cb" value="' + CAL.esc(d) + '"' + chk + '>'
+                      + CAL.esc(d) + '</label>';
             });
-            opts += '<option value="__autre__">Autre…</option>';
-            $('#ev-categorie').html(opts);
+
+            html += '<div style="width:100%;margin-top:6px;margin-bottom:4px;"><span style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;">Pour qui</span></div>';
+            CAL.COURS_AGES.forEach(function(a) {
+                var chk = (selectedAge.indexOf(a) !== -1) ? ' checked' : '';
+                html += '<label style="display:flex;align-items:center;gap:4px;background:#fff;border:1px solid #d1d5db;border-radius:5px;padding:3px 8px;cursor:pointer;font-size:12px;border-left:3px solid #16a34a;">'
+                      + '<input type="checkbox" class="sp-ev-age-cb" value="' + CAL.esc(a) + '"' + chk + '>'
+                      + CAL.esc(a) + '</label>';
+            });
+
+            $('#ev-categorie-wrap').html(html);
         },
     };
 

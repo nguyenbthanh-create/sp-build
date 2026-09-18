@@ -224,6 +224,18 @@ class SP_Cal_Members {
             wp_redirect( $redirect ); exit;
         }
 
+        /* ── Normalisation écriture catégories d'âge ── */
+        if ( isset( $_POST['sp_normaliser_categories_age'] ) && check_admin_referer( 'sp_normaliser_categories_age' ) ) {
+            $dry = isset( $_POST['sp_normaliser_preview'] );
+            if ( $dry ) {
+                $preview = $this->db->preview_normalisation_categorie_age();
+                set_transient( 'sp_normaliser_cat_preview_' . get_current_user_id(), $preview, 300 );
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&normalisation_preview=1' ) ); exit;
+            }
+            $total = $this->db->appliquer_normalisation_categorie_age();
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&normalisation_done=1&nb=' . $total ) ); exit;
+        }
+
         /* ── Bulk delete élèves ── */
         if ( isset( $_POST['sp_bulk_delete_eleves'] ) && check_admin_referer( 'sp_cal_bulk_eleves' ) ) {
             $ids = array_map( 'intval', $_POST['sp_bulk_ids'] ?? array() );
@@ -486,6 +498,7 @@ class SP_Cal_Members {
                     <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
                         Recalcule la catégorie de chaque élève selon son âge au 1<sup>er</sup> septembre.
                         Baby (&lt; 6 ans) · Enfant (6-10 ans) · Ado/adulte (11-14 ans) · Adulte (≥ 15 ans)
+                        — n'affecte pas les élèves en Renforcement musculaire (catégorie "Tout âge" fixe).
                     </p>
                     <?php if ( ! $bascule_active ) : ?>
                     <p style="margin:6px 0 0;color:#92400e;font-size:12px;background:#fef9c3;padding:4px 8px;border-radius:4px;display:inline-block;">
@@ -498,6 +511,76 @@ class SP_Cal_Members {
                         <?php wp_nonce_field('sp_bascule_categories'); ?>
                         <input type="hidden" name="sp_bascule_categories" value="1">
                         <input type="hidden" name="sp_bascule_preview" value="1">
+                        <input type="submit" class="button" value="👁️ Prévisualiser">
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <?php
+        // ── Normalisation écriture catégories d'âge ─────────────────────────
+        if ( isset($_GET['normalisation_done']) ) {
+            $nb = intval($_GET['nb']);
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Normalisation effectuée — <strong>' . $nb . '</strong> élève(s) mis à jour.</p></div>';
+        }
+        if ( isset($_GET['normalisation_preview']) ) {
+            $preview_norm = get_transient( 'sp_normaliser_cat_preview_' . get_current_user_id() );
+            if ( $preview_norm ) :
+                $changements   = $preview_norm['changements'];
+                $non_reconnues = $preview_norm['non_reconnues'];
+        ?>
+        <div class="notice notice-warning" style="padding:16px;">
+            <?php if ( empty($changements) ) : ?>
+            <p><strong>👁️ Aucune écriture à corriger</strong> — toutes les catégories d'âge en base correspondent déjà aux 5 libellés officiels.</p>
+            <?php else : ?>
+            <p><strong>👁️ Aperçu de la normalisation — <?php echo count($changements); ?> écriture(s) à corriger</strong></p>
+            <table class="wp-list-table widefat fixed striped" style="max-width:600px;margin:10px 0;">
+                <thead><tr><th>Avant</th><th>Après</th><th>Élèves concernés</th></tr></thead>
+                <tbody>
+                <?php foreach($changements as $c): ?>
+                <tr>
+                    <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($c['avant']); ?></span></td>
+                    <td><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($c['apres']); ?></span></td>
+                    <td><?php echo intval($c['nb']); ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <form method="post" style="margin-top:8px;">
+                <?php wp_nonce_field('sp_normaliser_categories_age'); ?>
+                <input type="hidden" name="sp_normaliser_categories_age" value="1">
+                <input type="submit" class="button button-primary" value="✅ Confirmer la normalisation">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=sp-cal-eleves')); ?>" class="button" style="margin-left:8px;">Annuler</a>
+            </form>
+            <?php endif; ?>
+            <?php if ( ! empty($non_reconnues) ) : ?>
+            <p style="margin-top:14px;"><strong>⚠️ <?php echo count($non_reconnues); ?> écriture(s) non reconnue(s)</strong> — à corriger à la main sur la fiche de chaque élève concerné (liste déroulante Catégorie d'âge → "Autre") :</p>
+            <ul style="margin:4px 0 0 20px;list-style:disc;">
+                <?php foreach($non_reconnues as $nr): ?>
+                <li><span style="background:#f3f4f6;color:#374151;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($nr['valeur']); ?></span> — <?php echo intval($nr['nb']); ?> élève(s)</li>
+                <?php endforeach; ?>
+            </ul>
+            <?php endif; ?>
+        </div>
+        <?php endif; } ?>
+
+        <div class="sp-box" style="border-left:4px solid #e5e7eb;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;">
+                    <strong>✏️ Normaliser l'écriture des catégories d'âge</strong>
+                    <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
+                        Uniformise l'écriture vers les 5 libellés officiels — <code>Baby</code>, <code>Enfant</code>,
+                        <code>Ado/adulte</code>, <code>Adulte</code>, <code>Tout âge</code> (Renforcement musculaire,
+                        non subdivisé par âge) — sans changer la catégorie de qui que ce soit (seulement corrige des
+                        variantes comme "babies" ou "BABY" en "Baby", ou "RENFO" en "Tout âge"). Utile car le ciblage
+                        des emails d'inscription événements compare des chaînes exactes.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <form method="post" style="margin:0;">
+                        <?php wp_nonce_field('sp_normaliser_categories_age'); ?>
+                        <input type="hidden" name="sp_normaliser_categories_age" value="1">
+                        <input type="hidden" name="sp_normaliser_preview" value="1">
                         <input type="submit" class="button" value="👁️ Prévisualiser">
                     </form>
                 </div>
@@ -748,14 +831,17 @@ class SP_Cal_Members {
                             </label>
                         </div>
                     </div>
-                    <!-- Catégorie d'âge — liste déroulante sourcée sur le même référentiel que les
-                         grades (Jury → Grades) + les valeurs déjà utilisées sur d'autres fiches,
-                         pour rester cohérent avec le regroupement des grades par catégorie. -->
+                    <!-- Catégorie d'âge — liste déroulante sourcée sur les 5 catégories officielles
+                         (toujours proposées, même si aucun élève n'en a encore une en base — sinon
+                         "Tout âge" n'apparaîtrait qu'une fois qu'un premier élève l'aurait déjà,
+                         problème de l'oeuf et la poule) + le référentiel Jury → Grades + les
+                         valeurs déjà utilisées sur d'autres fiches, pour couvrir tout cas hérité. -->
                     <div style="margin-bottom:12px;">
                         <?php
-                        $cat_edit    = $edit->categorie_age ?? '';
-                        $cats_dispo  = array_unique( array_merge( array_keys( $grades_ref ), $cats ) );
-                        $cat_connue  = in_array( $cat_edit, $cats_dispo, true );
+                        $cat_edit       = $edit->categorie_age ?? '';
+                        $cats_officiel  = array( 'Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge' );
+                        $cats_dispo     = array_unique( array_merge( $cats_officiel, array_keys( $grades_ref ), $cats ) );
+                        $cat_connue     = in_array( $cat_edit, $cats_dispo, true );
                         ?>
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie d'âge</label>
                         <select name="eleve_cat" id="sp-eleve-cat-select" class="regular-text" style="width:100%;">
