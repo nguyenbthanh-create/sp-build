@@ -3792,21 +3792,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             </div>
         </div><!-- #sp-fiche-comp-link-box -->
 
-        <!-- Grade actuel / prochain grade -->
+        <!-- Parcours de progression -->
         <div class="sp-box">
-            <h2>🥋 Grade</h2>
-            <div style="display:flex;gap:32px;flex-wrap:wrap;">
-                <div>
-                    <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Grade actuel</div>
-                    <div style="font-size:20px;font-weight:700;"><?php echo $el->grade ? esc_html($el->grade) : '—'; ?></div>
-                </div>
-                <?php $grade_vise = $this->db->get_grade_vise_eleve($el); if ( $grade_vise ) : ?>
-                <div>
-                    <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Prochain grade</div>
-                    <div style="font-size:20px;font-weight:700;color:#0f70b7;"><?php echo esc_html($grade_vise); ?></div>
-                </div>
-                <?php endif; ?>
-            </div>
+            <h2>🥋 Chemin de ceinture</h2>
+            <?php
+            $parcours_data = $this->db->get_parcours_eleve($el);
+            $uid     = 'admin' . intval($eleve_id);
+            $eleve   = $el;
+            $parcours = $parcours_data;
+            include SP_CAL_PRO_PATH . 'templates/parcours-progression.php';
+            ?>
         </div>
 
         <!-- Passages de grade -->
