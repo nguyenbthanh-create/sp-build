@@ -182,8 +182,7 @@ for ($w=0;$w<6;$w++) {
         }
     ?>
 
-    <div class="sp-week-block<?php echo $is_past?' sp-week-past':''; ?><?php echo $is_current?' sp-week-current':''; ?>"
-         style="<?php echo ($is_past?' display:none;':''); ?>">
+    <div class="sp-week-block<?php echo $is_past?' sp-week-past':''; ?><?php echo $is_current?' sp-week-current':''; ?>">
 
         <div class="sp-week-header">
             <span class="sp-week-label">
@@ -395,9 +394,6 @@ function spTogglePast(btn){
         el.style.display = hiding ? 'none' : '';
     });
 }
-// Masquer par défaut au chargement
-document.addEventListener('DOMContentLoaded', function(){
-    var btn = document.querySelector('.sp-plan-toggle-past');
-    if (btn) spTogglePast(btn);
-});
+// Toutes les semaines du mois sont visibles par défaut — le bouton permet de
+// masquer les semaines déjà passées pour qui préfère un affichage plus court.
 </script>
