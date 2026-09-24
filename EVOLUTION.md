@@ -17,6 +17,10 @@ D'après `CLAUDE.md`, ce plugin est actuellement le **legacy** (l'existant), pat
 - **`class-jury-mobile.php` en double** (racine + `includes/`) — la copie à la racine est morte, à supprimer un jour pour éviter toute confusion future.
 - **Scan QR (10/09/2026)** : la bascule sur `jsQR` (au lieu de `BarcodeDetector` natif, bloqué par le CDN OVH) est qualifiée de « piste pragmatique » dans le commit du 10/09/2026 — solution de contournement, pas une solution définitive. À revisiter (par ex. héberger la librairie en local plutôt que sur un CDN externe).
 
+## 24/09/2026
+
+- **Notification push PWA au bureau** : demandé par l'utilisateur comme piste pour la refonte du plugin, en lien avec le rappel de dépôt de chèques ajouté côté `tkd-cotisations` (email quotidien pour l'instant, cf. son `REALISATION.md`). Idée : remplacer/compléter ce rappel email par une notification push sur la PWA bureau (`render_pwa_app()`), qui a déjà une infra `sp_cal_push_subs` pour les abonnements push (cf. `class-admin.php`) — à vérifier si elle est réutilisable telle quelle ou si elle est propre à un autre usage. Non implémenté, à mettre dans un coin pour la refonte, pas pour un correctif du legacy.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

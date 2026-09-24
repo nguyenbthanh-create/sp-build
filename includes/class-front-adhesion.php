@@ -216,6 +216,22 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		return '';
 	}
 
+	/**
+	 * sp_cal_eleves stocke la date de naissance en deux colonnes séparées
+	 * (date_naissance = "JJ/MM", annee_naissance = "AAAA", cf. class-admin-members.php)
+	 * alors que le formulaire front-end attend une date ISO complète — sans cette
+	 * reconstruction, to_iso_date() ne reconnaît pas "JJ/MM" seul et le champ de
+	 * pré-remplissage ressortait vide au renouvellement.
+	 */
+	private function ddn_eleve_to_iso( ?string $ddn, ?string $annee ): string {
+		$ddn = trim( (string) $ddn );
+		$annee = trim( (string) $annee );
+		if ( preg_match( '/^(\d{2})\/(\d{2})$/', $ddn, $m ) && preg_match( '/^\d{4}$/', $annee ) ) {
+			return sprintf( '%04d-%02d-%02d', (int) $annee, (int) $m[2], (int) $m[1] );
+		}
+		return $this->to_iso_date( $ddn );
+	}
+
 	/** Reconstruit un tableau "façon $_POST" depuis une fiche sp_cal_eleves, pour pré-remplir le formulaire. */
 	private function build_prefill_from_eleve( object $el ): array {
 		$extra = json_decode( $el->extra_data ?? '', true );
@@ -248,7 +264,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		return [
 			'nom'                => $el->nom                ?? '',
 			'prenom'             => $el->prenom              ?? '',
-			'date_naissance'     => $this->to_iso_date( $el->date_naissance ?? '' ),
+			'date_naissance'     => $this->ddn_eleve_to_iso( $el->date_naissance ?? '', $el->annee_naissance ?? '' ),
 			'sexe'               => $extra['sexe']           ?? '',
 			'email'              => $el->email               ?? '',
 			'telephone'          => $el->telephone           ?? '',

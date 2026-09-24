@@ -615,12 +615,32 @@ class SP_Admin_Adhesions {
 	}
 
 	// ══════════════════════════════════════════════════════════════════════════
+	// CONVERSION date de naissance : sp_adhesions_pending stocke une DATE SQL
+	// (AAAA-MM-JJ) alors que sp_cal_eleves sépare le jour/mois (JJ/MM) et
+	// l'année dans deux colonnes distinctes (cf. class-admin-members.php) —
+	// sans cette conversion la date brute finissait telle quelle dans le
+	// champ JJ/MM (bug remonté sur les fiches Ingrid IUNG / Thomas MOLAS).
+	// ══════════════════════════════════════════════════════════════════════════
+	private function split_date_naissance( string $raw ): array {
+		if ( preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $m ) ) {
+			return [ $m[3] . '/' . $m[2], $m[1] ];
+		}
+		if ( preg_match( '/^(\d{2})\/(\d{2})\/(\d{4})$/', $raw, $m ) ) {
+			return [ $m[1] . '/' . $m[2], $m[3] ];
+		}
+		if ( $raw && ( $ts = strtotime( $raw ) ) ) {
+			return [ date( 'd/m', $ts ), date( 'Y', $ts ) ];
+		}
+		return [ '', '' ];
+	}
+
+	// ══════════════════════════════════════════════════════════════════════════
 	// CRÉATION MEMBRE dans sp_cal_eleves
 	// ══════════════════════════════════════════════════════════════════════════
 	private function create_member( object $row ): int|false {
 		global $wpdb;
 
-		$annee_naissance = substr( $row->date_naissance, 0, 4 );
+		[ $ddn_jjmm, $annee_naissance ] = $this->split_date_naissance( $row->date_naissance );
 
 		$saison = get_option( 'tkd_saison_courante', '' );
 		if ( ! $saison ) {
@@ -666,7 +686,7 @@ class SP_Admin_Adhesions {
 		$data = [
 			'nom'                    => $row->nom,
 			'prenom'                 => $row->prenom,
-			'date_naissance'         => $row->date_naissance,
+			'date_naissance'         => $ddn_jjmm,
 			'annee_naissance'        => $annee_naissance,
 			'lieu_naissance'         => $row->lieu_naissance    ?? '',
 			'nationalite'            => $row->nationalite       ?? '',
@@ -807,11 +827,13 @@ class SP_Admin_Adhesions {
 			'derniere_saison_renouvelee' => $saison_cible,
 		] );
 
+		[ $ddn_jjmm, $annee_naissance ] = $this->split_date_naissance( $row->date_naissance );
+
 		$data = [
 			'nom'                    => $row->nom,
 			'prenom'                 => $row->prenom,
-			'date_naissance'         => $row->date_naissance,
-			'annee_naissance'        => substr( $row->date_naissance, 0, 4 ),
+			'date_naissance'         => $ddn_jjmm,
+			'annee_naissance'        => $annee_naissance,
 			'lieu_naissance'         => $row->lieu_naissance    ?? '',
 			'nationalite'            => $row->nationalite       ?? '',
 			'adresse'                => $row->adresse           ?? '',
