@@ -1497,7 +1497,7 @@ class SP_Cal_Members {
 
         <!-- LISTE ÉLÈVES -->
         <div class="sp-box">
-            <h2><span class="dashicons dashicons-list-view"></span> Adhérents (<?php echo count( $eleves ); ?>)
+            <h2><span class="dashicons dashicons-list-view"></span> Adhérents (<span id="sp-eleves-total"><?php echo count( $eleves ); ?></span>)
                 <a href="<?php echo esc_url( wp_nonce_url(
                     add_query_arg(array('sp_cal_print'=>'liste_appel','saison'=>($saisons[0]??'')), home_url('/') ),
                     'sp_cal_print'
@@ -1736,6 +1736,13 @@ class SP_Cal_Members {
             var fSaison  = document.getElementById('sp-flt-saison');
             var rows     = document.querySelectorAll('#sp-eleves-table tbody tr');
 
+            function updateTotal() {
+                var el = document.getElementById('sp-eleves-total');
+                if (!el) return;
+                var n = Array.prototype.filter.call(rows, function(r){ return r.style.display !== 'none'; }).length;
+                el.textContent = n;
+            }
+
             function applyFilter() {
                 var name  = fName  ? fName.value.toLowerCase()  : '';
                 var cat   = fCat   ? fCat.value                 : '';
@@ -1748,6 +1755,7 @@ class SP_Cal_Members {
                           && ( !saison || r.dataset.saison       === saison);
                     r.style.display = ok ? '' : 'none';
                 });
+                updateTotal();
                 updateCount();
             }
             if(fName)   fName.addEventListener('input',   applyFilter);
