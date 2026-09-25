@@ -1,0 +1,55 @@
+/* ============================================================
+   SP Calendar PRO – Gestion des doboks (page admin « 🥋 Doboks »)
+   ============================================================ */
+
+.spd .spd-body { margin-top: 16px; }
+.spd .spd-scroll { overflow-x: auto; }
+
+/* ── Filtres ── */
+.spd-filtres { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+.spd-filtres label { display: flex; gap: 6px; align-items: center; }
+.spd-compte { margin: 0 0 10px; }
+
+/* ── Grille de stock ── */
+.spd-grille th, .spd-grille td { text-align: center; white-space: nowrap; padding: 6px 8px; }
+.spd-grille tbody th { text-align: left; font-weight: 600; }
+.spd-grille td strong { display: block; font-size: 15px; }
+.spd-grille td small { display: block; color: #646970; font-size: 11px; }
+.spd-grille .spd-sep td { background: #f0f0f1; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+.spd-grille .spd-tot { background: #f6f7f7; }
+.spd-bas { background: #fff7ed; color: #c2410c; }
+.spd-neg { background: #fef2f2; color: #b91c1c; }
+.spd-leg { padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+.spd-inv input { width: 56px; }
+.spd details summary { cursor: pointer; }
+
+/* ── Liste adhérents ── */
+.spd-adh td { vertical-align: top; }
+.spd-meta { color: #646970; font-size: 12px; margin-top: 3px; }
+.spd-dobok { display: inline-block; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 4px; padding: 1px 6px; margin: 0 4px 3px 0; font-size: 12px; }
+.spd-presume-tag { background: #fff; border-style: dashed; }
+.spd-vide { color: #a7aaad; }
+.spd-alerte { display: block; border-radius: 4px; padding: 1px 6px; margin-bottom: 3px; font-size: 12px; }
+.spd-warn { background: #fff7ed; color: #9a3412; }
+.spd-info { background: #eff6ff; color: #1e40af; }
+
+/* ── Panneau « Gérer » ── */
+.spd-gerer > td { background: #f6f7f7 !important; }
+.spd-panneau { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.spd-col { background: #fff; border: 1px solid #dcdcde; border-radius: 6px; padding: 10px 12px; }
+.spd-col h4 { margin: 0 0 8px; }
+.spd-detenu { border-bottom: 1px solid #f0f0f1; padding: 0 0 8px; margin-bottom: 8px; }
+.spd-inline { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 4px 8px 0 0; }
+.spd-remise { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.spd-deja { font-size: 12px; color: #50575e; }
+.spd-note { width: 100%; max-width: 320px; }
+@media (max-width: 900px) {
+    .spd-panneau { grid-template-columns: 1fr; }
+}
+
+/* ── Achats / journal ── */
+.spd-form-lot { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.spd-form-lot label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+.spd-plus  { color: #15803d; font-weight: 700; }
+.spd-moins { color: #b91c1c; font-weight: 700; }
+.spd-presume p { max-width: 900px; }

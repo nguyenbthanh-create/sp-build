@@ -9,6 +9,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-admin-adhesions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -77,6 +78,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         SP_Cal_Renouvellement::get_instance( $this->db );
         SP_Cal_Roles::get_instance();
         SP_Cal_Trainer_App::get_instance( $this->db );
+        SP_Cal_Dobok::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════
