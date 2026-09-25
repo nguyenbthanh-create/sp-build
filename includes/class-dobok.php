@@ -931,7 +931,7 @@ class SP_Cal_Dobok {
 		if ( ! $rows ) {
 			echo '<div class="sp-box"><p>Aucun adhérent à afficher.</p></div>';
 		} else {
-			echo '<table class="widefat striped spd-adh"><thead><tr><th>Adhérent</th><th>Dobok blanc</th><th>Dobok couleur</th><th>Alertes</th><th></th></tr></thead><tbody>';
+			echo '<table class="widefat striped spd-adh"><thead><tr><th>Adhérent</th><th>Taille</th><th>Dobok blanc</th><th>Dobok couleur</th><th>Alertes</th><th></th></tr></thead><tbody>';
 			foreach ( $rows as [ $el, $sit, $alertes ] ) {
 				$this->render_ligne_adherent( $el, $sit, $alertes, $saison, $retour, $open === (int) $el->id );
 			}
@@ -966,11 +966,17 @@ class SP_Cal_Dobok {
 		$fiche = admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . $id );
 
 		echo '<tr id="el-' . $id . '">';
-		printf( '<td><a href="%s"><strong>%s</strong> %s</a><div class="spd-meta">%s · %s%s · %s</div></td>',
+		printf( '<td><a href="%s"><strong>%s</strong> %s</a><div class="spd-meta">%s · %s%s</div></td>',
 			esc_url( $fiche ), esc_html( mb_strtoupper( $el->nom ) ), esc_html( $el->prenom ),
 			esc_html( $el->grade ?: 'grade ?' ),
-			esc_html( $cat ?: 'catégorie ?' ), $sexe ? ' ' . esc_html( $sexe ) : '',
-			esc_html( ( $el->taille_cm ?? '' ) !== '' ? $el->taille_cm . ' cm' : 'taille ?' ) );
+			esc_html( $cat ?: 'catégorie ?' ), $sexe ? ' ' . esc_html( $sexe ) : '' );
+
+		// Taille actuelle : valeur lue en cm, ou saisie brute illisible signalée telle quelle.
+		$cm_brut = trim( (string) ( $el->taille_cm ?? '' ) );
+		$cm      = self::parse_cm( $cm_brut );
+		if ( $cm !== null )     printf( '<td class="spd-taille"><strong>%s</strong> cm</td>', esc_html( (string) round( $cm ) ) );
+		elseif ( $cm_brut !== '' ) printf( '<td class="spd-taille"><span class="spd-alerte spd-warn">%s</span></td>', esc_html( $cm_brut ) );
+		else                    echo '<td class="spd-taille"><span class="spd-vide">—</span></td>';
 
 		foreach ( [ 'blanc', 'couleur' ] as $type ) {
 			$s = $sit[ $type ];
@@ -994,7 +1000,7 @@ class SP_Cal_Dobok {
 		printf( '<td><button type="button" class="button spd-toggle" data-id="%d">%s</button></td></tr>', $id, $ouvert ? 'Fermer' : 'Gérer' );
 
 		// Panneau de gestion
-		printf( '<tr class="spd-gerer" id="gerer-%d"%s><td colspan="5"><div class="spd-panneau">', $id, $ouvert ? '' : ' hidden' );
+		printf( '<tr class="spd-gerer" id="gerer-%d"%s><td colspan="6"><div class="spd-panneau">', $id, $ouvert ? '' : ' hidden' );
 		foreach ( [ 'blanc' => 'Dobok blanc', 'couleur' => 'Dobok couleur' ] as $type => $titre ) {
 			$s = $sit[ $type ];
 			echo '<div class="spd-col"><h4>' . esc_html( $titre ) . '</h4>';

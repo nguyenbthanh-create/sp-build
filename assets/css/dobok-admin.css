@@ -53,3 +53,4 @@
 .spd-plus  { color: #15803d; font-weight: 700; }
 .spd-moins { color: #b91c1c; font-weight: 700; }
 .spd-presume p { max-width: 900px; }
+.spd-adh .spd-taille { white-space: nowrap; }
