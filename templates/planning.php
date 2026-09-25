@@ -217,7 +217,7 @@ for ($w=0;$w<6;$w++) {
                     if ($bg && !$is_today) echo ' style="background:'.esc_attr($bg).';"';
                 ?>>
                     <?php echo $days_court[$dow]; ?><br>
-                    <span style="font-size:9px;font-weight:400;opacity:.8;"><?php echo $day_dt->format('d/m'); ?></span>
+                    <span class="sp-th-date"><?php echo $day_dt->format('d/m'); ?></span>
                 </th>
                 <?php endforeach; ?>
             </tr>
@@ -269,14 +269,14 @@ for ($w=0;$w<6;$w++) {
                             $is_annule = !empty($item['annul_id']);
                             $is_ponct  = !empty($item['ponctuel']);
                             $class = $is_annule ? 'sp-plan-event sp-plan-annule' : ($is_ponct ? 'sp-plan-event sp-plan-ponctuel' : 'sp-plan-event');
-                            $style = $is_annule
-                                ? 'border-left:4px solid #ef4444;background:#fef2f2;color:#991b1b;'
-                                : "background:{$color};color:#fff;";
+                            // Couleur de catégorie exposée en variable CSS : le style sobre (teinte claire +
+                            // liseré coloré) est défini dans la feuille du template ci-dessous.
+                            $style = $is_annule ? '' : '--c:' . $color . ';';
                     ?>
                     <div class="<?php echo $class; ?>" style="<?php echo esc_attr($style); ?>">
                         <?php if ($is_annule): ?>
-                            <span style="color:#ef4444;font-size:9px;">🚫 Annulé</span>
-                            <span style="text-decoration:line-through;opacity:.5;font-size:10px;"><?php echo esc_html($item['titre']); ?></span>
+                            <span class="sp-plan-annule-tag">🚫 Annulé</span>
+                            <span class="sp-plan-annule-titre"><?php echo esc_html($item['titre']); ?></span>
                         <?php else: ?>
                             <?php if ($icon) echo '<span class="sp-plan-icon">'.esc_html($icon).'</span> '; ?>
                             <?php if ($is_ponct): ?>
@@ -337,14 +337,14 @@ for ($w=0;$w<6;$w++) {
             </span>
             <?php endforeach; ?>
             <?php if ( $sp_we_color ) : ?>
-            <span class="sp-legend-item" style="margin-left:8px;border-left:1px solid #e2e8f0;padding-left:12px;">
-                <span class="sp-legend-dot" style="background:<?php echo esc_attr($sp_we_color); ?>;border:1px solid #d1d5db;border-radius:2px;width:14px;height:14px;"></span>
+            <span class="sp-legend-item sp-legend-sep">
+                <span class="sp-legend-dot sp-legend-swatch" style="background:<?php echo esc_attr($sp_we_color); ?>;"></span>
                 Week-end
             </span>
             <?php endif; ?>
             <?php if ( $sp_vac_color && ! empty($sp_vacances) ) : ?>
             <span class="sp-legend-item">
-                <span class="sp-legend-dot" style="background:<?php echo esc_attr($sp_vac_color); ?>;border:1px solid #d1d5db;border-radius:2px;width:14px;height:14px;"></span>
+                <span class="sp-legend-dot sp-legend-swatch" style="background:<?php echo esc_attr($sp_vac_color); ?>;"></span>
                 Vacances scolaires
             </span>
             <?php endif; ?>
@@ -359,30 +359,93 @@ for ($w=0;$w<6;$w++) {
 </div><!-- #sp-planning-wrapper -->
 
 <style>
-/* Règles propres au template planning — le bandeau nav (.sp-planning-nav, .sp-planning-title,
-   .sp-plan-nav-btn) est géré par calendar.css (v10.14) et ne doit PAS être redéfini ici. */
-#sp-planning-wrapper { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; max-width:100%; }
+/* Habillage sobre du planning, aligné sur tkdclaira.fr : fond blanc, texte #222, titres Lato,
+   rouge #D4000F en accent unique. Tout est préfixé #sp-planning-wrapper pour l'emporter sur
+   les styles de table du thème sans toucher au calendrier (calendar.css partage .sp-plan-nav-btn). */
+#sp-planning-wrapper {
+    --sp-red:#D4000F; --sp-ink:#222; --sp-muted:#6b6b6b; --sp-line:#e8e5e2; --sp-soft:#f7f5f3;
+    font-family:inherit; color:var(--sp-ink); max-width:100%;
+}
 
-.sp-week-block { margin-bottom:24px; border-radius:10px; overflow:hidden; border:1px solid #e2e8f0; background:#fff; }
-.sp-week-current { border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,.15); }
-.sp-week-past { opacity:.7; }
-.sp-week-header { background:#1e3a5f; padding:10px 16px; display:flex; align-items:center; gap:12px; border-bottom:1px solid rgba(255,255,255,.15); }
-.sp-week-label { font-weight:700; font-size:13px; color:#fff; }
-.sp-week-empty { font-size:12px; color:rgba(255,255,255,.6); margin-left:auto; }
+/* Navigation mois */
+#sp-planning-wrapper .sp-planning-nav {
+    background:transparent; color:var(--sp-ink); border-radius:0; padding:0 0 14px; margin-bottom:22px;
+    border-bottom:1px solid var(--sp-line); gap:14px; flex-wrap:wrap;
+}
+#sp-planning-wrapper .sp-planning-title {
+    font-family:Lato,sans-serif; font-size:22px; font-weight:400; letter-spacing:.14em; color:var(--sp-ink);
+    text-transform:uppercase; position:relative; padding-bottom:10px;
+}
+#sp-planning-wrapper .sp-planning-title::after {
+    content:''; position:absolute; left:50%; bottom:0; width:36px; height:2px; margin-left:-18px; background:var(--sp-red);
+}
+#sp-planning-wrapper .sp-plan-nav-btn {
+    background:#fff; color:var(--sp-ink); border:1px solid #d9d5d1; border-radius:50%; width:36px; height:36px;
+    font-size:20px; font-weight:400; transition:border-color .15s,color .15s;
+}
+#sp-planning-wrapper .sp-plan-nav-btn:hover { background:#fff; border-color:var(--sp-red); color:var(--sp-red); }
+#sp-planning-wrapper .sp-plan-toggle-past {
+    background:transparent; color:var(--sp-muted); border:1px solid #d9d5d1; border-radius:20px; padding:6px 14px;
+    font-size:12px; letter-spacing:.03em; margin-left:0 !important; transition:border-color .15s,color .15s;
+}
+#sp-planning-wrapper .sp-plan-toggle-past:hover { border-color:var(--sp-red); color:var(--sp-red); background:transparent; }
 
-.sp-planning-scroll { overflow-x:auto; }
-.sp-planning-table { width:100%; border-collapse:collapse; min-width:500px; }
-.sp-th-time { background:#1e3a5f; color:#fff; padding:7px 8px; font-size:10px; text-transform:uppercase; width:72px; text-align:center; border-right:1px solid rgba(255,255,255,.2); }
-.sp-th-day { background:#1e3a5f; color:#fff; padding:7px 6px; font-size:10px; text-transform:uppercase; text-align:center; min-width:100px; border-right:1px solid rgba(255,255,255,.2); }
-.sp-th-day.sp-col-today { background:#2563eb; }
-.sp-td-time { background:#f8fafc; color:#374151; font-weight:700; font-size:10px; text-align:center; padding:7px 5px; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; white-space:nowrap; }
-.sp-td-slot { padding:5px 6px; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; vertical-align:top; min-height:36px; }
-.sp-td-slot.sp-col-today { background:#eff6ff; }
-.sp-plan-annule { opacity:.7; }
+/* Bloc semaine */
+#sp-planning-wrapper .sp-week-block { margin-bottom:26px; border:1px solid var(--sp-line); border-radius:6px; overflow:hidden; background:#fff; box-shadow:none; }
+#sp-planning-wrapper .sp-week-current { border-color:var(--sp-line); box-shadow:inset 3px 0 0 var(--sp-red); }
+#sp-planning-wrapper .sp-week-past { opacity:.6; }
+#sp-planning-wrapper .sp-week-header { background:#fff; padding:12px 18px; border-bottom:1px solid var(--sp-line); }
+#sp-planning-wrapper .sp-week-label { font-family:Lato,sans-serif; font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--sp-ink); }
+#sp-planning-wrapper .sp-week-current .sp-week-label { color:var(--sp-red); }
+#sp-planning-wrapper .sp-week-empty { font-size:12px; color:var(--sp-muted); font-style:italic; }
 
-.sp-planning-legend { display:flex !important; flex-wrap:wrap; gap:10px; padding:10px 16px; border-top:1px solid #f0f0f0; background:#fafafa !important; visibility:visible !important; opacity:1 !important; }
-.sp-legend-item { display:flex !important; align-items:center; gap:5px; font-size:12px; color:#374151; font-weight:600; }
-.sp-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+/* Tableau */
+#sp-planning-wrapper .sp-planning-scroll { overflow-x:auto; }
+#sp-planning-wrapper .sp-planning-table { width:100%; border-collapse:collapse; min-width:640px; margin:0; border:0; table-layout:fixed; }
+#sp-planning-wrapper .sp-planning-table th,
+#sp-planning-wrapper .sp-planning-table td { border:0; border-bottom:1px solid #eeebe8; border-right:1px solid #f1eeeb; }
+#sp-planning-wrapper .sp-planning-table th:last-child,
+#sp-planning-wrapper .sp-planning-table td:last-child { border-right:0; }
+#sp-planning-wrapper .sp-planning-table tr:last-child td { border-bottom:0; }
+#sp-planning-wrapper .sp-th-time,
+#sp-planning-wrapper .sp-th-day {
+    background:var(--sp-soft); color:var(--sp-ink); font-family:Lato,sans-serif; font-size:11px; font-weight:700;
+    letter-spacing:.1em; padding:10px 6px; border-bottom:1px solid var(--sp-line);
+}
+#sp-planning-wrapper .sp-th-time { width:96px; color:var(--sp-muted); }
+#sp-planning-wrapper .sp-th-date { display:block; font-size:11px; font-weight:400; letter-spacing:.02em; color:var(--sp-muted); margin-top:2px; }
+#sp-planning-wrapper .sp-th-day.sp-col-today { background:var(--sp-soft); color:var(--sp-red); box-shadow:inset 0 -2px 0 var(--sp-red); }
+#sp-planning-wrapper .sp-th-day.sp-col-today .sp-th-date { color:var(--sp-red); }
+#sp-planning-wrapper .sp-td-time { background:#fcfbfa; color:var(--sp-muted); font-size:12px; font-weight:600; padding:10px 6px; white-space:nowrap; }
+#sp-planning-wrapper .sp-td-slot { background:#fff; padding:6px; vertical-align:top; }
+#sp-planning-wrapper .sp-td-slot.sp-col-today { background:#fdf6f6; }
+
+/* Pastilles de cours : teinte claire + liseré à la couleur de la catégorie */
+#sp-planning-wrapper .sp-plan-event {
+    --c:#8a8a8a; background:#f4f4f4; color:var(--sp-ink); border-left:3px solid var(--c); border-radius:3px;
+    padding:5px 8px; margin-bottom:4px; font-size:12px; line-height:1.35; overflow:hidden;
+}
+@supports (background:color-mix(in srgb, red 10%, white)) {
+    #sp-planning-wrapper .sp-plan-event { background:color-mix(in srgb, var(--c) 14%, #fff); }
+}
+#sp-planning-wrapper .sp-plan-label { font-size:12px; font-weight:600; }
+#sp-planning-wrapper .sp-plan-icon { font-size:12px; }
+#sp-planning-wrapper .sp-plan-doc-link { color:var(--sp-ink); }
+#sp-planning-wrapper .sp-plan-event.sp-plan-annule { --c:var(--sp-red); background:#fdf2f2; color:#8a1c1c; opacity:1; }
+#sp-planning-wrapper .sp-plan-annule-tag { color:var(--sp-red); font-size:11px; font-weight:700; margin-right:4px; }
+#sp-planning-wrapper .sp-plan-annule-titre { text-decoration:line-through; opacity:.55; font-size:12px; }
+
+/* Légende */
+#sp-planning-wrapper .sp-planning-legend { display:flex !important; flex-wrap:wrap; gap:8px 18px; padding:12px 18px; border-top:1px solid var(--sp-line); background:#fff !important; visibility:visible !important; opacity:1 !important; }
+#sp-planning-wrapper .sp-legend-item { display:flex !important; align-items:center; gap:6px; font-size:12px; color:var(--sp-muted); font-weight:400; }
+#sp-planning-wrapper .sp-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+#sp-planning-wrapper .sp-legend-swatch { width:14px; height:14px; border-radius:2px; border:1px solid #d9d5d1; }
+#sp-planning-wrapper .sp-legend-sep { margin-left:6px; padding-left:18px; border-left:1px solid var(--sp-line); }
+
+@media (max-width:640px) {
+    #sp-planning-wrapper .sp-planning-title { font-size:17px; letter-spacing:.1em; }
+    #sp-planning-wrapper .sp-week-header { padding:10px 14px; }
+}
 </style>
 
 <script>
