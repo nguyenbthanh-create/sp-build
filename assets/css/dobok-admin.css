@@ -54,3 +54,22 @@
 .spd-moins { color: #b91c1c; font-weight: 700; }
 .spd-presume p { max-width: 900px; }
 .spd-adh .spd-taille { white-space: nowrap; }
+
+/* ── Demandes / distribution (utilisable sur téléphone) ── */
+.spd-h2 { font-size: 16px; margin: 22px 0 10px; display: flex; align-items: center; gap: 8px; }
+.spd-nb { background: #dcdcde; border-radius: 10px; padding: 0 8px; font-size: 12px; }
+.spd-cartes { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.spd-carte { background: #fff; border: 1px solid #c3c4c7; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.spd-carte-tete a { font-size: 15px; text-decoration: none; }
+.spd-carte-tete .spd-meta { display: block; }
+.spd-carte-quoi { font-size: 14px; }
+.spd-carte-note { font-style: italic; color: #50575e; font-size: 13px; }
+.spd-carte-form { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 4px; }
+.spd-carte-form input[type=text] { flex: 1 1 160px; }
+.spd .button.spd-gros { font-size: 15px; padding: 4px 18px; min-height: 40px; }
+.spd-carte-plus summary { cursor: pointer; color: #2271b1; font-size: 13px; }
+.spd-att { color: #b45309; font-weight: 600; }
+@media (max-width: 600px) {
+    .spd-cartes { grid-template-columns: 1fr; }
+    .spd .nav-tab-wrapper .nav-tab { font-size: 12px; padding: 4px 8px; }
+}

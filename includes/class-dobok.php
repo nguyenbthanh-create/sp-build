@@ -1,6 +1,7 @@
 <?php
 /**
- * Gestion des doboks prêtés par le club — V1 (stock, achats, journal, dotations).
+ * Gestion des doboks prêtés par le club — V1 (stock, achats, journal, dotations)
+ * + V2 (demandes des adhérents depuis leur fiche, réservations, distribution, mails).
  * Spécification complète : EVOLUTION.md, entrée du 25/09/2026.
  *
  * Principe : AUCUN compteur de stock n'est stocké. Tout est déduit d'un journal de
@@ -15,8 +16,14 @@
  *   - couleur : catégorie de compétition (année de naissance) × sexe, acheté par ensemble.
  * Un adhérent peut garder son ancien modèle / sa taille : les écarts sont signalés, pas imposés.
  *
- * Hors V1 (cf. EVOLUTION.md) : demandes côté adhérent (fiche token), réservations,
- * écran mobile de distribution, mails, aide à la commande.
+ * Demandes (V2) : l'adhérent demande un échange / une restitution depuis sa fiche (lien
+ * ?token=). Si le stock disponible le permet, le dobok souhaité est aussitôt RÉSERVÉ
+ * (statut « ouverte ») pour ne pas le promettre deux fois ; sinon la demande passe « en
+ * attente » et sera réservée automatiquement à l'arrivée d'un lot ou d'un retour
+ * (promouvoir_attentes()). Disponible = stock effectif − réservé.
+ *
+ * Hors V2 (cf. EVOLUTION.md) : question dobok dans le formulaire de renouvellement,
+ * aide à la commande, demandes automatiques (ceinture noire, changement de catégorie).
  *
  * @package SP_Build
  */
@@ -28,7 +35,7 @@ class SP_Cal_Dobok {
 	private static ?self $instance = null;
 	private $db;
 
-	const SCHEMA_VERSION = '1';
+	const SCHEMA_VERSION = '2';
 	const PAGE           = 'sp-cal-dobok';
 
 	const MODELES = [
@@ -64,6 +71,23 @@ class SP_Cal_Dobok {
 		'retour'       => 'Retour (départ, plus besoin)',
 	];
 
+	// Nature d'une demande → motif de la restitution qui la solde.
+	const NATURES = [
+		'taille'       => [ 'label' => 'Changement de taille',   'motif' => 'taille' ],
+		'modele'       => [ 'label' => 'Changement de modèle',   'motif' => 'modele' ],
+		'remplacement' => [ 'label' => 'Remplacement (abîmé)',   'motif' => 'remplacement' ],
+		'restitution'  => [ 'label' => 'Restitution',            'motif' => 'retour' ],
+		'dotation'     => [ 'label' => 'Premier dobok',          'motif' => '' ],
+	];
+
+	const STATUTS = [
+		'ouverte'    => 'Réservée / à traiter',
+		'en_attente' => 'En attente de stock',
+		'terminee'   => 'Terminée',
+		'refusee'    => 'Refusée',
+		'annulee'    => 'Annulée',
+	];
+
 	const REGLAGES_DEFAUT = [
 		'taille_min'     => 100,
 		'taille_max'     => 200,
@@ -72,6 +96,10 @@ class SP_Cal_Dobok {
 		'cadet_age_max'  => 14,
 		'master_age_min' => 50,
 		'annee_ref'      => 'fin',
+		'demandes_on'    => 1,
+		'mail_bureau'    => 1,
+		'email_bureau'   => '',
+		'mail_famille'   => 1,
 	];
 
 	public static function get_instance( $db = null ): self {
@@ -87,9 +115,15 @@ class SP_Cal_Dobok {
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue' ] );
 
 		foreach ( [ 'remise', 'restitution', 'perte', 'confirmer', 'corriger', 'presumer',
-		            'lot', 'supprimer_lot', 'inventaire', 'supprimer_mvt', 'reglages' ] as $a ) {
+		            'lot', 'supprimer_lot', 'inventaire', 'supprimer_mvt', 'reglages',
+		            'dem_terminer', 'dem_annuler', 'dem_refuser' ] as $a ) {
 			add_action( 'admin_post_sp_dobok_' . $a, [ $this, 'handle_' . $a ] );
 		}
+
+		// Fiche adhérent (lien ?token=) : bloc « Mes doboks » + traitement de ses formulaires.
+		// Priorité 5 : avant SpCalPro_Token::maybe_render_fiche() (10), qui affiche la fiche et exit.
+		add_action( 'template_redirect',                  [ $this, 'handle_front' ], 5 );
+		add_action( 'sp_cal_fiche_membre_apres_grade',    [ $this, 'render_bloc_adherent' ] );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -97,6 +131,7 @@ class SP_Cal_Dobok {
 	// ══════════════════════════════════════════════════════════════════════
 	private function t_lots(): string { global $wpdb; return $wpdb->prefix . 'sp_cal_dobok_lots'; }
 	private function t_mvt(): string  { global $wpdb; return $wpdb->prefix . 'sp_cal_dobok_mouvements'; }
+	private function t_dem(): string  { global $wpdb; return $wpdb->prefix . 'sp_cal_dobok_demandes'; }
 
 	private function table_eleves(): string {
 		global $wpdb;
@@ -106,7 +141,8 @@ class SP_Cal_Dobok {
 	private function tables_ok(): bool {
 		global $wpdb;
 		return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_mvt() ) ) === $this->t_mvt()
-			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_lots() ) ) === $this->t_lots();
+			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_lots() ) ) === $this->t_lots()
+			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_dem() ) ) === $this->t_dem();
 	}
 
 	// Même garde de version que SP_Front_Adhesion::create_table() : la version n'est
@@ -155,6 +191,29 @@ class SP_Cal_Dobok {
 			KEY ref (modele,taille)
 		) $charset;" );
 
+		dbDelta( "CREATE TABLE {$this->t_dem()} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			eleve_id mediumint(9) NOT NULL DEFAULT 0,
+			type_dobok varchar(10) NOT NULL DEFAULT '',
+			nature varchar(20) NOT NULL DEFAULT '',
+			rendu_modele varchar(20) NOT NULL DEFAULT '',
+			rendu_taille smallint(6) NOT NULL DEFAULT 0,
+			souhait_modele varchar(20) NOT NULL DEFAULT '',
+			souhait_taille smallint(6) NOT NULL DEFAULT 0,
+			statut varchar(20) NOT NULL DEFAULT 'ouverte',
+			origine varchar(10) NOT NULL DEFAULT 'adherent',
+			hors_regle tinyint(1) NOT NULL DEFAULT 0,
+			note_adherent varchar(255) NOT NULL DEFAULT '',
+			note_bureau varchar(255) NOT NULL DEFAULT '',
+			saison varchar(20) NOT NULL DEFAULT '',
+			created_at datetime NOT NULL,
+			updated_at datetime DEFAULT NULL,
+			traite_par bigint(20) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			KEY eleve_id (eleve_id),
+			KEY statut (statut)
+		) $charset;" );
+
 		if ( $this->tables_ok() ) {
 			update_option( 'sp_dobok_schema_version', self::SCHEMA_VERSION );
 		} else {
@@ -166,7 +225,15 @@ class SP_Cal_Dobok {
 	// MENU / ASSETS
 	// ══════════════════════════════════════════════════════════════════════
 	public function add_menu(): void {
-		add_submenu_page( 'sp-cal-pro', 'Doboks', '🥋 Doboks', SP_Cal_Roles::CAP_GESTION_ADHESIONS, self::PAGE, [ $this, 'render_page' ] );
+		// Pastille du menu : demandes réservées / retours attendus, à traiter au club.
+		$n     = $this->front_pret() && current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ? $this->nb_demandes_a_traiter() : 0;
+		$titre = '🥋 Doboks' . ( $n ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '' );
+		add_submenu_page( 'sp-cal-pro', 'Doboks', $titre, SP_Cal_Roles::CAP_GESTION_ADHESIONS, self::PAGE, [ $this, 'render_page' ] );
+	}
+
+	private function nb_demandes_a_traiter(): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$this->t_dem()} WHERE statut = 'ouverte'" );
 	}
 
 	public function enqueue( $hook ): void {
@@ -386,6 +453,228 @@ class SP_Cal_Dobok {
 		return $out;
 	}
 
+	// ── Demandes ─────────────────────────────────────────────────────────
+
+	/** Par référence : [modele][taille] => ['reserve' => n, 'attente' => n, 'attendu' => n] */
+	private function demandes_par_ref(): array {
+		global $wpdb;
+		$out  = [];
+		$rows = $wpdb->get_results(
+			"SELECT souhait_modele AS m, souhait_taille AS t, statut, COUNT(*) AS n FROM {$this->t_dem()}
+			 WHERE statut IN ('ouverte','en_attente') AND souhait_modele != ''
+			 GROUP BY souhait_modele, souhait_taille, statut"
+		);
+		foreach ( (array) $rows as $r ) {
+			$out[ $r->m ][ (int) $r->t ][ $r->statut === 'ouverte' ? 'reserve' : 'attente' ] = (int) $r->n;
+		}
+		$rows = $wpdb->get_results(
+			"SELECT rendu_modele AS m, rendu_taille AS t, COUNT(*) AS n FROM {$this->t_dem()}
+			 WHERE statut IN ('ouverte','en_attente') AND rendu_modele != ''
+			 GROUP BY rendu_modele, rendu_taille"
+		);
+		foreach ( (array) $rows as $r ) {
+			$out[ $r->m ][ (int) $r->t ]['attendu'] = (int) $r->n;
+		}
+		return $out;
+	}
+
+	/** Stock effectif moins ce qui est déjà promis (réservé) : ce qu'on peut encore promettre. */
+	private function disponible( string $modele, int $taille ): int {
+		global $wpdb;
+		$reserve = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$this->t_dem()} WHERE statut = 'ouverte' AND souhait_modele = %s AND souhait_taille = %d",
+			$modele, $taille
+		) );
+		return $this->stock_de( $modele, $taille ) - $reserve;
+	}
+
+	private function demande( int $id ): ?object {
+		global $wpdb;
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->t_dem()} WHERE id = %d", $id ) ) ?: null;
+	}
+
+	/** Demandes non closes : [eleve_id][type_dobok] => demande (une seule par type et par adhérent). */
+	private function demandes_ouvertes( ?array $eleve_ids = null ): array {
+		global $wpdb;
+		$where = "statut IN ('ouverte','en_attente')";
+		if ( $eleve_ids !== null ) {
+			if ( ! $eleve_ids ) return [];
+			$where .= ' AND eleve_id IN (' . implode( ',', array_map( 'intval', $eleve_ids ) ) . ')';
+		}
+		$out = [];
+		foreach ( (array) $wpdb->get_results( "SELECT * FROM {$this->t_dem()} WHERE $where ORDER BY id" ) as $d ) {
+			$out[ (int) $d->eleve_id ][ $d->type_dobok ] = $d;
+		}
+		return $out;
+	}
+
+	private function maj_demande( int $id, array $data ): void {
+		global $wpdb;
+		$data['updated_at'] = current_time( 'mysql' );
+		$data['traite_par'] = get_current_user_id();
+		$wpdb->update( $this->t_dem(), $data, [ 'id' => $id ] );
+	}
+
+	/**
+	 * Enregistre une demande : réservée tout de suite si le stock disponible le permet,
+	 * sinon en attente. « 1 échange de taille par saison » : non bloquant, juste marqué.
+	 */
+	private function creer_demande( object $el, array $d ): ?object {
+		global $wpdb;
+		$statut = 'ouverte';
+		if ( $d['souhait_modele'] !== '' && $this->disponible( $d['souhait_modele'], $d['souhait_taille'] ) <= 0 ) {
+			$statut = 'en_attente';
+		}
+		$hors_regle = $d['nature'] === 'taille'
+			&& ( $this->echanges_taille( $this->saison_courante() )[ (int) $el->id ][ $d['type_dobok'] ] ?? 0 ) >= 1;
+
+		$wpdb->insert( $this->t_dem(), [
+			'eleve_id'       => (int) $el->id,
+			'type_dobok'     => $d['type_dobok'],
+			'nature'         => $d['nature'],
+			'rendu_modele'   => $d['rendu_modele'],
+			'rendu_taille'   => $d['rendu_taille'],
+			'souhait_modele' => $d['souhait_modele'],
+			'souhait_taille' => $d['souhait_taille'],
+			'statut'         => $statut,
+			'origine'        => $d['origine'] ?? 'adherent',
+			'hors_regle'     => $hors_regle ? 1 : 0,
+			'note_adherent'  => mb_substr( (string) ( $d['note_adherent'] ?? '' ), 0, 255 ),
+			'saison'         => $this->saison_courante(),
+			'created_at'     => current_time( 'mysql' ),
+		] );
+		$dem = $wpdb->insert_id ? $this->demande( (int) $wpdb->insert_id ) : null;
+		if ( $dem ) {
+			$this->mail_bureau( $el, $dem, 'nouvelle' );
+			$this->mail_famille( $el, $dem, $statut === 'ouverte' ? 'recue' : 'attente' );
+		}
+		return $dem;
+	}
+
+	/**
+	 * Réserve, dans l'ordre d'arrivée, les demandes en attente dont le dobok est de nouveau
+	 * disponible (lot reçu, retour, inventaire, demande annulée…) et prévient la famille.
+	 */
+	private function promouvoir_attentes(): int {
+		global $wpdb;
+		$n = 0;
+		$attentes = $wpdb->get_results( "SELECT * FROM {$this->t_dem()} WHERE statut = 'en_attente' ORDER BY created_at, id" );
+		foreach ( (array) $attentes as $d ) {
+			if ( $this->disponible( $d->souhait_modele, (int) $d->souhait_taille ) <= 0 ) continue;
+			$wpdb->update( $this->t_dem(), [ 'statut' => 'ouverte', 'updated_at' => current_time( 'mysql' ) ], [ 'id' => (int) $d->id ] );
+			$d->statut = 'ouverte';
+			$el = $this->eleve( (int) $d->eleve_id );
+			if ( $el ) $this->mail_famille( $el, $d, 'reservee' );
+			$n++;
+		}
+		return $n;
+	}
+
+	/**
+	 * Après une action directe du bureau (onglet Adhérents), solde la demande ouverte de
+	 * l'adhérent qu'elle satisfait, pour qu'elle ne reste pas en suspens.
+	 */
+	private function solder_demande_liee( int $eleve_id, string $type, string $souhait_modele, int $souhait_taille, string $rendu_modele = '', int $rendu_taille = 0 ): void {
+		$d = $this->demandes_ouvertes( [ $eleve_id ] )[ $eleve_id ][ $type ] ?? null;
+		if ( ! $d ) return;
+		$ok = $souhait_modele !== ''
+			? ( $d->souhait_modele === $souhait_modele && (int) $d->souhait_taille === $souhait_taille )
+			: ( $d->nature === 'restitution' && $d->rendu_modele === $rendu_modele && (int) $d->rendu_taille === $rendu_taille );
+		if ( $ok ) $this->maj_demande( (int) $d->id, [ 'statut' => 'terminee', 'note_bureau' => 'Traitée depuis l\'onglet Adhérents' ] );
+	}
+
+	private static function libelle_demande( object $d ): string {
+		$rendu   = $d->rendu_modele   ? self::label( $d->rendu_modele ) . ' ' . (int) $d->rendu_taille : '';
+		$souhait = $d->souhait_modele ? self::label( $d->souhait_modele ) . ' ' . (int) $d->souhait_taille : '';
+		switch ( $d->nature ) {
+			case 'restitution':  return 'Rend ' . $rendu;
+			case 'dotation':     return 'Premier dobok : ' . $souhait;
+			case 'remplacement': return 'Remplace ' . $rendu . ' (abîmé)';
+		}
+		return $rendu . ' → ' . $souhait;
+	}
+
+	// ── Mails ────────────────────────────────────────────────────────────
+
+	private function email_bureau(): string {
+		$e = trim( (string) $this->reglages()['email_bureau'] );
+		return $e !== '' ? $e : (string) get_option( 'sp_cal_notif_email', get_option( 'admin_email' ) );
+	}
+
+	/** Même logique que SpCalPro_Token::get_fiche_url() (instance non accessible d'ici). */
+	private function fiche_url( string $token ): string {
+		$page_url = (string) get_option( 'sp_cal_fiche_membre_url', '' );
+		if ( ! $page_url ) {
+			global $wpdb;
+			$page = $wpdb->get_row(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_status='publish' AND post_type='page'
+				 AND post_content LIKE '%sp_cal_fiche_membre%' LIMIT 1"
+			);
+			$page_url = $page ? get_permalink( $page->ID ) : home_url( '/' );
+		}
+		return add_query_arg( 'token', $token, trailingslashit( $page_url ) );
+	}
+
+	private function envoyer( string $dest, string $sujet, string $corps ): void {
+		if ( $dest === '' ) return;
+		$club = get_option( 'blogname', 'Club' );
+		wp_mail( $dest, '[' . $club . '] ' . $sujet, $corps . "\n\n-- \n" . $club, [ 'Content-Type: text/plain; charset=UTF-8' ] );
+	}
+
+	private function mail_bureau( object $el, object $d, string $evenement ): void {
+		if ( ! $this->reglages()['mail_bureau'] ) return;
+		$qui  = $el->prenom . ' ' . mb_strtoupper( $el->nom );
+		$type = $d->type_dobok === 'blanc' ? 'blanc' : 'couleur';
+		if ( $evenement === 'annulee' ) {
+			$this->envoyer( $this->email_bureau(), 'Dobok : demande annulée par ' . $qui,
+				$qui . " a annulé sa demande (dobok $type) :\n" . self::libelle_demande( $d ) );
+			return;
+		}
+		$alertes = [];
+		if ( $d->hors_regle )               $alertes[] = '⚠ Déjà un échange de taille cette saison (règle : 1 par saison).';
+		if ( $d->statut === 'en_attente' )  $alertes[] = '⚠ Pas de stock disponible : demande en attente.';
+		$corps  = "Nouvelle demande de $qui (dobok $type) :\n" . self::libelle_demande( $d ) . "\n";
+		$corps .= "Statut : " . ( self::STATUTS[ $d->statut ] ?? $d->statut ) . "\n";
+		if ( $d->note_adherent ) $corps .= "Précisions : " . $d->note_adherent . "\n";
+		if ( $alertes )          $corps .= "\n" . implode( "\n", $alertes ) . "\n";
+		$corps .= "\nÀ traiter : " . admin_url( 'admin.php?page=' . self::PAGE . '&tab=demandes' );
+		$this->envoyer( $this->email_bureau(), ( $alertes ? '⚠ ' : '' ) . 'Dobok : demande de ' . $qui, $corps );
+	}
+
+	private function mail_famille( object $el, object $d, string $evenement ): void {
+		if ( ! $this->reglages()['mail_famille'] ) return;
+		$dest = $el->email_parent ?: $el->email;
+		if ( ! $dest || ! is_email( $dest ) ) return;
+		$qui  = $el->prenom . ' ' . mb_strtoupper( $el->nom );
+		$lib  = self::libelle_demande( $d );
+		switch ( $evenement ) {
+			case 'recue':
+				$sujet = 'Demande de dobok enregistrée';
+				$corps = "Bonjour,\n\nLa demande pour $qui est bien enregistrée : $lib.\n"
+					. ( $d->souhait_modele ? "Le dobok est réservé : il vous sera remis lors d'une prochaine distribution au club." : "Pensez à rapporter le dobok au club." )
+					. ( $d->hors_regle ? "\n\nUn échange de taille a déjà eu lieu cette saison : le bureau examinera la demande." : '' );
+				break;
+			case 'attente':
+				$sujet = 'Demande de dobok en attente';
+				$corps = "Bonjour,\n\nLa demande pour $qui est enregistrée : $lib.\n"
+					. "Cette taille n'est pas disponible pour le moment : la demande est en liste d'attente. En attendant, gardez le dobok actuel. Vous serez prévenu(e) dès qu'il sera réservé.";
+				break;
+			case 'reservee':
+				$sujet = 'Votre dobok est réservé';
+				$corps = "Bonjour,\n\nBonne nouvelle : le dobok demandé pour $qui est maintenant réservé ($lib).\nIl vous sera remis lors d'une prochaine distribution au club.";
+				break;
+			case 'refusee':
+				$sujet = 'Demande de dobok non retenue';
+				$corps = "Bonjour,\n\nLa demande pour $qui ($lib) n'a pas été retenue par le bureau."
+					. ( $d->note_bureau ? "\nMotif : " . $d->note_bureau : '' );
+				break;
+			default:
+				return;
+		}
+		if ( $el->token ) $corps .= "\n\nSuivre la demande : " . $this->fiche_url( $el->token );
+		$this->envoyer( $dest, $sujet, $corps );
+	}
+
 	private function eleve( int $id ): ?object {
 		global $wpdb;
 		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->table_eleves()} WHERE id = %d", $id ) ) ?: null;
@@ -525,6 +814,8 @@ class SP_Cal_Dobok {
 		}
 
 		$this->ajouter_mouvement( 'remise', $modele, $taille, 1, [ 'eleve_id' => $eleve_id, 'note' => $this->post_note() ] );
+		$this->solder_demande_liee( $eleve_id, self::type_de( $modele ), $modele, $taille );
+		if ( $r_modele ) $this->promouvoir_attentes();
 		$msg = $r_modele ? 'ok_echange' : 'ok_remise';
 		if ( $this->stock_de( $modele, $taille ) < 0 ) $msg .= '_negatif';
 		$this->retour( $msg, [ 'open' => $eleve_id ] );
@@ -544,6 +835,8 @@ class SP_Cal_Dobok {
 			'note'     => $this->post_note(),
 		] );
 		$this->effacer_a_confirmer( $eleve_id, $modele, $taille );
+		$this->solder_demande_liee( $eleve_id, self::type_de( $modele ), '', 0, $modele, $taille );
+		$this->promouvoir_attentes();
 		$this->retour( 'ok_restitution', [ 'open' => $eleve_id ] );
 	}
 
@@ -642,7 +935,8 @@ class SP_Cal_Dobok {
 		$lot_id = (int) $wpdb->insert_id;
 		if ( ! $lot_id ) $this->retour( 'err_bdd' );
 		$this->ajouter_mouvement( 'achat', $modele, $taille, $qte, [ 'lot_id' => $lot_id, 'note' => 'Lot n° ' . $lot_id ] );
-		$this->retour( 'ok_lot' );
+		$n = $this->promouvoir_attentes();
+		$this->retour( 'ok_lot', [ 'n' => $n ] );
 	}
 
 	public function handle_supprimer_lot(): void {
@@ -676,6 +970,7 @@ class SP_Cal_Dobok {
 				$n++;
 			}
 		}
+		$this->promouvoir_attentes();
 		$this->retour( 'ok_inventaire', [ 'n' => $n ] );
 	}
 
@@ -704,8 +999,341 @@ class SP_Cal_Dobok {
 			'cadet_age_max'  => max( 5, min( 20, (int) ( $_POST['cadet_age_max'] ?? 14 ) ) ),
 			'master_age_min' => max( 30, min( 80, (int) ( $_POST['master_age_min'] ?? 50 ) ) ),
 			'annee_ref'      => ( $_POST['annee_ref'] ?? '' ) === 'debut' ? 'debut' : 'fin',
+			'demandes_on'    => empty( $_POST['demandes_on'] ) ? 0 : 1,
+			'mail_bureau'    => empty( $_POST['mail_bureau'] ) ? 0 : 1,
+			'email_bureau'   => implode( ', ', array_filter( array_map( 'sanitize_email',
+				explode( ',', wp_unslash( (string) ( $_POST['email_bureau'] ?? '' ) ) ) ), 'is_email' ) ),
+			'mail_famille'   => empty( $_POST['mail_famille'] ) ? 0 : 1,
 		] );
 		$this->retour( 'ok_reglages' );
+	}
+
+	// ── Demandes : traitement par le bureau ──────────────────────────────
+
+	/** Demande à traiter (ouverte ou en attente), ou retour avec erreur. */
+	private function post_demande( string $action ): object {
+		$this->verifier( $action );
+		$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
+		if ( ! $d || ! in_array( $d->statut, [ 'ouverte', 'en_attente' ], true ) ) $this->retour( 'err_dem' );
+		return $d;
+	}
+
+	/** Distribution : l'ancien dobok est rendu (si coché) et le nouveau remis, en une fois. */
+	public function handle_dem_terminer(): void {
+		$d        = $this->post_demande( 'dem_terminer' );
+		$eleve_id = (int) $d->eleve_id;
+		$note     = $this->post_note();
+
+		if ( $d->rendu_modele && ! empty( $_POST['ancien_rendu'] ) && $this->detient( $eleve_id, $d->rendu_modele, (int) $d->rendu_taille ) ) {
+			$etat = sanitize_key( $_POST['etat'] ?? 'bon' );
+			$this->ajouter_mouvement( 'restitution', $d->rendu_modele, (int) $d->rendu_taille, 1, [
+				'eleve_id' => $eleve_id,
+				'etat'     => isset( self::ETATS[ $etat ] ) ? $etat : 'bon',
+				'motif'    => self::NATURES[ $d->nature ]['motif'] ?? 'retour',
+				'note'     => 'Demande n° ' . $d->id,
+			] );
+			$this->effacer_a_confirmer( $eleve_id, $d->rendu_modele, (int) $d->rendu_taille );
+		}
+		$negatif = false;
+		if ( $d->souhait_modele ) {
+			$this->ajouter_mouvement( 'remise', $d->souhait_modele, (int) $d->souhait_taille, 1, [ 'eleve_id' => $eleve_id, 'note' => 'Demande n° ' . $d->id ] );
+			$negatif = $this->stock_de( $d->souhait_modele, (int) $d->souhait_taille ) < 0;
+		}
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'terminee', 'note_bureau' => $note ] );
+		$this->promouvoir_attentes();
+		$this->retour( $negatif ? 'ok_dem_terminee_negatif' : 'ok_dem_terminee' );
+	}
+
+	/** Cas « garde son ancien dobok » (pas de stock, ou changement d'avis) : rien ne bouge. */
+	public function handle_dem_annuler(): void {
+		$d = $this->post_demande( 'dem_annuler' );
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'annulee', 'note_bureau' => $this->post_note() ?: 'Garde son dobok actuel' ] );
+		$this->promouvoir_attentes();
+		$this->retour( 'ok_dem_annulee' );
+	}
+
+	public function handle_dem_refuser(): void {
+		$d = $this->post_demande( 'dem_refuser' );
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'refusee', 'note_bureau' => $this->post_note() ] );
+		$d = $this->demande( (int) $d->id );
+		$el = $this->eleve( (int) $d->eleve_id );
+		if ( $el ) $this->mail_famille( $el, $d, 'refusee' );
+		$this->promouvoir_attentes();
+		$this->retour( 'ok_dem_refusee' );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// FICHE ADHÉRENT (lien ?token=) — bloc « Mes doboks »
+	// ══════════════════════════════════════════════════════════════════════
+
+	private function eleve_par_token( string $token ): ?object {
+		global $wpdb;
+		if ( $token === '' ) return null;
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->table_eleves()} WHERE token = %s", $token ) ) ?: null;
+	}
+
+	private function front_pret(): bool {
+		return get_option( 'sp_dobok_schema_version' ) === self::SCHEMA_VERSION;
+	}
+
+	/**
+	 * Formulaires du bloc « Mes doboks ». Le lien personnel (token) fait office
+	 * d'authentification, comme pour le reste de la fiche ; le nonce protège contre
+	 * l'envoi du formulaire depuis un autre site.
+	 */
+	public function handle_front(): void {
+		if ( is_admin() || empty( $_POST['sp_dobok_front'] ) || ! $this->front_pret() ) return;
+		$el = $this->eleve_par_token( sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) ) );
+		if ( ! $el ) return;
+
+		$retour = function ( string $msg ): void {
+			$url = add_query_arg( 'dobok_msg', $msg, remove_query_arg( 'dobok_msg' ) );
+			wp_safe_redirect( $url . '#spd-front' );
+			exit;
+		};
+
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_spd_nonce'] ?? '' ) ), 'sp_dobok_front_' . $el->id ) ) $retour( 'expire' );
+		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
+
+		$action = sanitize_key( $_POST['sp_dobok_front'] );
+
+		if ( $action === 'annuler' ) {
+			$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
+			if ( ! $d || (int) $d->eleve_id !== (int) $el->id || ! in_array( $d->statut, [ 'ouverte', 'en_attente' ], true ) ) $retour( 'erreur' );
+			global $wpdb;
+			$wpdb->update( $this->t_dem(), [ 'statut' => 'annulee', 'updated_at' => current_time( 'mysql' ), 'note_bureau' => 'Annulée par l\'adhérent' ], [ 'id' => (int) $d->id ] );
+			$this->mail_bureau( $el, $d, 'annulee' );
+			$this->promouvoir_attentes();
+			$retour( 'annulee' );
+		}
+
+		if ( $action !== 'demande' ) $retour( 'erreur' );
+
+		$type = ( $_POST['type_dobok'] ?? '' ) === 'couleur' ? 'couleur' : 'blanc';
+		if ( isset( $this->demandes_ouvertes( [ (int) $el->id ] )[ (int) $el->id ][ $type ] ) ) $retour( 'deja' );
+		if ( empty( $_POST['confirme'] ) ) $retour( 'confirme' );
+
+		$detenus = array_values( array_filter( $this->dotations( [ (int) $el->id ] )[ (int) $el->id ] ?? [], fn( $x ) => self::type_de( $x['modele'] ) === $type ) );
+		$choix   = sanitize_key( $_POST['choix'] ?? '' );
+		$taille  = $this->post_taille();
+		$modele  = $this->post_modele();
+		$attendu = $this->modele_attendu( $el, $type, $this->saison_courante() );
+		$note    = sanitize_textarea_field( wp_unslash( $_POST['note'] ?? '' ) );
+
+		// Dobok rendu : celui choisi s'il en a plusieurs, sinon le seul qu'il a.
+		[ $r_modele, $r_taille ] = self::split_ref( (string) ( $_POST['rendu'] ?? '' ) );
+		if ( ! $r_modele && count( $detenus ) === 1 ) { $r_modele = $detenus[0]['modele']; $r_taille = $detenus[0]['taille']; }
+		$detient = $r_modele && array_filter( $detenus, fn( $x ) => $x['modele'] === $r_modele && $x['taille'] === $r_taille );
+
+		$dem = [ 'type_dobok' => $type, 'rendu_modele' => '', 'rendu_taille' => 0, 'souhait_modele' => '', 'souhait_taille' => 0, 'note_adherent' => $note ];
+
+		if ( $choix === 'premier' ) {
+			if ( $detenus ) $retour( 'erreur' );
+			if ( ! $attendu ) $retour( 'modele_inconnu' );
+			if ( ! in_array( $taille, $this->tailles(), true ) ) $retour( 'erreur' );
+			$dem += [ 'nature' => 'dotation' ];
+			$dem['souhait_modele'] = $attendu;
+			$dem['souhait_taille'] = $taille;
+		} else {
+			if ( ! $detient ) $retour( 'erreur' );
+			$dem['rendu_modele'] = $r_modele;
+			$dem['rendu_taille'] = $r_taille;
+			if ( $choix === 'rendre' ) {
+				$dem['nature'] = 'restitution';
+			} elseif ( $choix === 'abime' ) {
+				$dem['nature']         = 'remplacement';
+				$dem['souhait_modele'] = $r_modele;
+				$dem['souhait_taille'] = $r_taille;
+			} elseif ( $choix === 'echanger' ) {
+				// Modèle : garder le sien ou passer au modèle attendu — rien d'autre.
+				if ( ! in_array( $modele, array_filter( [ $r_modele, $attendu ] ), true ) ) $modele = $r_modele;
+				if ( ! in_array( $taille, $this->tailles(), true ) ) $retour( 'erreur' );
+				if ( $modele === $r_modele && $taille === $r_taille ) $retour( 'identique' );
+				$dem['nature']         = $modele !== $r_modele ? 'modele' : 'taille';
+				$dem['souhait_modele'] = $modele;
+				$dem['souhait_taille'] = $taille;
+			} else {
+				$retour( 'erreur' );
+			}
+		}
+
+		$d = $this->creer_demande( $el, $dem );
+		if ( ! $d ) $retour( 'erreur' );
+		$retour( $d->nature === 'restitution' ? 'ok_rendre' : ( $d->statut === 'ouverte' ? 'ok_reservee' : 'ok_attente' ) );
+	}
+
+	/** Bloc « Mes doboks » inséré dans la fiche adhérent (hook de SpCalPro_Token::render_membre_fiche). */
+	public function render_bloc_adherent( $el ): void {
+		if ( ! is_object( $el ) || ! $this->front_pret() ) return;
+
+		$id       = (int) $el->id;
+		$saison   = $this->saison_courante();
+		$r        = $this->reglages();
+		$dot      = $this->dotations( [ $id ] )[ $id ] ?? [];
+		$ouvertes = $this->demandes_ouvertes( [ $id ] )[ $id ] ?? [];
+		$ech      = $this->echanges_taille( $saison )[ $id ] ?? [];
+		$peut     = (int) $el->actif && $r['demandes_on'];
+		$cm       = self::parse_cm( $el->taille_cm ?? '' );
+		$sugg     = $this->taille_pour( $cm, (int) $r['marge'] );
+
+		$messages = [
+			'ok_reservee'    => [ 'ok',   'Demande enregistrée : le dobok est réservé. Il vous sera remis lors d\'une prochaine distribution au club (pensez à rapporter l\'ancien s\'il y a lieu).' ],
+			'ok_attente'     => [ 'info', 'Demande enregistrée. Cette taille n\'est pas disponible pour le moment : vous êtes en liste d\'attente et serez prévenu(e) par mail. Gardez votre dobok actuel en attendant.' ],
+			'ok_rendre'      => [ 'ok',   'Demande enregistrée : merci de rapporter le dobok au club.' ],
+			'annulee'        => [ 'ok',   'Votre demande est annulée.' ],
+			'deja'           => [ 'err',  'Une demande est déjà en cours pour ce dobok.' ],
+			'confirme'       => [ 'err',  'Cochez « Je confirme ma demande » pour l\'envoyer.' ],
+			'identique'      => [ 'err',  'Le dobok demandé est identique au vôtre : choisissez une autre taille ou « Il est abîmé ».' ],
+			'modele_inconnu' => [ 'err',  'Votre fiche est incomplète (année de naissance ou sexe) : contactez le bureau.' ],
+			'ferme'          => [ 'err',  'Les demandes ne sont pas possibles pour le moment : contactez le bureau.' ],
+			'expire'         => [ 'err',  'La page a expiré : rechargez-la puis recommencez.' ],
+			'erreur'         => [ 'err',  'La demande n\'a pas pu être enregistrée : vérifiez vos choix.' ],
+		];
+		$msg = sanitize_key( $_GET['dobok_msg'] ?? '' );
+		?>
+		<div class="sp-membre-section spd-front" id="spd-front">
+			<style>
+				.spd-front .spd-f-msg{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}
+				.spd-front .spd-f-ok{background:#f0fdf4;border:1px solid #86efac;color:#166534}
+				.spd-front .spd-f-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+				.spd-front .spd-f-err{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+				.spd-front .spd-f-mesures{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:14px;margin-bottom:6px}
+				.spd-front .spd-f-mesures b{font-size:16px}
+				.spd-front .spd-f-cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px}
+				.spd-front .spd-f-carte{border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff}
+				.spd-front .spd-f-carte h3{margin:0 0 8px;font-size:16px}
+				.spd-front .spd-f-dobok{font-size:15px;font-weight:700}
+				.spd-front .spd-f-conseil{font-size:13px;color:#4b5563;margin-top:4px}
+				.spd-front .spd-f-demande{background:#f9fafb;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:14px}
+				.spd-front details{margin-top:10px}
+				.spd-front summary{cursor:pointer;font-weight:600;color:#0f70b7}
+				.spd-front form{margin:8px 0 0}
+				.spd-front form label{display:block;margin:6px 0;font-size:14px}
+				.spd-front form select,.spd-front form textarea{max-width:100%}
+				.spd-front form textarea{width:100%;min-height:54px}
+				.spd-front .spd-f-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:6px;background:#0f70b7;color:#fff;font-weight:600;cursor:pointer}
+				.spd-front .spd-f-lien{background:none;border:0;padding:0;color:#b91c1c;text-decoration:underline;cursor:pointer;font-size:13px}
+				.spd-front .spd-f-note{font-size:12px;color:#6b7280;margin-top:12px}
+			</style>
+			<h2>🥋 Mes doboks</h2>
+
+			<?php if ( isset( $messages[ $msg ] ) ) : ?>
+				<div class="spd-f-msg spd-f-<?php echo esc_attr( $messages[ $msg ][0] ); ?>"><?php echo esc_html( $messages[ $msg ][1] ); ?></div>
+			<?php endif; ?>
+
+			<div class="spd-f-mesures">
+				<span>Taille : <b><?php echo esc_html( $cm !== null ? round( $cm ) . ' cm' : '—' ); ?></b></span>
+				<span>Poids : <b><?php echo esc_html( ( $el->poids_kg ?? '' ) !== '' ? $el->poids_kg . ' kg' : '—' ); ?></b></span>
+				<span>T-shirt : <b><?php echo esc_html( ( $el->taille_tshirt ?? '' ) ?: '—' ); ?></b></span>
+				<span>Pantalon : <b><?php echo esc_html( ( $el->taille_pantalon ?? '' ) ?: '—' ); ?></b></span>
+			</div>
+			<p class="sp-membre-muted">Mesures saisies à l'inscription ou au renouvellement. Si elles ont changé, précisez-le dans votre demande.</p>
+
+			<div class="spd-f-cartes">
+			<?php foreach ( [ 'blanc' => 'Dobok blanc', 'couleur' => 'Dobok couleur' ] as $type => $titre ) :
+				$mine    = array_values( array_filter( $dot, fn( $x ) => self::type_de( $x['modele'] ) === $type ) );
+				$attendu = $this->modele_attendu( $el, $type, $saison );
+				$dem     = $ouvertes[ $type ] ?? null;
+				?>
+				<div class="spd-f-carte">
+					<h3><?php echo esc_html( $titre ); ?></h3>
+					<?php if ( $mine ) : foreach ( $mine as $x ) : ?>
+						<div class="spd-f-dobok"><?php echo esc_html( self::label( $x['modele'] ) . ' — taille ' . $x['taille'] ); ?></div>
+					<?php endforeach; else : ?>
+						<div class="sp-membre-muted">Aucun dobok enregistré.</div>
+					<?php endif; ?>
+
+					<?php if ( $sugg ) : ?>
+						<div class="spd-f-conseil">Taille conseillée d'après votre taille : <strong><?php echo (int) $sugg; ?></strong></div>
+					<?php endif; ?>
+					<?php if ( $mine && $attendu && ! array_filter( $mine, fn( $x ) => $x['modele'] === $attendu ) ) : ?>
+						<div class="spd-f-conseil">Modèle correspondant à votre <?php echo $type === 'blanc' ? 'grade' : 'catégorie'; ?> : <strong><?php echo esc_html( self::label( $attendu ) ); ?></strong><?php echo $type === 'couleur' ? ' (vous pouvez garder le vôtre)' : ''; ?></div>
+					<?php endif; ?>
+
+					<?php if ( $dem ) : ?>
+						<div class="spd-f-demande">
+							<strong>Demande en cours</strong> (<?php echo esc_html( mysql2date( 'd/m/Y', $dem->created_at ) ); ?>) :
+							<?php echo esc_html( self::libelle_demande( $dem ) ); ?><br>
+							<?php if ( $dem->nature === 'restitution' ) : ?>
+								À rapporter au club.
+							<?php elseif ( $dem->statut === 'ouverte' ) : ?>
+								✅ Réservé — remis lors d'une prochaine distribution au club.
+							<?php else : ?>
+								⏳ En attente de stock — gardez votre dobok actuel, vous serez prévenu(e) par mail.
+							<?php endif; ?>
+							<?php if ( $peut ) : ?>
+								<form method="post">
+									<?php $this->champs_front( $el ); ?>
+									<input type="hidden" name="sp_dobok_front" value="annuler">
+									<input type="hidden" name="dem_id" value="<?php echo (int) $dem->id; ?>">
+									<button type="submit" class="spd-f-lien" onclick="return confirm('Annuler cette demande ?');">Annuler ma demande</button>
+								</form>
+							<?php endif; ?>
+						</div>
+					<?php elseif ( $peut && ( $mine || $attendu ) ) : ?>
+						<details>
+							<summary><?php echo $mine ? 'Faire une demande' : 'Demander mon dobok'; ?></summary>
+							<form method="post">
+								<?php $this->champs_front( $el ); ?>
+								<input type="hidden" name="sp_dobok_front" value="demande">
+								<input type="hidden" name="type_dobok" value="<?php echo esc_attr( $type ); ?>">
+								<?php if ( $mine ) : ?>
+									<label><input type="radio" name="choix" value="echanger" checked> Changer de taille<?php echo $type === 'couleur' && $attendu && $mine[0]['modele'] !== $attendu ? ' ou de modèle' : ''; ?></label>
+									<label><input type="radio" name="choix" value="abime"> Il est abîmé (même taille)</label>
+									<label><input type="radio" name="choix" value="rendre"> Je le rends (je n'en ai plus besoin)</label>
+									<?php if ( count( $mine ) > 1 ) : ?>
+										<label>Dobok concerné :
+											<select name="rendu">
+												<?php foreach ( $mine as $x ) printf( '<option value="%s">%s</option>', esc_attr( $x['modele'] . '|' . $x['taille'] ), esc_html( self::label( $x['modele'] ) . ' ' . $x['taille'] ) ); ?>
+											</select>
+										</label>
+									<?php endif; ?>
+									<?php
+									$modeles = array_unique( array_filter( [ $mine[0]['modele'], $attendu ] ) );
+									if ( count( $modeles ) > 1 ) : ?>
+										<label>Modèle souhaité (pour un changement) :
+											<select name="modele">
+												<?php foreach ( $modeles as $i => $m ) printf( '<option value="%s">%s</option>', esc_attr( $m ), esc_html( ( $i === 0 ? 'Garder mon modèle : ' : 'Nouveau modèle : ' ) . self::label( $m ) ) ); ?>
+											</select>
+										</label>
+									<?php else : ?>
+										<input type="hidden" name="modele" value="<?php echo esc_attr( $mine[0]['modele'] ); ?>">
+									<?php endif; ?>
+								<?php else : ?>
+									<input type="hidden" name="choix" value="premier">
+									<p class="spd-f-conseil">Modèle : <strong><?php echo esc_html( self::label( $attendu ) ); ?></strong></p>
+								<?php endif; ?>
+								<label>Taille souhaitée (pour un changement) :
+									<select name="taille">
+										<?php
+										$defaut = $sugg ?: ( $mine[0]['taille'] ?? null );
+										foreach ( $this->tailles() as $t ) printf( '<option value="%d"%s>%d%s</option>', $t, selected( $t, $defaut, false ), $t, $t === $sugg ? ' (conseillée)' : '' );
+										?>
+									</select>
+								</label>
+								<?php if ( $mine && ( $ech[ $type ] ?? 0 ) >= 1 ) : ?>
+									<p class="spd-f-conseil">ℹ️ La taille de ce dobok a déjà été changée cette saison (1 échange par saison) : le bureau examinera votre demande.</p>
+								<?php endif; ?>
+								<label>Précisions (facultatif) :
+									<textarea name="note" maxlength="255" placeholder="Ex. : nouvelle taille 132 cm"></textarea>
+								</label>
+								<label><input type="checkbox" name="confirme" value="1" required> Je confirme ma demande</label>
+								<button type="submit" class="spd-f-btn">Envoyer ma demande</button>
+							</form>
+						</details>
+					<?php elseif ( ! $mine ) : ?>
+						<div class="spd-f-conseil">Contactez le bureau pour obtenir votre dobok.</div>
+					<?php endif; ?>
+				</div>
+			<?php endforeach; ?>
+			</div>
+			<p class="spd-f-note">Les doboks sont prêtés par le club : ils restent sa propriété et sont à rendre en cas de départ.</p>
+		</div>
+		<?php
+	}
+
+	private function champs_front( object $el ): void {
+		printf( '<input type="hidden" name="_spd_nonce" value="%s">', esc_attr( wp_create_nonce( 'sp_dobok_front_' . $el->id ) ) );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -714,7 +1342,8 @@ class SP_Cal_Dobok {
 	public function render_page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
-		$onglets = [ 'stock' => 'Stock', 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
+		$nb_dem  = $this->tables_ok() ? $this->nb_demandes_a_traiter() : 0;
+		$onglets = [ 'stock' => 'Stock', 'demandes' => 'Demandes / distribution' . ( $nb_dem ? " ($nb_dem)" : '' ), 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
 		$tab     = sanitize_key( $_GET['tab'] ?? 'stock' );
 		if ( ! isset( $onglets[ $tab ] ) ) $tab = 'stock';
 
@@ -738,6 +1367,7 @@ class SP_Cal_Dobok {
 		echo '</nav><div class="spd-body">';
 
 		switch ( $tab ) {
+			case 'demandes':  $this->render_demandes();  break;
 			case 'adherents': $this->render_adherents(); break;
 			case 'achats':    $this->render_achats();    break;
 			case 'journal':   $this->render_journal();   break;
@@ -764,13 +1394,18 @@ class SP_Cal_Dobok {
 			'ok_confirme'         => [ 'success', 'Attribution confirmée.' ],
 			'ok_corrige'          => [ 'success', 'Attribution corrigée.' ],
 			'ok_presume'          => [ 'success', sprintf( '%d attribution(s) présumée(s) créée(s), à confirmer. %d ignorée(s) faute de taille, d\'année de naissance ou de sexe.', $n, $n2 ) ],
-			'ok_lot'              => [ 'success', 'Lot d\'achat enregistré et ajouté au stock.' ],
+			'ok_lot'              => [ 'success', 'Lot d\'achat enregistré et ajouté au stock.' . ( $n ? sprintf( ' %d demande(s) en attente maintenant réservée(s).', $n ) : '' ) ],
 			'ok_supprime'         => [ 'success', 'Suppression effectuée.' ],
 			'ok_inventaire'       => [ 'success', sprintf( 'Inventaire enregistré : %d ajustement(s).', $n ) ],
 			'ok_reglages'         => [ 'success', 'Réglages enregistrés.' ],
 			'err_saisie'          => [ 'error',   'Saisie incomplète ou invalide.' ],
 			'err_detenu'          => [ 'error',   'Ce dobok n\'est pas enregistré chez cet adhérent.' ],
 			'err_bdd'             => [ 'error',   'Erreur d\'enregistrement en base.' ],
+			'ok_dem_terminee'     => [ 'success', 'Demande terminée : mouvements enregistrés.' ],
+			'ok_dem_terminee_negatif' => [ 'warning', 'Demande terminée.' . $negatif ],
+			'ok_dem_annulee'      => [ 'success', 'Demande close : l\'adhérent garde son dobok actuel.' ],
+			'ok_dem_refusee'      => [ 'success', 'Demande refusée (famille prévenue par mail si activé).' ],
+			'err_dem'             => [ 'error',   'Cette demande n\'existe pas ou a déjà été traitée.' ],
 		];
 		if ( ! isset( $textes[ $msg ] ) ) return;
 		printf( '<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr( $textes[ $msg ][0] ), esc_html( $textes[ $msg ][1] ) );
@@ -811,15 +1446,16 @@ class SP_Cal_Dobok {
 	// ── Onglet Stock ─────────────────────────────────────────────────────
 	private function render_stock(): void {
 		$stock  = $this->stock_par_ref();
+		$dem    = $this->demandes_par_ref();
 		$seuil  = (int) $this->reglages()['seuil_alerte'];
 		$tailles = $this->tailles();
-		foreach ( $stock as $par_taille ) {
+		foreach ( array_merge( array_values( $stock ), array_values( $dem ) ) as $par_taille ) {
 			foreach ( array_keys( $par_taille ) as $t ) if ( ! in_array( $t, $tailles, true ) ) $tailles[] = $t;
 		}
 		sort( $tailles );
 
 		echo '<div class="sp-box"><h2>Stock par modèle et par taille</h2>';
-		echo '<p class="description">Grand chiffre : doboks présents au club. Petit chiffre : doboks prêtés aux adhérents. <span class="spd-leg spd-bas">≤ seuil d\'alerte (' . (int) $seuil . ')</span> <span class="spd-leg spd-neg">négatif : inventaire à faire</span></p>';
+		echo '<p class="description">Grand chiffre : doboks présents au club. Dessous : disponibles (présents moins réservés), réservés pour une demande, retours attendus, demandes en attente de stock, prêtés aux adhérents. La couleur porte sur le disponible. <span class="spd-leg spd-bas">≤ seuil d\'alerte (' . (int) $seuil . ')</span> <span class="spd-leg spd-neg">négatif : inventaire à faire</span></p>';
 		echo '<div class="spd-scroll"><table class="widefat spd-grille"><thead><tr><th>Modèle</th>';
 		foreach ( $tailles as $t ) echo '<th>' . (int) $t . '</th>';
 		echo '<th>Total</th></tr></thead><tbody>';
@@ -830,16 +1466,42 @@ class SP_Cal_Dobok {
 				$tot_s = 0; $tot_p = 0;
 				echo '<tr><th title="' . esc_attr( $m['detail'] ) . '">' . esc_html( $m['label'] ) . '</th>';
 				foreach ( $tailles as $t ) {
-					$s = $stock[ $k ][ $t ]['stock'] ?? 0;
-					$p = $stock[ $k ][ $t ]['pret']  ?? 0;
+					$s   = $stock[ $k ][ $t ]['stock'] ?? 0;
+					$p   = $stock[ $k ][ $t ]['pret']  ?? 0;
+					$res = $dem[ $k ][ $t ]['reserve'] ?? 0;
+					$att = $dem[ $k ][ $t ]['attente'] ?? 0;
+					$ret = $dem[ $k ][ $t ]['attendu'] ?? 0;
+					$dispo = $s - $res;
 					$tot_s += $s; $tot_p += $p;
-					$cls = $s < 0 ? 'spd-neg' : ( $s <= $seuil ? 'spd-bas' : '' );
-					printf( '<td class="%s"><strong>%d</strong>%s</td>', esc_attr( $cls ), $s, $p ? '<small>' . (int) $p . ' prêté' . ( $p > 1 ? 's' : '' ) . '</small>' : '' );
+					$cls = $dispo < 0 ? 'spd-neg' : ( $dispo <= $seuil ? 'spd-bas' : '' );
+					$det = [];
+					if ( $res ) $det[] = 'dispo ' . $dispo;
+					if ( $res ) $det[] = $res . ' réservé' . ( $res > 1 ? 's' : '' );
+					if ( $ret ) $det[] = $ret . ' retour' . ( $ret > 1 ? 's' : '' ) . ' attendu' . ( $ret > 1 ? 's' : '' );
+					if ( $att ) $det[] = '<span class="spd-att">' . $att . ' en attente</span>';
+					if ( $p )   $det[] = $p . ' prêté' . ( $p > 1 ? 's' : '' );
+					printf( '<td class="%s"><strong>%d</strong>%s</td>', esc_attr( $cls ), $s, implode( '', array_map( fn( $x ) => '<small>' . $x . '</small>', $det ) ) );
 				}
 				printf( '<td class="spd-tot"><strong>%d</strong><small>%d prêté%s</small></td></tr>', $tot_s, $tot_p, $tot_p > 1 ? 's' : '' );
 			}
 		}
 		echo '</tbody></table></div></div>';
+
+		// Manques : demandes en attente non couvertes par le disponible → à commander.
+		$manques = [];
+		foreach ( $dem as $k => $par_taille ) {
+			foreach ( $par_taille as $t => $v ) {
+				$att = $v['attente'] ?? 0;
+				if ( ! $att ) continue;
+				$dispo = ( $stock[ $k ][ $t ]['stock'] ?? 0 ) - ( $v['reserve'] ?? 0 );
+				$besoin = $att - max( 0, $dispo );
+				if ( $besoin > 0 ) $manques[] = sprintf( '%d × %s %d', $besoin, self::label( $k ), $t );
+			}
+		}
+		if ( $manques ) {
+			echo '<div class="sp-box"><h2>À commander pour les demandes en attente</h2><p>' . esc_html( implode( ' · ', $manques ) ) . '</p>';
+			echo '<p class="description">Dès qu\'un lot est saisi dans l\'onglet Achats, les demandes en attente correspondantes sont réservées automatiquement (par ordre d\'arrivée) et les familles prévenues.</p></div>';
+		}
 
 		// Inventaire (sert aussi à saisir le stock de départ)
 		echo '<div class="sp-box"><details><summary><strong>Saisir un inventaire</strong> — comptage physique au club (sert aussi au stock de départ)</summary>';
@@ -858,6 +1520,112 @@ class SP_Cal_Dobok {
 		}
 		echo '</tbody></table></div>';
 		echo '<p><button type="submit" class="button button-primary" onclick="return confirm(\'Enregistrer cet inventaire ?\');">Enregistrer l\'inventaire</button></p></form>';
+		echo '</details></div>';
+	}
+
+	// ── Onglet Demandes / distribution ──────────────────────────────────
+	// Conçu pour être utilisé sur téléphone au dojo : cartes empilées, gros boutons.
+	private function render_demandes(): void {
+		global $wpdb;
+		$q      = sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) );
+		$retour = [ 'tab' => 'demandes', 'q' => $q ];
+		$tel    = $this->table_eleves();
+
+		$rows = $wpdb->get_results(
+			"SELECT d.*, e.nom, e.prenom FROM {$this->t_dem()} d
+			 LEFT JOIN $tel e ON e.id = d.eleve_id
+			 WHERE d.statut IN ('ouverte','en_attente') ORDER BY d.created_at, d.id"
+		);
+		$hist = $wpdb->get_results(
+			"SELECT d.*, e.nom, e.prenom FROM {$this->t_dem()} d
+			 LEFT JOIN $tel e ON e.id = d.eleve_id
+			 WHERE d.statut NOT IN ('ouverte','en_attente') ORDER BY d.updated_at DESC, d.id DESC LIMIT 50"
+		);
+		if ( $q !== '' ) {
+			$needle = mb_strtolower( $q );
+			$match  = fn( $d ) => str_contains( mb_strtolower( $d->nom . ' ' . $d->prenom . ' ' . $d->prenom . ' ' . $d->nom ), $needle );
+			$rows   = array_filter( (array) $rows, $match );
+			$hist   = array_filter( (array) $hist, $match );
+		}
+
+		$groupes = [
+			'remettre' => [ 'À remettre / échanger (dobok réservé)', [] ],
+			'retour'   => [ 'Retours attendus', [] ],
+			'attente'  => [ 'En attente de stock', [] ],
+		];
+		foreach ( (array) $rows as $d ) {
+			if ( $d->statut === 'en_attente' )         $groupes['attente'][1][]  = $d;
+			elseif ( $d->nature === 'restitution' )    $groupes['retour'][1][]   = $d;
+			else                                       $groupes['remettre'][1][] = $d;
+		}
+
+		echo '<form method="get" class="spd-filtres"><input type="hidden" name="page" value="' . esc_attr( self::PAGE ) . '"><input type="hidden" name="tab" value="demandes">';
+		printf( '<input type="search" name="q" value="%s" placeholder="Rechercher un adhérent"><button class="button">Rechercher</button></form>', esc_attr( $q ) );
+
+		if ( ! $this->reglages()['demandes_on'] ) {
+			echo '<div class="notice notice-info inline"><p>Les demandes depuis la fiche adhérent sont désactivées (onglet Réglages).</p></div>';
+		}
+
+		foreach ( $groupes as $cle => [ $titre, $liste ] ) {
+			printf( '<h2 class="spd-h2">%s <span class="spd-nb">%d</span></h2>', esc_html( $titre ), count( $liste ) );
+			if ( ! $liste ) { echo '<p class="description">Rien pour le moment.</p>'; continue; }
+			echo '<div class="spd-cartes">';
+			foreach ( $liste as $d ) $this->render_carte_demande( $d, $cle, $retour );
+			echo '</div>';
+		}
+
+		echo '<h2 class="spd-h2">Historique (50 dernières)</h2>';
+		if ( ! $hist ) { echo '<p class="description">Aucune demande close.</p>'; return; }
+		echo '<table class="widefat striped"><thead><tr><th>Date</th><th>Adhérent</th><th>Demande</th><th>Statut</th><th>Note bureau</th></tr></thead><tbody>';
+		foreach ( $hist as $d ) {
+			printf( '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>',
+				esc_html( mysql2date( 'd/m/Y', $d->updated_at ?: $d->created_at ) ),
+				esc_html( mb_strtoupper( (string) $d->nom ) . ' ' . $d->prenom ),
+				esc_html( self::libelle_demande( $d ) ),
+				esc_html( self::STATUTS[ $d->statut ] ?? $d->statut ),
+				esc_html( $d->note_bureau ) );
+		}
+		echo '</tbody></table>';
+	}
+
+	private function render_carte_demande( object $d, string $groupe, array $retour ): void {
+		$fiche = admin_url( 'admin.php?page=' . self::PAGE . '&tab=adherents&q=' . rawurlencode( (string) $d->nom ) . '&open=' . (int) $d->eleve_id . '#el-' . (int) $d->eleve_id );
+		echo '<div class="spd-carte">';
+		printf( '<div class="spd-carte-tete"><a href="%s"><strong>%s</strong> %s</a><span class="spd-meta">%s · %s</span></div>',
+			esc_url( $fiche ), esc_html( mb_strtoupper( (string) $d->nom ) ), esc_html( (string) $d->prenom ),
+			esc_html( ( $d->type_dobok === 'blanc' ? 'Blanc' : 'Couleur' ) . ' · ' . ( self::NATURES[ $d->nature ]['label'] ?? $d->nature ) ),
+			esc_html( mysql2date( 'd/m/Y', $d->created_at ) ) );
+		echo '<div class="spd-carte-quoi">';
+		if ( $d->rendu_modele )   printf( '<div>Rend : <b>%s %d</b></div>', esc_html( self::label( $d->rendu_modele ) ), (int) $d->rendu_taille );
+		if ( $d->souhait_modele ) printf( '<div>Reçoit : <b>%s %d</b></div>', esc_html( self::label( $d->souhait_modele ) ), (int) $d->souhait_taille );
+		echo '</div>';
+		if ( $d->hors_regle )    echo '<span class="spd-alerte spd-warn">Déjà un échange de taille cette saison</span>';
+		if ( $groupe === 'attente' ) {
+			printf( '<span class="spd-alerte spd-info">Stock disponible : %d</span>', $this->disponible( $d->souhait_modele, (int) $d->souhait_taille ) );
+		}
+		if ( $d->note_adherent ) printf( '<div class="spd-carte-note">« %s »</div>', esc_html( $d->note_adherent ) );
+
+		// Action principale
+		$this->form_open( 'dem_terminer', $retour, 'spd-carte-form' );
+		printf( '<input type="hidden" name="dem_id" value="%d">', (int) $d->id );
+		if ( $d->rendu_modele ) {
+			echo '<label><input type="checkbox" name="ancien_rendu" value="1" checked> Ancien dobok rendu</label>';
+			echo '<label>État ' . $this->select_etat() . '</label>'; // phpcs:ignore
+		}
+		$libelle = $groupe === 'retour' ? '✓ Rendu' : ( $d->rendu_modele ? '✓ Échange fait' : '✓ Remis' );
+		$confirm = $groupe === 'attente' ? ' onclick="return confirm(\'Pas de stock disponible d\\\'après le calcul. Remettre quand même ?\');"' : '';
+		printf( '<button class="button button-primary spd-gros"%s>%s</button></form>', $confirm, esc_html( $libelle ) );
+
+		// Actions secondaires
+		echo '<details class="spd-carte-plus"><summary>Autres actions</summary>';
+		$this->form_open( 'dem_annuler', $retour, 'spd-carte-form' );
+		printf( '<input type="hidden" name="dem_id" value="%d">', (int) $d->id );
+		echo '<input type="text" name="note" placeholder="Note (facultatif)">';
+		echo '<button class="button">Garde son dobok actuel (clore)</button></form>';
+		$this->form_open( 'dem_refuser', $retour, 'spd-carte-form' );
+		printf( '<input type="hidden" name="dem_id" value="%d">', (int) $d->id );
+		echo '<input type="text" name="note" placeholder="Motif communiqué à la famille">';
+		echo '<button class="button button-link-delete" onclick="return confirm(\'Refuser cette demande ?\');">Refuser</button></form>';
 		echo '</details></div>';
 	}
 
@@ -891,6 +1659,7 @@ class SP_Cal_Dobok {
 		}
 
 		$dot  = $this->dotations( array_map( fn( $e ) => (int) $e->id, (array) $eleves ) );
+		$dems = $this->demandes_ouvertes( array_map( fn( $e ) => (int) $e->id, (array) $eleves ) );
 		$ech  = $this->echanges_taille( $saison );
 		$rows = [];
 		$nb_alertes = 0;
@@ -901,6 +1670,9 @@ class SP_Cal_Dobok {
 				$sit[ $type ] = $this->situation( $el, $type, $dot[ $id ] ?? [], $saison, $ech[ $id ][ $type ] ?? 0 );
 			}
 			$alertes = $vue === 'recuperer' ? [] : array_merge( $this->alertes_donnees( $el, $saison ), $sit['blanc']['alertes'], $sit['couleur']['alertes'] );
+			foreach ( $dems[ (int) $el->id ] ?? [] as $d ) {
+				$alertes[] = [ $d->statut === 'ouverte' ? 'info' : 'warn', 'Demande : ' . self::libelle_demande( $d ) . ( $d->statut === 'en_attente' ? ' (en attente de stock)' : ( $d->souhait_modele ? ' (réservé)' : ' (retour attendu)' ) ) ];
+			}
 			$a_traiter = (bool) array_filter( $alertes, fn( $a ) => $a[0] === 'warn' );
 			if ( $a_traiter ) $nb_alertes++;
 			if ( $vue === 'alertes' && ! $alertes ) continue;
@@ -1151,6 +1923,12 @@ class SP_Cal_Dobok {
 		printf( '<option value="fin"%s>Âge atteint dans l\'année civile de fin de saison (ex. 2026 pour 2025/2026)</option>', selected( $r['annee_ref'], 'fin', false ) );
 		printf( '<option value="debut"%s>Âge atteint dans l\'année civile de début de saison (ex. 2025 pour 2025/2026)</option>', selected( $r['annee_ref'], 'debut', false ) );
 		echo '</select><p class="description">À aligner sur le règlement des compétitions de la saison.</p></td></tr>';
+		printf( '<tr><th>Demandes des adhérents</th><td><label><input type="checkbox" name="demandes_on" value="1"%s> Autoriser les demandes depuis la fiche adhérent (lien personnel)</label><p class="description">Décoché : la fiche affiche toujours les doboks de l\'adhérent, mais sans possibilité de faire une demande.</p></td></tr>', checked( $r['demandes_on'], 1, false ) );
+		printf( '<tr><th>Mail au bureau</th><td><label><input type="checkbox" name="mail_bureau" value="1"%s> À chaque nouvelle demande ou annulation</label><br><input type="text" name="email_bureau" value="%s" class="regular-text" placeholder="%s"><p class="description">Adresses séparées par des virgules. Vide = adresse de notification générale du plugin (%s).</p></td></tr>',
+			checked( $r['mail_bureau'], 1, false ), esc_attr( $r['email_bureau'] ),
+			esc_attr( (string) get_option( 'sp_cal_notif_email', get_option( 'admin_email' ) ) ),
+			esc_html( (string) get_option( 'sp_cal_notif_email', get_option( 'admin_email' ) ) ) );
+		printf( '<tr><th>Mail aux familles</th><td><label><input type="checkbox" name="mail_famille" value="1"%s> Accusé de réception, dobok réservé (après une attente), demande refusée</label></td></tr>', checked( $r['mail_famille'], 1, false ) );
 		echo '</tbody></table><p><button class="button button-primary">Enregistrer</button></p></form></div>';
 
 		echo '<div class="sp-box"><h2>Modèles</h2><table class="widefat striped"><thead><tr><th>Modèle</th><th>Type</th><th>Description</th></tr></thead><tbody>';

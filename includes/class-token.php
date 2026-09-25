@@ -562,6 +562,9 @@ class SpCalPro_Token {
                 <?php else: ?><p class="sp-membre-muted">Aucun grade renseigné.</p><?php endif; ?>
             </div>
 
+            <?php // Bloc « Mes doboks » (SP_Cal_Dobok::render_bloc_adherent) ?>
+            <?php do_action( 'sp_cal_fiche_membre_apres_grade', $el ); ?>
+
             <!-- Grades saison courante -->
             <?php if(!empty($grades_courants)): ?>
             <div class="sp-membre-section">

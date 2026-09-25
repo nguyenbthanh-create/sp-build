@@ -21,7 +21,7 @@ D'après `CLAUDE.md`, ce plugin est actuellement le **legacy** (l'existant), pat
 
 - **Notification push PWA au bureau** : demandé par l'utilisateur comme piste pour la refonte du plugin, en lien avec le rappel de dépôt de chèques ajouté côté `tkd-cotisations` (email quotidien pour l'instant, cf. son `REALISATION.md`). Idée : remplacer/compléter ce rappel email par une notification push sur la PWA bureau (`render_pwa_app()`), qui a déjà une infra `sp_cal_push_subs` pour les abonnements push (cf. `class-admin.php`) — à vérifier si elle est réutilisable telle quelle ou si elle est propre à un autre usage. Non implémenté, à mettre dans un coin pour la refonte, pas pour un correctif du legacy.
 
-## 25/09/2026 — Gestion des doboks (spécification validée, V1 implémentée)
+## 25/09/2026 — Gestion des doboks (spécification validée, V1 + V2 implémentées)
 
 Le club **prête** (pas un don) à chaque adhérent un dobok blanc et un dobok couleur. Objectif : gérer le stock d'une saison à l'autre — achats, restitutions, échanges de taille, changements de modèle — et savoir à tout moment qui a quoi.
 
@@ -107,7 +107,18 @@ Indicateurs calculés par référence : **effectif** (physiquement au club), **r
 - Un mouvement `dotation_initiale` (doboks déjà chez les adhérents au démarrage) n'a aucun effet sur le stock ; `a_confirmer = 1` pour les attributions présumées en masse.
 - Le décompte « 1 échange de taille par saison » s'appuie sur le `motif` des restitutions (`taille`, déduit automatiquement lors d'un échange quand seule la taille change) : un changement de modèle ou un remplacement ne compte pas.
 
-Reste pour V2/V3 : tout le reste de la spécification (demandes adhérent, réservations, écran mobile, mails, aide à la commande, demandes automatiques).
+### V2 réalisée le 25/09/2026
+
+Nouvelle table `sp_cal_dobok_demandes` (schéma v2). Bloc « Mes doboks » dans la fiche adhérent (`?token=`, via le hook `sp_cal_fiche_membre_apres_grade` ajouté dans `class-token.php`), onglet admin « Demandes / distribution », mails bureau + familles, pastille de menu. Écarts / choix par rapport à la spécification :
+- **Réservation automatique à la création** de la demande (si disponible > 0), plutôt qu'à l'acceptation par le bureau : premier arrivé, premier servi, sans clic du bureau. Le bureau peut toujours refuser ou clore.
+- **Une demande en cours par type de dobok** (blanc / couleur), pas une seule au total : un adhérent peut avoir besoin des deux.
+- Nouvelle nature « premier dobok » pour un adhérent qui n'en a encore aucun d'enregistré.
+- **Écran de distribution dans wp-admin** (onglet responsive, cartes et gros boutons) plutôt que dans la PWA : réutilise la connexion et les droits existants, sans toucher au code de la PWA.
+- **Mails immédiats** (un par demande) au lieu d'un récapitulatif quotidien : le projet a abandonné wp-cron (non fiable, cf. renouvellement) ; désactivable dans les Réglages.
+- Liste d'attente : réservée automatiquement (ordre d'arrivée) à chaque lot reçu, retour, inventaire ou demande close, famille prévenue par mail. Encadré « À commander » dans l'onglet Stock (besoins des demandes en attente).
+- Une action directe du bureau dans l'onglet Adhérents solde la demande ouverte qu'elle satisfait.
+
+**Reporté (V3)** : question « le dobok est-il encore à la bonne taille ? » dans le formulaire de renouvellement — touche le flux d'adhésion (table `sp_adhesions_pending`, validation), le plus sensible du plugin ; en attendant, le lien vers la fiche (et donc le bloc « Mes doboks ») est déjà envoyé aux familles. Également en V3 : demandes automatiques (ceinture noire, changement de catégorie), aide à la commande plus complète (prévision nouveaux adhérents).
 
 ## Comment tenir ce fichier à jour
 
