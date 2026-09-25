@@ -297,6 +297,15 @@ class SP_Cal_Dobok {
 		return max( (int) $r['taille_min'], min( (int) $r['taille_max'], $t ) );
 	}
 
+	/**
+	 * Les adhérents du renforcement musculaire n'ont pas de dobok. Discipline = colonne
+	 * categorie_saisie : code 'RENFO' (formulaire d'adhésion / fiche admin), ou libellé libre
+	 * des anciennes fiches (« Renfo », « Renforcement musculaire », « Renfo & Ados/Adultes »…).
+	 */
+	public static function est_concerne( $el ): bool {
+		return ! preg_match( '/renfo|renforcement/i', (string) ( $el->categorie_saisie ?? '' ) );
+	}
+
 	public static function est_ceinture_noire( $grade ): bool {
 		return (bool) preg_match( '/\b(dan|poom|noire)\b/iu', (string) $grade );
 	}
@@ -896,6 +905,7 @@ class SP_Cal_Dobok {
 		$dot  = $this->dotations( array_map( fn( $e ) => (int) $e->id, (array) $eleves ) );
 		$faits = 0; $ignores = 0;
 		foreach ( (array) $eleves as $el ) {
+			if ( ! self::est_concerne( $el ) ) continue;   // renforcement musculaire : pas de dobok
 			$taille = $this->taille_pour( self::parse_cm( $el->taille_cm ?? '' ) );
 			foreach ( [ 'blanc', 'couleur' ] as $type ) {
 				$a_deja = array_filter( $dot[ (int) $el->id ] ?? [], fn( $d ) => self::type_de( $d['modele'] ) === $type );
@@ -1115,6 +1125,7 @@ class SP_Cal_Dobok {
 
 		$detenus = array_values( array_filter( $this->dotations( [ (int) $el->id ] )[ (int) $el->id ] ?? [], fn( $x ) => self::type_de( $x['modele'] ) === $type ) );
 		$choix   = sanitize_key( $_POST['choix'] ?? '' );
+		if ( ! self::est_concerne( $el ) && $choix !== 'rendre' ) $retour( 'erreur' );   // renfo : restitution seulement
 		$taille  = $this->post_taille();
 		$modele  = $this->post_modele();
 		$attendu = $this->modele_attendu( $el, $type, $this->saison_courante() );
@@ -1171,6 +1182,10 @@ class SP_Cal_Dobok {
 		$r        = $this->reglages();
 		$dot      = $this->dotations( [ $id ] )[ $id ] ?? [];
 		$ouvertes = $this->demandes_ouvertes( [ $id ] )[ $id ] ?? [];
+		// Renforcement musculaire : pas de dobok. Bloc affiché seulement s'il en a encore un
+		// du club (ancien pratiquant de taekwondo), et alors uniquement pour le rendre.
+		$renfo    = ! self::est_concerne( $el );
+		if ( $renfo && ! $dot && ! $ouvertes ) return;
 		$ech      = $this->echanges_taille( $saison )[ $id ] ?? [];
 		$peut     = (int) $el->actif && $r['demandes_on'];
 		$cm       = self::parse_cm( $el->taille_cm ?? '' );
@@ -1221,6 +1236,9 @@ class SP_Cal_Dobok {
 				<div class="spd-f-msg spd-f-<?php echo esc_attr( $messages[ $msg ][0] ); ?>"><?php echo esc_html( $messages[ $msg ][1] ); ?></div>
 			<?php endif; ?>
 
+			<?php if ( $renfo ) : ?>
+				<p>Vous êtes inscrit(e) en renforcement musculaire, qui ne nécessite pas de dobok : merci de rapporter au club le dobok prêté ci-dessous.</p>
+			<?php else : ?>
 			<div class="spd-f-mesures">
 				<span>Taille : <b><?php echo esc_html( $cm !== null ? round( $cm ) . ' cm' : '—' ); ?></b></span>
 				<span>Poids : <b><?php echo esc_html( ( $el->poids_kg ?? '' ) !== '' ? $el->poids_kg . ' kg' : '—' ); ?></b></span>
@@ -1228,12 +1246,14 @@ class SP_Cal_Dobok {
 				<span>Pantalon : <b><?php echo esc_html( ( $el->taille_pantalon ?? '' ) ?: '—' ); ?></b></span>
 			</div>
 			<p class="sp-membre-muted">Mesures saisies à l'inscription ou au renouvellement. Si elles ont changé, précisez-le dans votre demande.</p>
+			<?php endif; ?>
 
 			<div class="spd-f-cartes">
 			<?php foreach ( [ 'blanc' => 'Dobok blanc', 'couleur' => 'Dobok couleur' ] as $type => $titre ) :
 				$mine    = array_values( array_filter( $dot, fn( $x ) => self::type_de( $x['modele'] ) === $type ) );
 				$attendu = $this->modele_attendu( $el, $type, $saison );
 				$dem     = $ouvertes[ $type ] ?? null;
+				if ( $renfo && ! $mine && ! $dem ) continue;
 				?>
 				<div class="spd-f-carte">
 					<h3><?php echo esc_html( $titre ); ?></h3>
@@ -1243,10 +1263,10 @@ class SP_Cal_Dobok {
 						<div class="sp-membre-muted">Aucun dobok enregistré.</div>
 					<?php endif; ?>
 
-					<?php if ( $sugg ) : ?>
+					<?php if ( $sugg && ! $renfo ) : ?>
 						<div class="spd-f-conseil">Taille conseillée d'après votre taille : <strong><?php echo (int) $sugg; ?></strong></div>
 					<?php endif; ?>
-					<?php if ( $mine && $attendu && ! array_filter( $mine, fn( $x ) => $x['modele'] === $attendu ) ) : ?>
+					<?php if ( ! $renfo && $mine && $attendu && ! array_filter( $mine, fn( $x ) => $x['modele'] === $attendu ) ) : ?>
 						<div class="spd-f-conseil">Modèle correspondant à votre <?php echo $type === 'blanc' ? 'grade' : 'catégorie'; ?> : <strong><?php echo esc_html( self::label( $attendu ) ); ?></strong><?php echo $type === 'couleur' ? ' (vous pouvez garder le vôtre)' : ''; ?></div>
 					<?php endif; ?>
 
@@ -1270,6 +1290,23 @@ class SP_Cal_Dobok {
 								</form>
 							<?php endif; ?>
 						</div>
+					<?php elseif ( $renfo ) : if ( $peut ) : ?>
+						<form method="post">
+							<?php $this->champs_front( $el ); ?>
+							<input type="hidden" name="sp_dobok_front" value="demande">
+							<input type="hidden" name="type_dobok" value="<?php echo esc_attr( $type ); ?>">
+							<input type="hidden" name="choix" value="rendre">
+							<?php if ( count( $mine ) > 1 ) : ?>
+								<label>Dobok rendu :
+									<select name="rendu">
+										<?php foreach ( $mine as $x ) printf( '<option value="%s">%s</option>', esc_attr( $x['modele'] . '|' . $x['taille'] ), esc_html( self::label( $x['modele'] ) . ' ' . $x['taille'] ) ); ?>
+									</select>
+								</label>
+							<?php endif; ?>
+							<label><input type="checkbox" name="confirme" value="1" required> Je confirme que je rapporte ce dobok au club</label>
+							<button type="submit" class="spd-f-btn">Signaler le retour</button>
+						</form>
+					<?php endif; ?>
 					<?php elseif ( $peut && ( $mine || $attendu ) ) : ?>
 						<details>
 							<summary><?php echo $mine ? 'Faire une demande' : 'Demander mon dobok'; ?></summary>
@@ -1641,17 +1678,18 @@ class SP_Cal_Dobok {
 		$retour  = [ 'tab' => 'adherents', 'saison' => $saison, 'q' => $q, 'vue' => $vue ];
 
 		if ( $vue === 'recuperer' ) {
-			// Doboks encore chez des adhérents qui ne sont plus actifs sur cette saison.
+			// Doboks encore chez des adhérents qui ne sont plus actifs sur cette saison, ou qui
+			// sont passés au renforcement musculaire (non concernés par les doboks).
 			$tous = $this->dotations();
 			$ids  = array_keys( $tous );
-			$eleves = $ids ? $wpdb->get_results( $wpdb->prepare(
-				"SELECT * FROM $tel WHERE id IN (" . implode( ',', array_map( 'intval', $ids ) ) . ") AND NOT ( actif = 1 AND saison = %s ) ORDER BY nom, prenom",
-				$saison
-			) ) : [];
+			$eleves = $ids ? $wpdb->get_results(
+				"SELECT * FROM $tel WHERE id IN (" . implode( ',', array_map( 'intval', $ids ) ) . ") ORDER BY nom, prenom"
+			) : [];
+			$eleves = array_filter( (array) $eleves, fn( $e ) => ! ( (int) $e->actif === 1 && $e->saison === $saison ) || ! self::est_concerne( $e ) );
 		} else {
-			$eleves = $wpdb->get_results( $wpdb->prepare(
+			$eleves = array_filter( (array) $wpdb->get_results( $wpdb->prepare(
 				"SELECT * FROM $tel WHERE actif = 1 AND saison = %s ORDER BY nom, prenom", $saison
-			) );
+			) ), [ __CLASS__, 'est_concerne' ] );
 		}
 		if ( $q !== '' ) {
 			$needle = mb_strtolower( $q );
@@ -1669,7 +1707,9 @@ class SP_Cal_Dobok {
 			foreach ( [ 'blanc', 'couleur' ] as $type ) {
 				$sit[ $type ] = $this->situation( $el, $type, $dot[ $id ] ?? [], $saison, $ech[ $id ][ $type ] ?? 0 );
 			}
-			$alertes = $vue === 'recuperer' ? [] : array_merge( $this->alertes_donnees( $el, $saison ), $sit['blanc']['alertes'], $sit['couleur']['alertes'] );
+			$alertes = $vue === 'recuperer'
+				? [ [ 'warn', self::est_concerne( $el ) ? 'Plus adhérent cette saison : dobok à récupérer' : 'Renforcement musculaire : dobok à récupérer' ] ]
+				: array_merge( $this->alertes_donnees( $el, $saison ), $sit['blanc']['alertes'], $sit['couleur']['alertes'] );
 			foreach ( $dems[ (int) $el->id ] ?? [] as $d ) {
 				$alertes[] = [ $d->statut === 'ouverte' ? 'info' : 'warn', 'Demande : ' . self::libelle_demande( $d ) . ( $d->statut === 'en_attente' ? ' (en attente de stock)' : ( $d->souhait_modele ? ' (réservé)' : ' (retour attendu)' ) ) ];
 			}
@@ -1695,9 +1735,9 @@ class SP_Cal_Dobok {
 		echo '<button class="button">Filtrer</button></form>';
 
 		if ( $vue !== 'recuperer' ) {
-			printf( '<p class="spd-compte">%d adhérent(s) affiché(s) — <strong>%d</strong> avec au moins un point à traiter.</p>', count( $rows ), $nb_alertes );
+			printf( '<p class="spd-compte">%d adhérent(s) affiché(s) (hors renforcement musculaire) — <strong>%d</strong> avec au moins un point à traiter.</p>', count( $rows ), $nb_alertes );
 		} else {
-			echo '<p class="description">Adhérents qui ne sont pas actifs sur la saison ' . esc_html( $saison ) . ' mais ont encore un dobok du club en leur possession.</p>';
+			echo '<p class="description">Adhérents qui ne sont pas actifs sur la saison ' . esc_html( $saison ) . ', ou inscrits en renforcement musculaire, mais ont encore un dobok du club en leur possession.</p>';
 		}
 
 		if ( ! $rows ) {

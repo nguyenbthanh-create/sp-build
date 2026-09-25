@@ -118,6 +118,8 @@ Nouvelle table `sp_cal_dobok_demandes` (schéma v2). Bloc « Mes doboks » dans 
 - Liste d'attente : réservée automatiquement (ordre d'arrivée) à chaque lot reçu, retour, inventaire ou demande close, famille prévenue par mail. Encadré « À commander » dans l'onglet Stock (besoins des demandes en attente).
 - Une action directe du bureau dans l'onglet Adhérents solde la demande ouverte qu'elle satisfait.
 
+**Précision du 25/09/2026** : les adhérents du **renforcement musculaire** (`categorie_saisie` RENFO) ne sont pas concernés par les doboks — exclus de la liste, de l'attribution présumée et des demandes, sauf pour rendre un dobok qu'ils auraient encore (`SP_Cal_Dobok::est_concerne()`).
+
 **Reporté (V3)** : question « le dobok est-il encore à la bonne taille ? » dans le formulaire de renouvellement — touche le flux d'adhésion (table `sp_adhesions_pending`, validation), le plus sensible du plugin ; en attendant, le lien vers la fiche (et donc le bloc « Mes doboks ») est déjà envoyé aux familles. Également en V3 : demandes automatiques (ceinture noire, changement de catégorie), aide à la commande plus complète (prévision nouveaux adhérents).
 
 ## Comment tenir ce fichier à jour
