@@ -73,3 +73,16 @@
     .spd-cartes { grid-template-columns: 1fr; }
     .spd .nav-tab-wrapper .nav-tab { font-size: 12px; padding: 4px 8px; }
 }
+
+/* ── Fenêtre « Règles des doboks » ── */
+.spd-btn-regles .dashicons { font-size: 16px; width: 16px; height: 16px; vertical-align: text-bottom; }
+.spd-modale { border: 0; border-radius: 8px; padding: 0; max-width: 860px; width: calc(100% - 32px); box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+.spd-modale::backdrop { background: rgba(0,0,0,.45); }
+.spd-modale-corps { padding: 20px 24px; position: relative; max-height: 85vh; overflow-y: auto; }
+.spd-modale h2 { margin: 0 0 8px; }
+.spd-modale h3 { margin: 18px 0 6px; font-size: 14px; }
+.spd-modale ul { list-style: disc; margin: 0 0 0 20px; }
+.spd-modale li { margin-bottom: 4px; }
+.spd-modale td, .spd-modale th { font-size: 12px; }
+.spd-modale-x { position: absolute; top: 8px; right: 12px; border: 0; background: none; font-size: 26px; line-height: 1; cursor: pointer; color: #50575e; }
+.spd-sources { font-size: 12px; color: #646970; margin-top: 16px; }

@@ -94,7 +94,7 @@ class SP_Cal_Dobok {
 		'marge'          => 0,
 		'seuil_alerte'   => 1,
 		'cadet_age_max'  => 14,
-		'master_age_min' => 50,
+		'master_age_min' => 51,
 		'annee_ref'      => 'fin',
 		'demandes_on'    => 1,
 		'mail_bureau'    => 1,
@@ -1007,7 +1007,7 @@ class SP_Cal_Dobok {
 			'marge'          => max( 0, min( 20, (int) ( $_POST['marge'] ?? 0 ) ) ),
 			'seuil_alerte'   => max( 0, min( 50, (int) ( $_POST['seuil_alerte'] ?? 1 ) ) ),
 			'cadet_age_max'  => max( 5, min( 20, (int) ( $_POST['cadet_age_max'] ?? 14 ) ) ),
-			'master_age_min' => max( 30, min( 80, (int) ( $_POST['master_age_min'] ?? 50 ) ) ),
+			'master_age_min' => max( 30, min( 80, (int) ( $_POST['master_age_min'] ?? 51 ) ) ),
 			'annee_ref'      => ( $_POST['annee_ref'] ?? '' ) === 'debut' ? 'debut' : 'fin',
 			'demandes_on'    => empty( $_POST['demandes_on'] ) ? 0 : 1,
 			'mail_bureau'    => empty( $_POST['mail_bureau'] ) ? 0 : 1,
@@ -1732,7 +1732,10 @@ class SP_Cal_Dobok {
 		}
 		echo '</select></label>';
 		printf( '<input type="search" name="q" value="%s" placeholder="Nom ou prénom">', esc_attr( $q ) );
-		echo '<button class="button">Filtrer</button></form>';
+		echo '<button class="button">Filtrer</button>';
+		echo '<button type="button" class="button spd-btn-regles" onclick="document.getElementById(\'spd-regles\').showModal()" title="Rappel des règles : qui porte quel dobok (World Taekwondo et règle du club)"><span class="dashicons dashicons-info-outline"></span> Règles des doboks</button>';
+		echo '</form>';
+		$this->render_modale_regles();
 
 		if ( $vue !== 'recuperer' ) {
 			printf( '<p class="spd-compte">%d adhérent(s) affiché(s) (hors renforcement musculaire) — <strong>%d</strong> avec au moins un point à traiter.</p>', count( $rows ), $nb_alertes );
@@ -1767,6 +1770,70 @@ class SP_Cal_Dobok {
 			});
 		});
 		</script>
+		<?php
+	}
+
+	/**
+	 * Fenêtre « Règles des doboks » (onglet Adhérents) : la règle appliquée par le club
+	 * (celle que calcule ce module) et, pour référence, les règles World Taekwondo dont elle
+	 * s'inspire, avec les écarts assumés. Sources relevées le 26/09/2026 :
+	 *   - WT, « Guidelines on Identifications » 2022 (Poomsae Competition Uniform #2, Dobok Uniform #1) ;
+	 *   - British Taekwondo, règlement Poomsae Para (juin 2025, basé sur les règles WT) pour les 8-11 ans.
+	 */
+	private function render_modale_regles(): void {
+		$r      = $this->reglages();
+		$cadet  = (int) $r['cadet_age_max'];
+		$master = (int) $r['master_age_min'];
+		$ref    = $r['annee_ref'] === 'debut' ? 'l\'année civile de début de saison' : 'l\'année civile de fin de saison';
+		?>
+		<dialog id="spd-regles" class="spd-modale" onclick="if (event.target === this) this.close();">
+			<div class="spd-modale-corps">
+				<button type="button" class="spd-modale-x" onclick="this.closest('dialog').close()" aria-label="Fermer">×</button>
+				<h2>Règles des doboks</h2>
+
+				<h3>Règle du club (appliquée par ce module)</h3>
+				<ul>
+					<li><strong>Chaque adhérent</strong> (hors renforcement musculaire) reçoit en prêt un <strong>dobok blanc</strong> et un <strong>dobok couleur</strong>. Ils restent la propriété du club et sont à rendre en cas de départ.</li>
+					<li><strong>Dobok blanc</strong> : même modèle pour tous les âges. <strong>Col noir dès la ceinture noire</strong> (Poom ou Dan), col blanc sinon — déduit du grade.</li>
+					<li><strong>Dobok couleur</strong> : acheté par ensemble (veste + pantalon), modèle déduit de la <strong>catégorie de compétition</strong> et du sexe :
+						Cadet jusqu'à <?php echo $cadet; ?> ans (les plus jeunes portent aussi le modèle cadet), Junior/Senior, Master à partir de <?php echo $master; ?> ans.
+						Âge = âge atteint dans <?php echo esc_html( $ref ); ?> (onglet Réglages).</li>
+					<li>Un adhérent <strong>peut garder</strong> son ancien modèle ou sa taille : les écarts sont signalés, jamais imposés.</li>
+					<li><strong>1 échange de taille par saison</strong> et par dobok : au-delà, ce n'est pas bloqué mais le bureau est alerté. Un changement de modèle ou un remplacement (abîmé) ne compte pas.</li>
+					<li>Tailles de 10 en 10 cm : taille suggérée = taille de l'adhérent arrondie à la dizaine supérieure<?php echo (int) $r['marge'] ? ' + ' . (int) $r['marge'] . ' cm de marge' : ''; ?>.</li>
+				</ul>
+
+				<h3>Référence World Taekwondo — tenue de poomsae (compétition)</h3>
+				<div class="spd-scroll"><table class="widefat striped">
+					<thead><tr><th>Catégorie</th><th>Âge</th><th>Grade (ceinture)</th><th>Veste</th><th>Pantalon</th></tr></thead>
+					<tbody>
+						<tr><td>Aspirants <em>(tolérance)</em></td><td>8 – 11 ans</td><td>Keup ou Poom</td><td>Dobok blanc standard, <em>ou</em> veste blanche col rouge et noir</td><td>Blanc, <em>ou</em> bleu (garçons) / rouge (filles)</td></tr>
+						<tr><td>Cadet garçon</td><td>12 – 14 ans</td><td>Poom (ceinture rouge et noire)</td><td>Blanche, col rouge et noir</td><td>Bleu</td></tr>
+						<tr><td>Cadet fille</td><td>12 – 14 ans</td><td>Poom (ceinture rouge et noire)</td><td>Blanche, col rouge et noir</td><td>Rouge</td></tr>
+						<tr><td>Junior / Senior homme</td><td>15 – 50 ans</td><td>Dan (ceinture noire)</td><td>Blanche, col noir</td><td>« T-Black » (bleu nuit presque noir)</td></tr>
+						<tr><td>Junior / Senior femme</td><td>15 – 50 ans</td><td>Dan (ceinture noire)</td><td>Blanche, col noir</td><td>Bleu clair</td></tr>
+						<tr><td>Master (H/F)</td><td>51 ans et plus</td><td>Dan (ceinture noire)</td><td>Dorée</td><td>« T-Black »</td></tr>
+					</tbody>
+				</table></div>
+				<p class="description">En compétition WT, la tenue de poomsae est obligatoire à partir de cadet ; les divisions Keup (ceintures de couleur) concourent en dobok blanc standard.</p>
+
+				<h3>Référence World Taekwondo — dobok blanc standard</h3>
+				<ul>
+					<li>Veste et pantalon blancs, col en V : <strong>blanc</strong> pour les Keup (ceintures de couleur), <strong>rouge et noir</strong> pour les Poom (ceinture noire des moins de 15 ans), <strong>noir</strong> pour les Dan.</li>
+				</ul>
+
+				<h3>Écarts assumés par le club</h3>
+				<ul>
+					<li>Les <strong>Poom</strong> reçoivent un blanc <strong>col noir</strong> (WT : col rouge et noir).</li>
+					<li>Le dobok couleur est prêté à <strong>tous</strong>, ceintures de couleur comprises (WT : tenue de compétition réservée aux Poom / Dan à partir de 12 ans).</li>
+					<li>Masters : le club leur prête un ensemble bleu foncé ; WT prévoit une veste dorée.<?php echo $master !== 51 ? ' WT place la limite à <strong>51 ans</strong> : le réglage actuel du club est ' . $master . ' ans.' : ''; ?></li>
+				</ul>
+
+				<p class="spd-sources">Sources : <a href="https://www.worldtaekwondo.org/att_file_up/partners_suppliers/2022/2022_WT_Guidelines_of_Identifications.pdf" target="_blank" rel="noopener">World Taekwondo, Guidelines on Identifications (2022)</a> ·
+					<a href="https://www.britishtaekwondo.org.uk/wp-content/uploads/2025/09/BT-Poomase-Para-Competition-Rules-June-2025.pdf" target="_blank" rel="noopener">British Taekwondo, règlement Poomsae (juin 2025, d'après WT)</a>.
+					Relevé le 26/09/2026 — à revérifier à chaque saison, WT fait évoluer ses règlements.</p>
+			</div>
+		</dialog>
 		<?php
 	}
 

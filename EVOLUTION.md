@@ -122,6 +122,38 @@ Nouvelle table `sp_cal_dobok_demandes` (schéma v2). Bloc « Mes doboks » dans 
 
 **Reporté (V3)** : question « le dobok est-il encore à la bonne taille ? » dans le formulaire de renouvellement — touche le flux d'adhésion (table `sp_adhesions_pending`, validation), le plus sensible du plugin ; en attendant, le lien vers la fiche (et donc le bloc « Mes doboks ») est déjà envoyé aux familles. Également en V3 : demandes automatiques (ceinture noire, changement de catégorie), aide à la commande plus complète (prévision nouveaux adhérents).
 
+## 26/09/2026 — Refonte : cahier des charges du module Doboks
+
+> À reporter dans `../md/03-proposition-refonte.md` (cahier des charges de la refonte) dès que le dossier `md/` est récupéré depuis l'autre ordinateur — il n'existe pas sur celui-ci (cf. [../JOURNAL.md](../JOURNAL.md), étape 7). Ce qui suit est la version de référence en attendant.
+
+Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **prototype validé** : garder ses règles métier et son principe de journal de mouvements, mais le reconstruire proprement dans la nouvelle architecture.
+
+### Règles métier à conserver
+
+- Prêt (pas don) d'un dobok **blanc** + d'un dobok **couleur** à chaque adhérent **hors renforcement musculaire**. Restitution en cas de départ.
+- Blanc : un seul modèle ; col déduit du grade (club : **col noir dès la ceinture noire, Poom compris** — écart assumé avec WT qui prévoit rouge et noir pour les Poom).
+- Couleur : ensemble veste + pantalon, modèle = catégorie de compétition × sexe, calqué sur la tenue de poomsae WT (Guidelines on Identifications 2022) : Cadet 12-14 (col rouge et noir, pantalon bleu garçon / rouge fille), Junior/Senior 15-50 (col noir, pantalon « T-Black » homme / bleu clair femme), Master 51+ (WT : veste dorée ; club : bleu foncé). Moins de 12 ans → modèle cadet (tolérance WT « aspirants » 8-11). Couleur prêté à tous, ceintures de couleur comprises (écart assumé : WT le réserve aux Poom/Dan en compétition).
+- Âge de catégorie calculé sur l'année de naissance, bornes et année de référence **paramétrables** (valeur WT par défaut, à revérifier chaque saison).
+- Tailles de 10 en 10 cm, taille suggérée = taille arrondie à la dizaine supérieure + marge paramétrable.
+- Un adhérent peut garder son ancien modèle / sa taille ; **1 échange de taille par saison et par dobok**, non bloquant (alerte bureau). Changement de modèle et remplacement ne comptent pas.
+- Rappel des règles consultable depuis l'écran de gestion (fenêtre « Règles des doboks »), avec sources WT datées.
+
+### Données (à normaliser dans le nouveau schéma)
+
+- Journal de mouvements comme **seule source de vérité** (effets précalculés stock / adhérent) ; lots d'achat ; demandes avec statuts (réservée, en attente, terminée, refusée, annulée) et réservation automatique à la création.
+- Prérequis sur la fiche adhérent, aujourd'hui mal rangés dans le legacy : **sexe** en vraie colonne (legacy : `extra_data['sexe']`), **date de naissance complète** (legacy : `date_naissance` JJ/MM + `annee_naissance`), **discipline** en valeur contrôlée TKD / RENFO (legacy : `categorie_saisie` libre, reconnu par motif « renfo »), **taille en cm numérique** avec date de mesure (legacy : texte libre).
+- Seuil d'alerte **par référence** (modèle × taille) au lieu d'un seuil global.
+- Capacité dédiée (ex. `sp_gestion_doboks`) plutôt que de réutiliser `sp_gestion_adhesions`.
+
+### Fonctions reportées du legacy, à prévoir dans la refonte
+
+- Question « le dobok est-il encore à la bonne taille ? » dans le **formulaire de renouvellement**, avec création de la demande à la validation.
+- **Demandes automatiques** : passage ceinture noire (résultat d'examen) → col noir ; changement de catégorie en début de saison (proposé, l'adhérent peut garder l'ancien).
+- **Aide à la commande** : besoins = demandes en attente + nouveaux adhérents prévus + changements de catégorie − disponible.
+- Notifications **push PWA** (bureau et familles) à la place / en plus des mails (cf. entrée du 24/09/2026), et écran de distribution intégré à la PWA bureau.
+- Récapitulatif quotidien au bureau si un planificateur fiable existe (le legacy envoie un mail par demande, faute de cron fiable).
+- Lien optionnel avec la comptabilité (coût des lots d'achat → sp-compta).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
