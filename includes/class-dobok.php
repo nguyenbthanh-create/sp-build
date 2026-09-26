@@ -324,6 +324,22 @@ class SP_Cal_Dobok {
 		return 'keup';
 	}
 
+	/**
+	 * Âge réel à la date du jour (≠ âge de compétition, calculé sur l'année seule).
+	 * date_naissance ne contient que « JJ/MM » (l'année est dans annee_naissance) ; sans
+	 * jour/mois lisible, on retombe sur la simple différence d'années.
+	 */
+	private static function age_du_jour( object $el ): ?int {
+		$an = self::annee_naissance( $el );
+		if ( ! $an ) return null;
+		$age = (int) current_time( 'Y' ) - $an;
+		if ( preg_match( '#^(\d{1,2})/(\d{1,2})#', (string) ( $el->date_naissance ?? '' ), $m ) ) {
+			// Anniversaire pas encore passé cette année → un an de moins.
+			if ( sprintf( '%02d%02d', (int) $m[2], (int) $m[1] ) > current_time( 'md' ) ) $age--;
+		}
+		return $age >= 0 ? $age : null;
+	}
+
 	private static function annee_naissance( object $el ): ?int {
 		if ( preg_match( '/^\d{4}$/', (string) ( $el->annee_naissance ?? '' ) ) ) return (int) $el->annee_naissance;
 		if ( preg_match( '/(\d{4})/', (string) ( $el->date_naissance ?? '' ), $m ) ) return (int) $m[1];
@@ -1859,9 +1875,11 @@ class SP_Cal_Dobok {
 		$fiche = admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . $id );
 
 		echo '<tr id="el-' . $id . '">';
-		printf( '<td><a href="%s"><strong>%s</strong> %s</a><div class="spd-meta">%s · %s%s</div></td>',
+		$age_reel = self::age_du_jour( $el );
+		printf( '<td><a href="%s"><strong>%s</strong> %s</a><div class="spd-meta">%s · %s · %s%s</div></td>',
 			esc_url( $fiche ), esc_html( mb_strtoupper( $el->nom ) ), esc_html( $el->prenom ),
 			esc_html( $el->grade ?: 'grade ?' ),
+			esc_html( $age_reel !== null ? $age_reel . ' ans' : 'âge ?' ),
 			esc_html( $cat ?: 'catégorie ?' ), $sexe ? ' ' . esc_html( $sexe ) : '' );
 
 		// Taille actuelle : valeur lue en cm, ou saisie brute illisible signalée telle quelle.
