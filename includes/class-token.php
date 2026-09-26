@@ -309,10 +309,8 @@ class SpCalPro_Token {
         );
 
         $club = esc_html(get_option('blogname','Club'));
-        // Événements avec inscriptions ouvertes pour cet élève
-        $events_inscrip = method_exists( $this->db, 'get_events_inscriptions_ouvertes_eleve' )
-            ? $this->db->get_events_inscriptions_ouvertes_eleve( intval( $el->id ) )
-            : array();
+        // Agenda du club sur 3 mois (hors cours et anniversaires), même calcul que l'application
+        $agenda = method_exists( $this->db, 'get_agenda_eleve' ) ? $this->db->get_agenda_eleve( intval( $el->id ), 92 ) : array();
         ob_start();
         ?>
         <div class="sp-membre-wrap">
@@ -569,7 +567,7 @@ class SpCalPro_Token {
                     <?php $grade_vise = $this->db->get_grade_vise_eleve($el); if ( $grade_vise ) : ?>
                     <div>
                         <div style="font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Prochain grade</div>
-                        <div class="sp-membre-grade-current" style="color:#0f70b7;"><?php echo esc_html($grade_vise); ?></div>
+                        <div class="sp-membre-grade-current" style="color:#D4000F;"><?php echo esc_html($grade_vise); ?></div>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -653,27 +651,42 @@ class SpCalPro_Token {
             <?php endif; ?>
 
             <!-- ══════════════════════════════════════════
-                 ÉVÉNEMENTS — INSCRIPTIONS OUVERTES
+                 ÉVÉNEMENTS — agenda du club sur 3 mois (décision du 26/09/2026) :
+                 tout est affiché, « Vous concerne » et « Inscription ouverte » en évidence.
+                 Même calcul que l'application (SpCalPro_DB::get_agenda_eleve()).
                  ══════════════════════════════════════════ -->
-            <?php if ( ! empty( $events_inscrip ) ) : ?>
-            <div class="sp-membre-section">
-                <h2>📅 Événements — Répondre à l'invitation</h2>
-                <?php foreach ( $events_inscrip as $evt ) :
-                    // statut_insc est maintenant inclus directement dans la requête SQL
-                    $statut_insc = isset($evt->statut_insc) ? $evt->statut_insc : 'en_attente';
-                    $deadline_ok = ! $evt->inscriptions_deadline || $evt->inscriptions_deadline >= date('Y-m-d');
-                    $d_evt       = $evt->date ? date_create( $evt->date )->format( 'd/m/Y' ) : '';
-                    $dl_evt      = $evt->inscriptions_deadline ? date_create( $evt->inscriptions_deadline )->format( 'd/m/Y' ) : '';
+            <?php if ( ! empty( $agenda ) ) : ?>
+            <div class="sp-membre-section" id="sp-agenda">
+                <h2>📅 Événements — 3 prochains mois</h2>
+                <div class="sp-agenda-filtre">
+                    <button type="button" class="active" data-filtre="tout">Tout</button>
+                    <button type="button" data-filtre="moi">Me concerne</button>
+                </div>
+                <?php foreach ( $agenda as $evt ) :
+                    $insc        = ! empty( $evt->inscription );
+                    $statut_insc = $evt->statut_insc ?? 'en_attente';
+                    $deadline    = $evt->inscriptions_deadline ?? '';
+                    $deadline_ok = ! $deadline || $deadline >= current_time( 'Y-m-d' );
+                    $d_evt       = $evt->date ? date_i18n( 'D j M Y', strtotime( $evt->date ) ) : '';
+                    $dl_evt      = $deadline ? date_create( $deadline )->format( 'd/m/Y' ) : '';
+                    $cls         = 'sp-insc-event' . ( $evt->concerne ? ' sp-agenda-moi' : ' sp-agenda-info' ) . ( $insc ? ' sp-agenda-insc' : '' );
                 ?>
-                <div class="sp-insc-event" id="sp-insc-<?php echo intval( $evt->id ); ?>">
+                <div class="<?php echo esc_attr( $cls ); ?>" id="sp-insc-<?php echo intval( $evt->id ); ?>" data-concerne="<?php echo $evt->concerne ? '1' : '0'; ?>">
                     <div class="sp-insc-info">
+                        <?php if ( $evt->concerne || $insc ) : ?>
+                        <div class="sp-agenda-tags">
+                            <?php if ( $evt->concerne ) : ?><span class="sp-agenda-tag sp-agenda-tag-moi">🎯 Vous concerne</span><?php endif; ?>
+                            <?php if ( $insc ) : ?><span class="sp-agenda-tag sp-agenda-tag-insc">📝 Inscription ouverte</span><?php endif; ?>
+                        </div>
+                        <?php endif; ?>
                         <div class="sp-insc-titre"><?php echo esc_html( $evt->titre ); ?></div>
                         <div class="sp-insc-meta">
                             📅 <?php echo esc_html( $d_evt );
                             if ( $evt->heure_debut ) echo ' · ' . esc_html( substr( $evt->heure_debut, 0, 5 ) );
-                            if ( $dl_evt )           echo ' &nbsp;⏰ avant le ' . esc_html( $dl_evt ); ?>
+                            if ( $insc && $dl_evt && $deadline_ok ) echo ' &nbsp;⏰ répondre avant le ' . esc_html( $dl_evt ); ?>
                         </div>
                     </div>
+                    <?php if ( $insc ) : ?>
                     <div class="sp-insc-actions">
                         <?php if ( ! $deadline_ok ) : ?>
                             <?php if ( $statut_insc === 'inscrit' ) : ?>
@@ -681,38 +694,46 @@ class SpCalPro_Token {
                             <?php elseif ( $statut_insc === 'refuse' ) : ?>
                                 <span class="sp-insc-badge sp-insc-ko">❌ Décliné</span>
                             <?php else : ?>
-                                <span class="sp-insc-badge" style="background:#f3f4f6;color:#6b7280;">⏳ Sans réponse</span>
+                                <span class="sp-insc-badge sp-insc-wait">⏳ Sans réponse</span>
                             <?php endif; ?>
                             <span style="font-size:11px;color:#9ca3af;display:block;margin-top:4px;">⏰ Délai dépassé — contacter le club pour modifier</span>
+                        <?php elseif ( $statut_insc === 'inscrit' ) : ?>
+                            <span class="sp-insc-badge sp-insc-ok">✅ Inscrit(e)</span>
+                            <button class="sp-insc-btn sp-insc-btn-annuler" data-event="<?php echo intval( $evt->id ); ?>" data-token="<?php echo esc_attr( $el->token ); ?>" data-rep="non">Annuler</button>
+                        <?php elseif ( $statut_insc === 'refuse' ) : ?>
+                            <span class="sp-insc-badge sp-insc-ko">❌ Décliné</span>
+                            <button class="sp-insc-btn sp-insc-btn-oui" data-event="<?php echo intval( $evt->id ); ?>" data-token="<?php echo esc_attr( $el->token ); ?>" data-rep="oui">Je participe finalement</button>
                         <?php else : ?>
-                            <?php if ( $statut_insc === 'inscrit' ) : ?>
-                                <span class="sp-insc-badge sp-insc-ok">✅ Inscrit(e)</span>
-                                <button class="sp-insc-btn sp-insc-btn-non"
-                                        data-event="<?php echo intval( $evt->id ); ?>"
-                                        data-token="<?php echo esc_attr( $el->token ); ?>"
-                                        data-rep="non"
-                                        style="font-size:11px;padding:5px 10px;background:#fff;color:#dc2626;border:2px solid #dc2626;">Annuler</button>
-                            <?php elseif ( $statut_insc === 'refuse' ) : ?>
-                                <span class="sp-insc-badge sp-insc-ko">❌ Décliné</span>
-                                <button class="sp-insc-btn sp-insc-btn-oui"
-                                        data-event="<?php echo intval( $evt->id ); ?>"
-                                        data-token="<?php echo esc_attr( $el->token ); ?>"
-                                        data-rep="oui"
-                                        style="font-size:11px;padding:5px 10px;">Je participe finalement</button>
-                            <?php else : ?>
-                                <button class="sp-insc-btn sp-insc-btn-oui"
-                                        data-event="<?php echo intval( $evt->id ); ?>"
-                                        data-token="<?php echo esc_attr( $el->token ); ?>"
-                                        data-rep="oui">✅ Je participe</button>
-                                <button class="sp-insc-btn sp-insc-btn-non"
-                                        data-event="<?php echo intval( $evt->id ); ?>"
-                                        data-token="<?php echo esc_attr( $el->token ); ?>"
-                                        data-rep="non">❌ Je ne peux pas</button>
-                            <?php endif; ?>
+                            <button class="sp-insc-btn sp-insc-btn-oui" data-event="<?php echo intval( $evt->id ); ?>" data-token="<?php echo esc_attr( $el->token ); ?>" data-rep="oui">✅ Je participe</button>
+                            <button class="sp-insc-btn sp-insc-btn-non" data-event="<?php echo intval( $evt->id ); ?>" data-token="<?php echo esc_attr( $el->token ); ?>" data-rep="non">❌ Je ne peux pas</button>
                         <?php endif; ?>
                     </div>
+                    <?php endif; ?>
                 </div><!-- /.sp-insc-event -->
                 <?php endforeach; ?>
+                <p class="sp-membre-muted sp-agenda-vide" style="display:none;">Aucun événement ne vous concerne dans les 3 prochains mois.</p>
+                <script>
+                (function () {
+                    var box = document.getElementById('sp-agenda');
+                    if (!box) return;
+                    var btns = box.querySelectorAll('.sp-agenda-filtre button');
+                    function appliquer(f) {
+                        var n = 0;
+                        box.querySelectorAll('.sp-insc-event').forEach(function (ev) {
+                            var voir = f === 'tout' || ev.getAttribute('data-concerne') === '1';
+                            ev.style.display = voir ? '' : 'none';
+                            if (voir) n++;
+                        });
+                        box.querySelector('.sp-agenda-vide').style.display = n ? 'none' : '';
+                        btns.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-filtre') === f); });
+                        try { localStorage.setItem('sp_agenda_filtre', f); } catch (e) {}
+                    }
+                    btns.forEach(function (b) { b.addEventListener('click', function () { appliquer(b.getAttribute('data-filtre')); }); });
+                    var f = 'tout';
+                    try { if (localStorage.getItem('sp_agenda_filtre') === 'moi') f = 'moi'; } catch (e) {}
+                    appliquer(f);
+                })();
+                </script>
             </div>
             <?php endif; ?>
 

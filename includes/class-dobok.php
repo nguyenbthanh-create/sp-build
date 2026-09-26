@@ -1281,12 +1281,12 @@ class SP_Cal_Dobok {
 				.spd-front .spd-f-conseil{font-size:13px;color:#4b5563;margin-top:4px}
 				.spd-front .spd-f-demande{background:#f9fafb;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:14px}
 				.spd-front details{margin-top:10px}
-				.spd-front summary{cursor:pointer;font-weight:600;color:#0f70b7}
+				.spd-front summary{cursor:pointer;font-weight:600;color:#D4000F}
 				.spd-front form{margin:8px 0 0}
 				.spd-front form label{display:block;margin:6px 0;font-size:14px}
 				.spd-front form select,.spd-front form textarea{max-width:100%}
 				.spd-front form textarea{width:100%;min-height:54px}
-				.spd-front .spd-f-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:6px;background:#0f70b7;color:#fff;font-weight:600;cursor:pointer}
+				.spd-front .spd-f-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:6px;background:#D4000F;color:#fff;font-weight:600;cursor:pointer}
 				.spd-front .spd-f-lien{background:none;border:0;padding:0;color:#b91c1c;text-decoration:underline;cursor:pointer;font-size:13px}
 				.spd-front .spd-f-note{font-size:12px;color:#6b7280;margin-top:12px}
 			</style>

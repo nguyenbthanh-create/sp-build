@@ -3256,6 +3256,81 @@ if ( empty($notes_eleve) ) {
      * Événements avec inscriptions ouvertes (deadline non dépassée)
      * auxquels l'élève n'a pas encore répondu, pour affichage sur la fiche membre.
      */
+    /**
+     * Agenda d'un adhérent (fiche ?token= et PWA, décision du 26/09/2026) : TOUS les
+     * événements du club des $jours prochains jours — hors cours, anniversaires et
+     * annulations de cours — avec pour chacun :
+     *   - concerne    : l'événement vise sa discipline et sa tranche d'âge (ou tout le club),
+     *                   ou il est éligible à ses inscriptions ;
+     *   - inscription : inscriptions ouvertes (activées + envoyées) ET adhérent éligible ;
+     *   - statut_insc : sa réponse (inscrit / refuse / en_attente).
+     * L'éligibilité reprend la logique de SpCalPro_Admin::rest_pwa_eleve_evenements()
+     * (18/09/2026) : discipline ET tranche d'âge ciblées, ou sélection manuelle exclusive.
+     */
+    public function get_agenda_eleve( $eleve_id, $jours = 92 ) {
+        global $wpdb;
+        $te  = $this->table_events();
+        $ti  = $this->table_event_inscriptions();
+        $eid = intval( $eleve_id );
+
+        $eleve = $wpdb->get_row( $wpdb->prepare(
+            "SELECT categorie_saisie, categorie_age FROM {$this->table_eleves()} WHERE id = %d", $eid
+        ) );
+        $cat_saisie = trim( $eleve->categorie_saisie ?? '' );
+        $cat_age    = trim( $eleve->categorie_age    ?? '' );
+
+        $debut = current_time( 'Y-m-d' );
+        $fin   = date( 'Y-m-d', strtotime( $debut . ' +' . intval( $jours ) . ' days' ) );
+        $events = $wpdb->get_results( $wpdb->prepare(
+            "SELECT e.*, COALESCE(i.statut, 'en_attente') AS statut_insc
+             FROM $te e
+             LEFT JOIN $ti i ON i.event_id = e.id AND i.eleve_id = %d
+             WHERE e.date BETWEEN %s AND %s
+               AND e.type NOT IN ('cours','anniversaire','annulation')
+             ORDER BY e.date ASC, e.heure_debut ASC",
+            $eid, $debut, $fin
+        ) );
+
+        foreach ( (array) $events as $ev ) {
+            $insc_ouverte = ! empty( $ev->inscriptions_actives ) && ! empty( $ev->inscriptions_envoye );
+            $ev->inscription = $insc_ouverte && $this->eleve_eligible_inscription( $ev, $eid, $cat_saisie, $cat_age );
+            $ev->concerne    = $ev->inscription || $this->evenement_concerne( $ev, $cat_saisie, $cat_age );
+        }
+        return (array) $events;
+    }
+
+    /** Éligibilité aux inscriptions d'un événement (cf. rest_pwa_eleve_evenements()). */
+    private function eleve_eligible_inscription( $ev, $eid, $cat_saisie, $cat_age ) {
+        $cats  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_categories     ?? '' ) ) );
+        $ages  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_age_categories ?? '' ) ) );
+        $extra = array_filter( array_map( 'intval', explode( ',', $ev->inscriptions_extra_eleves ?? '' ) ) );
+        if ( in_array( intval( $eid ), $extra, true ) ) return true;
+        if ( empty( $cats ) && empty( $ages ) && ! empty( $extra ) ) return false; // ciblage exclusivement manuel
+        $disc_ok = empty( $cats ) || ( $cat_saisie !== '' && in_array( $cat_saisie, $cats, true ) );
+        $age_ok  = empty( $ages ) || ( $cat_age    !== '' && in_array( $cat_age,    $ages, true ) );
+        return $disc_ok && $age_ok;
+    }
+
+    /**
+     * L'événement vise-t-il la discipline et la tranche d'âge de l'adhérent ? Axes
+     * cours_discipline (Taekwondo / Renforcement musculaire / Autre) × cours_age_categories
+     * (18/09/2026). Pas de ciblage, discipline « Autre » ou « Tout âge » = tout le club.
+     */
+    private function evenement_concerne( $ev, $cat_saisie, $cat_age ) {
+        $disc = array_filter( array_map( 'trim', explode( ',', $ev->cours_discipline     ?? '' ) ) );
+        $ages = array_filter( array_map( 'trim', explode( ',', $ev->cours_age_categories ?? '' ) ) );
+
+        $renfo   = (bool) preg_match( '/renfo|renforcement/i', $cat_saisie );
+        $disc_el = $renfo ? 'Renforcement musculaire' : 'Taekwondo';
+        $disc_ok = empty( $disc ) || in_array( 'Autre', $disc, true ) || in_array( $disc_el, $disc, true );
+
+        $age_ok = empty( $ages ) || in_array( 'Tout âge', $ages, true ) || $cat_age === ''
+            || in_array( $cat_age, $ages, true )
+            || ( $cat_age === 'Ado/adulte' && in_array( 'Adulte', $ages, true ) );
+
+        return $disc_ok && $age_ok;
+    }
+
     public function get_events_inscriptions_ouvertes_eleve( $eleve_id ) {
         global $wpdb;
         $te    = $this->table_events();

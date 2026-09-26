@@ -340,48 +340,24 @@ public function enqueue( $hook ) {
         $eid = $this->pwa_require_auth( $req );
         if ( is_wp_error( $eid ) ) return $eid;
 
-        global $wpdb;
-        $tel    = $this->db->table_eleves();
-        $eleve  = $wpdb->get_row( $wpdb->prepare(
-            "SELECT categorie_saisie, categorie_age FROM $tel WHERE id=%d AND actif=1 LIMIT 1",
-            intval( $eid )
-        ) );
-        $cat_saisie = trim( $eleve->categorie_saisie ?? '' );
-        $cat_age    = trim( $eleve->categorie_age    ?? '' );
-
-        $events = $this->db->get_events_inscriptions_ouvertes_eleve( intval( $eid ) );
-
+        // Agenda complet sur 3 mois (hors cours et anniversaires), avec ce qui concerne
+        // l'adhérent et ses inscriptions ouvertes — calcul partagé avec la fiche ?token=
+        // (SpCalPro_DB::get_agenda_eleve(), décision du 26/09/2026).
         $out = array();
-        foreach ( $events as $ev ) {
-            // Calcul éligibilité : discipline ET tranche d'âge doivent correspondre.
-            // Si les champs sont vides ET qu'aucune sélection manuelle n'existe → ouvert à tous.
-            // Si les champs sont vides MAIS qu'une sélection manuelle existe → ciblage exclusif
-            // sur cette sélection (même logique que l'envoi, cf. ajax_inscription_envoyer()) —
-            // sinon la case "Autre" laissée vide rendrait tout le monde éligible dans l'appli
-            // alors que l'email n'a été envoyé qu'aux élèves choisis à la main (18/09/2026).
-            $cats  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_categories     ?? '' ) ) );
-            $ages  = array_filter( array_map( 'trim', explode( ',', $ev->inscriptions_age_categories ?? '' ) ) );
-            $extra = array_filter( array_map( 'intval', explode( ',', $ev->inscriptions_extra_eleves ?? '' ) ) );
-            $has_cat_filter = ! empty( $cats ) || ! empty( $ages );
-
-            if ( $has_cat_filter || empty( $extra ) ) {
-                $disc_ok  = empty( $cats ) || ( $cat_saisie !== '' && in_array( $cat_saisie, $cats, true ) );
-                $age_ok   = empty( $ages ) || ( $cat_age    !== '' && in_array( $cat_age,    $ages, true ) );
-                $eligible_categorie = $disc_ok && $age_ok;
-            } else {
-                $eligible_categorie = false; // ciblage exclusivement manuel
-            }
-            $eligible = $eligible_categorie || in_array( intval( $eid ), $extra, true );
-
+        foreach ( $this->db->get_agenda_eleve( intval( $eid ), 92 ) as $ev ) {
             $out[] = array(
                 'id'                    => intval( $ev->id ),
                 'titre'                 => $ev->titre                 ?? '',
                 'date'                  => $ev->date                  ?? '',
                 'heure_debut'           => $ev->heure_debut           ?? '',
+                'type'                  => $ev->type                  ?? '',
                 'inscriptions_deadline' => $ev->inscriptions_deadline ?? null,
                 'inscriptions_message'  => $ev->inscriptions_message  ?? '',
                 'statut_insc'           => $ev->statut_insc           ?? 'en_attente',
-                'eligible'              => $eligible,
+                'concerne'              => (bool) $ev->concerne,
+                'inscription'           => (bool) $ev->inscription,
+                // Compatibilité avec l'ancien client : « eligible » = peut répondre.
+                'eligible'              => (bool) $ev->inscription,
             );
         }
         return rest_ensure_response( array( 'evenements' => $out ) );
@@ -713,6 +689,15 @@ window.addEventListener('error', function(e) {
 .spcal-evt-badge-wait{background:rgba(245,158,11,.15);color:#fbbf24;}
 .spcal-evt-badge-info{background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);}
 .spcal-evt-card.statut-info{border-left-color:rgba(255,255,255,.15);opacity:.75;}
+.spcal-evt-card.statut-moi{border-left-color:#0f70b7;}
+.spcal-evt-card.statut-insc{border-left-color:#f59e0b;box-shadow:0 0 0 1px rgba(245,158,11,.35);}
+.spcal-evt-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.spcal-evt-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.spcal-evt-tag-moi{background:rgba(15,112,183,.2);color:#7cc0f5;}
+.spcal-evt-tag-insc{background:#f59e0b;color:#111;}
+.spcal-evt-filtre{display:flex;gap:6px;margin-bottom:14px;}
+.spcal-evt-filtre button{flex:1;background:#1a1a1a;color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;}
+.spcal-evt-filtre button.active{background:#0f70b7;border-color:#0f70b7;color:#fff;}
 .spcal-evt-loading{font-size:12px;color:rgba(255,255,255,.4);font-style:italic;}
 
 /* ── PROCHAIN GRADE ───────────────────────────────────────────── */
@@ -863,7 +848,7 @@ window.addEventListener('error', function(e) {
 
             <!-- Événements & Inscriptions -->
             <section id="spcal-evenements" class="spcal-screen">
-                <div class="spcal-section-title">Inscriptions ouvertes</div>
+                <div class="spcal-section-title">Événements — 3 prochains mois</div>
                 <div id="spcal-evt-list"><div class="spcal-empty">Chargement…</div></div>
             </section>
 
@@ -938,7 +923,7 @@ window.addEventListener('error', function(e) {
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-evenements" onclick="spCalNav('evenements',this)">
                 <span class="spcal-nav-ico">🎯</span>
-                <span>Inscriptions</span>
+                <span>Événements</span>
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-pointage" style="display:none" onclick="spCalNav('pointage',this)">
                 <span class="spcal-nav-ico">📡</span>
@@ -1382,29 +1367,40 @@ function renderEvenements() {
     var listEl = document.getElementById('spcal-evt-list');
     if (!listEl) return;
 
+    // Agenda du club sur 3 mois (hors cours et anniversaires) : « Vous concerne » pour ce qui
+    // vise l'adhérent, « Inscription ouverte » quand il peut répondre (décision du 26/09/2026).
     apiFetch('/eleve/evenements')
     .then(function(r) {
-        var evts = r.evenements || [];
-        if (!evts.length) {
-            listEl.innerHTML = '<div class="spcal-empty">Aucune inscription ouverte pour le moment</div>';
+        var evts   = r.evenements || [];
+        var filtre = STORE.get('spcal_evt_filtre') === 'moi' ? 'moi' : 'tout';
+        var shown  = filtre === 'moi' ? evts.filter(function(ev){ return ev.concerne; }) : evts;
+
+        var html = '<div class="spcal-evt-filtre">' +
+            '<button class="' + (filtre === 'tout' ? 'active' : '') + '" onclick="pwaEvtFiltre(\'tout\')">Tout</button>' +
+            '<button class="' + (filtre === 'moi'  ? 'active' : '') + '" onclick="pwaEvtFiltre(\'moi\')">Me concerne</button>' +
+            '</div>';
+
+        if (!shown.length) {
+            listEl.innerHTML = html + '<div class="spcal-empty">' +
+                (filtre === 'moi' ? 'Aucun événement ne vous concerne dans les 3 prochains mois' : 'Aucun événement dans les 3 prochains mois') +
+                '</div>';
             return;
         }
-        var html = '';
-        evts.forEach(function(ev) {
-            var statut   = ev.statut_insc || 'en_attente';
-            var eligible = !!ev.eligible;
-            var dlOk     = !ev.inscriptions_deadline || ev.inscriptions_deadline >= new Date().toISOString().slice(0,10);
-            var dateStr  = ev.date ? ('\ud83d\udcc5 ' + fmtDate(ev.date) + (ev.heure_debut ? ' \u00b7 ' + fmtHeure(ev.heure_debut) : '')) : '';
-            var dlStr    = (ev.inscriptions_deadline && dlOk && eligible)
+        shown.forEach(function(ev) {
+            var statut  = ev.statut_insc || 'en_attente';
+            var insc    = !!ev.inscription;
+            var dlOk    = !ev.inscriptions_deadline || ev.inscriptions_deadline >= new Date().toISOString().slice(0,10);
+            var dateStr = ev.date ? ('\ud83d\udcc5 ' + fmtDate(ev.date) + (ev.heure_debut ? ' \u00b7 ' + fmtHeure(ev.heure_debut) : '')) : '';
+            var tags    = '';
+            if (ev.concerne) tags += '<span class="spcal-evt-tag spcal-evt-tag-moi">\ud83c\udfaf Vous concerne</span>';
+            if (insc)        tags += '<span class="spcal-evt-tag spcal-evt-tag-insc">\ud83d\udcdd Inscription ouverte</span>';
+            var dlStr   = (insc && ev.inscriptions_deadline && dlOk)
                 ? '<div class="spcal-evt-deadline">\u23f0 R\u00e9pondre avant le ' + fmtDate(ev.inscriptions_deadline) + '</div>' : '';
-            var msgStr   = ev.inscriptions_message
+            var msgStr  = (insc && ev.inscriptions_message)
                 ? '<div class="spcal-evt-msg">' + esc(ev.inscriptions_message) + '</div>' : '';
 
             var actionsHtml = '';
-            if (!eligible) {
-                // Visible mais non concerné — pour info seulement
-                actionsHtml = '<span class="spcal-evt-badge spcal-evt-badge-info">\ud83d\udc40 Pour info</span>';
-            } else if (!dlOk) {
+            if (insc && !dlOk) {
                 var badgeCls = statut === 'inscrit' ? 'spcal-evt-badge-ok'
                              : statut === 'refuse'  ? 'spcal-evt-badge-ko'
                              :                        'spcal-evt-badge-wait';
@@ -1413,29 +1409,31 @@ function renderEvenements() {
                              :                        '\u23f3 Sans r\u00e9ponse';
                 actionsHtml = '<span class="spcal-evt-badge ' + badgeCls + '">' + badgeLbl + '</span>' +
                               '<div style="font-size:11px;color:rgba(255,255,255,.3);margin-top:6px;">\u23f0 D\u00e9lai d\u00e9pass\u00e9</div>';
-            } else if (statut === 'inscrit') {
+            } else if (insc && statut === 'inscrit') {
                 actionsHtml =
                     '<span class="spcal-evt-badge spcal-evt-badge-ok">\u2705 Inscrit(e)</span>' +
                     '<button class="spcal-evt-btn spcal-evt-btn-annuler" onclick="pwaInscRepondre(' + ev.id + ',\'non\',this)">\u274c Annuler</button>';
-            } else if (statut === 'refuse') {
+            } else if (insc && statut === 'refuse') {
                 actionsHtml =
                     '<span class="spcal-evt-badge spcal-evt-badge-ko">\u274c D\u00e9clin\u00e9</span>' +
                     '<button class="spcal-evt-btn spcal-evt-btn-oui" onclick="pwaInscRepondre(' + ev.id + ',\'oui\',this)">Je participe finalement</button>';
-            } else {
+            } else if (insc) {
                 actionsHtml =
                     '<button class="spcal-evt-btn spcal-evt-btn-oui" onclick="pwaInscRepondre(' + ev.id + ',\'oui\',this)">\u2705 Je participe</button>' +
                     '<button class="spcal-evt-btn spcal-evt-btn-non" onclick="pwaInscRepondre(' + ev.id + ',\'non\',this)">\u274c Je ne peux pas</button>';
             }
 
-            var cardCls = !eligible ? ' statut-info'
+            var cardCls = !ev.concerne ? ' statut-info'
+                        : !insc ? ' statut-moi'
                         : statut === 'inscrit' ? ' statut-inscrit'
-                        : statut === 'refuse'  ? ' statut-refuse' : '';
+                        : statut === 'refuse'  ? ' statut-refuse' : ' statut-insc';
             html +=
                 '<div class="spcal-evt-card' + cardCls + '" id="spcal-evt-' + ev.id + '">' +
+                (tags ? '<div class="spcal-evt-tags">' + tags + '</div>' : '') +
                 '<div class="spcal-evt-titre">' + esc(ev.titre) + '</div>' +
                 '<div class="spcal-evt-meta">' + dateStr + '</div>' +
                 dlStr + msgStr +
-                '<div class="spcal-evt-actions">' + actionsHtml + '</div>' +
+                (actionsHtml ? '<div class="spcal-evt-actions">' + actionsHtml + '</div>' : '') +
                 '</div>';
         });
         listEl.innerHTML = html;
@@ -1444,6 +1442,11 @@ function renderEvenements() {
         listEl.innerHTML = '<div class="spcal-empty">Erreur de chargement</div>';
     });
 }
+
+window.pwaEvtFiltre = function(f) {
+    STORE.set('spcal_evt_filtre', f === 'moi' ? 'moi' : 'tout');
+    renderEvenements();
+};
 
 window.pwaInscRepondre = function(eventId, reponse, btn) {
     var token = STORE.get('spcal_token');

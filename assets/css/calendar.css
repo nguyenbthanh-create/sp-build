@@ -175,83 +175,95 @@ textarea.sp-input { height:auto; padding:8px 10px; resize:vertical; }
 
 /* ============================================================
    FICHE MEMBRE PUBLIQUE (token)
+   Habillage clair aligné sur tkdclaira.fr et le planning (26/09/2026) : fond blanc,
+   texte #222, titres Lato, rouge #D4000F en accent unique. La carte de membre garde
+   son propre design (styles inline dans class-token.php). Sélecteurs préfixés
+   .sp-membre-wrap pour l'emporter sur le thème et sur les styles inline plus anciens.
    ============================================================ */
 .sp-membre-wrap {
-    max-width: 760px; margin: 0 auto; font-family: -apple-system, Arial, sans-serif;
+    --sp-red:#D4000F; --sp-ink:#222; --sp-muted:#6b6b6b; --sp-line:#e8e5e2; --sp-soft:#f7f5f3;
+    max-width: 760px; margin: 0 auto; font-family: inherit; color: var(--sp-ink);
 }
 .sp-membre-error {
-    background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-    padding: 24px; text-align: center; color: #b91c1c; font-size: 15px;
+    background: #fff; border: 1px solid #e8e5e2; border-left: 3px solid #D4000F; border-radius: 6px;
+    padding: 24px; text-align: center; color: #222; font-size: 15px;
 }
 
 /* En-tête */
-.sp-membre-header {
-    background: linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);
-    color: #fff; border-radius: 12px; padding: 20px 24px;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+.sp-membre-wrap .sp-membre-header {
+    background: #fff; color: var(--sp-ink);
+    border: 1px solid var(--sp-line); border-radius: 6px; box-shadow: inset 3px 0 0 var(--sp-red);
+    padding: 20px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
     margin-bottom: 20px;
 }
-.sp-membre-avatar {
+.sp-membre-wrap .sp-membre-avatar {
     width: 60px; height: 60px; border-radius: 50%;
-    background: rgba(255,255,255,.2); border: 2px solid rgba(255,255,255,.5);
+    background: var(--sp-soft); border: 1px solid var(--sp-line); color: var(--sp-ink);
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px; font-weight: 800; flex-shrink: 0;
+    font-family: Lato, sans-serif; font-size: 20px; font-weight: 700; flex-shrink: 0;
 }
-.sp-membre-identity { flex: 1; min-width: 160px; }
-.sp-membre-identity h1 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-.sp-membre-meta { display: flex; flex-wrap: wrap; gap: 6px; }
-.sp-membre-tag {
-    padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
+.sp-membre-wrap .sp-membre-identity { flex: 1; min-width: 160px; }
+.sp-membre-wrap .sp-membre-identity h1 {
+    font-family: Lato, sans-serif; font-size: 22px; font-weight: 400; letter-spacing: .06em;
+    color: var(--sp-ink); margin: 0 0 8px;
 }
-.sp-membre-tag-saisie { background: rgba(139,92,246,.3); color: #e9d5ff; }
-.sp-membre-tag-age    { background: rgba(255,255,255,.2); color: #fff; }
-.sp-membre-saison     { font-size: 12px; opacity: .7; align-self: center; }
-.sp-membre-right      { margin-left: auto; text-align: right; }
+.sp-membre-wrap .sp-membre-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-membre-wrap .sp-membre-tag {
+    padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    background: #fff; border: 1px solid #d9d5d1; color: var(--sp-muted);
+}
+.sp-membre-wrap .sp-membre-tag-saisie { border-color: var(--sp-red); color: var(--sp-red); }
+.sp-membre-wrap .sp-membre-saison     { font-size: 12px; color: var(--sp-muted); align-self: center; }
+.sp-membre-wrap .sp-membre-right      { margin-left: auto; text-align: right; }
 
 /* Badges statut */
-.sp-membre-badge {
+.sp-membre-wrap .sp-membre-badge {
     display: inline-block; padding: 4px 12px; border-radius: 20px;
     font-size: 12px; font-weight: 700; margin-bottom: 8px;
 }
-.sp-membre-badge-ok   { background: #22c55e; color: #fff; }
-.sp-membre-badge-ko   { background: #ef4444; color: #fff; }
-.sp-membre-badge-warn { background: #f59e0b; color: #fff; }
+.sp-membre-wrap .sp-membre-badge-ok   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.sp-membre-wrap .sp-membre-badge-ko   { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.sp-membre-wrap .sp-membre-badge-warn { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
 
 /* Barre assiduité */
-.sp-membre-assiduity { font-size: 12px; opacity: .9; }
-.sp-membre-bar-track {
-    height: 6px; background: rgba(255,255,255,.2);
-    border-radius: 3px; overflow: hidden; margin-bottom: 3px;
+.sp-membre-wrap .sp-membre-assiduity { font-size: 12px; color: var(--sp-muted); }
+.sp-membre-wrap .sp-membre-bar-track {
+    height: 6px; background: var(--sp-line); border-radius: 3px; overflow: hidden; margin-bottom: 3px;
 }
 .sp-membre-bar-fill { height: 100%; border-radius: 3px; }
 
 /* Sections */
-.sp-membre-section {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-    padding: 16px 20px; margin-bottom: 16px;
+.sp-membre-wrap .sp-membre-section {
+    background: #fff; border: 1px solid var(--sp-line); border-radius: 6px;
+    padding: 18px 20px; margin-bottom: 18px; box-shadow: none;
 }
-.sp-membre-section h2 {
-    font-size: 15px; font-weight: 700; color: #1e3a5f;
-    margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f1;
+.sp-membre-wrap .sp-membre-section h2 {
+    font-family: Lato, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--sp-ink);
+    margin: 0 0 14px; padding: 0 0 10px; border-bottom: 1px solid var(--sp-line); position: relative;
 }
-.sp-membre-muted { color: #9ca3af; font-size: 13px; }
+.sp-membre-wrap .sp-membre-section h2::after {
+    content: ''; position: absolute; left: 0; bottom: -1px; width: 36px; height: 2px; background: var(--sp-red);
+}
+.sp-membre-muted { color: #8a8580; font-size: 13px; }
 
 /* Grade actuel */
-.sp-membre-grade-current {
-    display: inline-block; background: #1e3a5f; color: #fff;
-    border-radius: 8px; padding: 8px 20px; font-size: 18px; font-weight: 800;
+.sp-membre-wrap .sp-membre-grade-current {
+    display: inline-block; background: #fff; color: var(--sp-ink);
+    border: 1px solid var(--sp-line); border-left: 3px solid var(--sp-red);
+    border-radius: 4px; padding: 8px 18px; font-family: Lato, sans-serif; font-size: 18px; font-weight: 700;
 }
 
 /* Table grades */
 .sp-membre-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sp-membre-table th {
-    text-align: left; font-size: 11px; text-transform: uppercase;
-    color: #6b7280; padding: 4px 8px 8px 0; border-bottom: 1px solid #e5e7eb;
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--sp-muted, #6b6b6b); padding: 4px 8px 8px 0; border-bottom: 1px solid var(--sp-line, #e8e5e2);
 }
-.sp-membre-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid #f3f4f6; }
-.sp-membre-tr-current td { background: #f0fdf4; }
+.sp-membre-table td { padding: 7px 8px 7px 0; border-bottom: 1px solid #f1eeeb; }
+.sp-membre-tr-current td { background: var(--sp-soft, #f7f5f3); }
 .sp-membre-badge-small {
-    background: #22c55e; color: #fff; border-radius: 4px;
+    background: var(--sp-red, #D4000F); color: #fff; border-radius: 4px;
     padding: 1px 6px; font-size: 10px; font-weight: 700; margin-left: 4px;
 }
 
@@ -260,19 +272,48 @@ textarea.sp-input { height:auto; padding:8px 10px; resize:vertical; }
     display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px;
 }
 .sp-membre-pres-item {
-    border-radius: 8px; padding: 8px; text-align: center;
+    border-radius: 6px; padding: 8px; text-align: center;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--sp-line, #e8e5e2); background: #fff;
 }
-.sp-pres-ok { background: #f0fdf4; border-color: #bbf7d0; }
-.sp-pres-ko { background: #fef2f2; border-color: #fecaca; }
+.sp-pres-ok { background: #fff; border-color: #bbf7d0; }
+.sp-pres-ko { background: var(--sp-soft, #f7f5f3); border-color: var(--sp-line, #e8e5e2); }
 .sp-pres-icon  { font-size: 16px; }
-.sp-pres-date  { font-size: 12px; font-weight: 700; color: #374151; }
-.sp-pres-label { font-size: 10px; color: #9ca3af; }
+.sp-pres-date  { font-size: 12px; font-weight: 700; color: var(--sp-ink, #222); }
+.sp-pres-label { font-size: 10px; color: #8a8580; }
+
+/* Événements — agenda 3 mois (badges « Vous concerne » / « Inscription ouverte ») */
+.sp-membre-wrap .sp-agenda-filtre { display: flex; gap: 6px; margin: 0 0 14px; }
+.sp-membre-wrap .sp-agenda-filtre button {
+    background: #fff; color: var(--sp-muted); border: 1px solid #d9d5d1; border-radius: 20px;
+    padding: 6px 14px; font-size: 12px; letter-spacing: .03em; cursor: pointer;
+}
+.sp-membre-wrap .sp-agenda-filtre button.active { border-color: var(--sp-red); color: var(--sp-red); }
+.sp-membre-wrap .sp-insc-event {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    padding: 12px 16px; border-radius: 6px; background: #fff;
+    border: 1px solid var(--sp-line); margin-bottom: 10px;
+}
+.sp-membre-wrap .sp-insc-event.sp-agenda-info { opacity: .7; }
+.sp-membre-wrap .sp-insc-event.sp-agenda-moi  { box-shadow: inset 3px 0 0 #9a9590; }
+.sp-membre-wrap .sp-insc-event.sp-agenda-insc { box-shadow: inset 3px 0 0 var(--sp-red); border-color: #f1c8cb; background: #fffafa; }
+.sp-membre-wrap .sp-agenda-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.sp-membre-wrap .sp-agenda-tag { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.sp-membre-wrap .sp-agenda-tag-moi  { background: var(--sp-soft); color: var(--sp-ink); border: 1px solid #d9d5d1; }
+.sp-membre-wrap .sp-agenda-tag-insc { background: var(--sp-red); color: #fff; }
+.sp-membre-wrap .sp-insc-titre { color: var(--sp-ink); }
+.sp-membre-wrap .sp-insc-meta  { color: var(--sp-muted); }
+.sp-membre-wrap .sp-insc-btn { border-radius: 20px; }
+.sp-membre-wrap .sp-insc-btn-oui { background: var(--sp-red); color: #fff; border: 1px solid var(--sp-red); }
+.sp-membre-wrap .sp-insc-btn-non,
+.sp-membre-wrap .sp-insc-btn-annuler { background: #fff; color: var(--sp-muted); border: 1px solid #d9d5d1; }
+.sp-membre-wrap .sp-insc-btn-non:hover,
+.sp-membre-wrap .sp-insc-btn-annuler:hover { border-color: var(--sp-red); color: var(--sp-red); }
+.sp-membre-wrap .sp-insc-wait { background: var(--sp-soft); color: var(--sp-muted); }
 
 /* Footer */
 .sp-membre-footer {
-    text-align: center; font-size: 11px; color: #9ca3af;
+    text-align: center; font-size: 11px; color: #8a8580;
     padding: 12px 0; margin-top: 8px;
 }
 
