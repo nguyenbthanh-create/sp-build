@@ -86,6 +86,8 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 - **Doboks : fenêtre « Règles des doboks »** (onglet Adhérents de la page Doboks, bouton ⓘ à côté des filtres) : rappel de la règle du club appliquée par le module, et référence World Taekwondo (tenue de poomsae par catégorie, âge, grade ; dobok blanc standard par grade), avec les écarts assumés par le club et les sources (WT Guidelines on Identifications 2022, règlement Poomsae British Taekwondo 2025). Fenêtre modale native `<dialog>`, rien d'affiché en permanence. Âge master par défaut passé de 50 à **51 ans** (valeur WT) ; sans effet si le réglage a déjà été enregistré.
 - Cahier des charges du module Doboks pour la refonte ajouté dans `EVOLUTION.md` (le fichier `../md/03-proposition-refonte.md` n'étant pas sur cet ordinateur).
 
+- **Doboks : col rouge et noir pour les Poom** (précision de l'utilisateur) : nouveau modèle blanc « Blanc col rouge et noir » (`col_poom`). Le col du dobok blanc suit désormais le grade : blanc (Keup), rouge et noir (Poom), noir (Dan) ; une « ceinture noire » sans précision est classée Poom avant 15 ans, Dan après. L'alerte de l'onglet Adhérents devient « Col à changer » dès que le col détenu ne correspond pas au grade. Le col du dobok couleur reste fixé par le modèle (catégorie), quelle que soit la ceinture. Fenêtre des règles et spécification mises à jour.
+
 ---
 
 *Dernière mise à jour de ce fichier : 26/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

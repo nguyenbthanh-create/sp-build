@@ -12,7 +12,7 @@
  *
  * Une « référence » n'a pas de table : c'est le couple modèle × taille. Le modèle attendu
  * d'un adhérent est déduit automatiquement (jamais choisi à la main) :
- *   - blanc   : col noir si ceinture noire (Dan / Poom), sinon col blanc ;
+ *   - blanc   : col déduit du grade — blanc (Keup), rouge et noir (Poom), noir (Dan) ;
  *   - couleur : catégorie de compétition (année de naissance) × sexe, acheté par ensemble.
  * Un adhérent peut garder son ancien modèle / sa taille : les écarts sont signalés, pas imposés.
  *
@@ -39,8 +39,9 @@ class SP_Cal_Dobok {
 	const PAGE           = 'sp-cal-dobok';
 
 	const MODELES = [
-		'col_blanc' => [ 'type' => 'blanc',   'label' => 'Blanc col blanc',     'detail' => 'Grades couleur' ],
-		'col_noir'  => [ 'type' => 'blanc',   'label' => 'Blanc col noir',      'detail' => 'Ceintures noires (Dan / Poom)' ],
+		'col_blanc' => [ 'type' => 'blanc',   'label' => 'Blanc col blanc',     'detail' => 'Keup (ceintures de couleur)' ],
+		'col_poom'  => [ 'type' => 'blanc',   'label' => 'Blanc col rouge et noir', 'detail' => 'Poom (ceinture noire des moins de 15 ans)' ],
+		'col_noir'  => [ 'type' => 'blanc',   'label' => 'Blanc col noir',      'detail' => 'Dan (ceinture noire)' ],
 		'cadet_g'   => [ 'type' => 'couleur', 'label' => 'Cadet garçon',        'detail' => 'Col rouge et noir, pantalon bleu' ],
 		'cadet_f'   => [ 'type' => 'couleur', 'label' => 'Cadet fille',         'detail' => 'Col rouge et noir, pantalon rouge' ],
 		'js_h'      => [ 'type' => 'couleur', 'label' => 'Junior/Senior homme', 'detail' => 'Col bleu foncé/noir, pantalon bleu foncé/noir' ],
@@ -306,8 +307,21 @@ class SP_Cal_Dobok {
 		return ! preg_match( '/renfo|renforcement/i', (string) ( $el->categorie_saisie ?? '' ) );
 	}
 
-	public static function est_ceinture_noire( $grade ): bool {
-		return (bool) preg_match( '/\b(dan|poom|noire)\b/iu', (string) $grade );
+	/**
+	 * Niveau de grade qui fixe le col du dobok blanc : 'keup' (ceintures de couleur),
+	 * 'poom' (ceinture noire des moins de 15 ans) ou 'dan'. Les grades sont en texte libre
+	 * (« POOM », « 1e Dan »… cf. SpCalPro_DB::normaliser_grade()) ; une simple « ceinture
+	 * noire » sans précision est classée Poom ou Dan selon l'âge.
+	 */
+	private function niveau_grade( object $el, string $saison ): string {
+		$g = (string) ( $el->grade ?? '' );
+		if ( preg_match( '/\bpoom\b/iu', $g ) ) return 'poom';
+		if ( preg_match( '/\bdan\b/iu', $g ) )  return 'dan';
+		if ( preg_match( '/\bnoire\b/iu', $g ) ) {
+			$age = $this->age_competition( $el, $saison );
+			return $age !== null && $age < 15 ? 'poom' : 'dan';
+		}
+		return 'keup';
 	}
 
 	private static function annee_naissance( object $el ): ?int {
@@ -341,7 +355,9 @@ class SP_Cal_Dobok {
 
 	/** Modèle attendu pour un type, ou '' si indéterminable (naissance / sexe manquants). */
 	private function modele_attendu( object $el, string $type, string $saison ): string {
-		if ( $type === 'blanc' ) return self::est_ceinture_noire( $el->grade ?? '' ) ? 'col_noir' : 'col_blanc';
+		if ( $type === 'blanc' ) {
+			return [ 'keup' => 'col_blanc', 'poom' => 'col_poom', 'dan' => 'col_noir' ][ $this->niveau_grade( $el, $saison ) ];
+		}
 
 		$cat = $this->categorie_competition( $this->age_competition( $el, $saison ) );
 		if ( $cat === 'Master' ) return 'master';
@@ -721,10 +737,9 @@ class SP_Cal_Dobok {
 		}
 		foreach ( $mine as $d ) {
 			if ( $d['a_confirmer'] ) $alertes[] = [ 'info', self::label( $d['modele'] ) . ' ' . $d['taille'] . ' : attribution présumée à confirmer' ];
-			if ( $type === 'blanc' && $d['modele'] === 'col_blanc' && $attendu === 'col_noir' ) {
-				$alertes[] = [ 'warn', 'Ceinture noire : col noir requis' ];
-			} elseif ( $type === 'blanc' && $d['modele'] === 'col_noir' && $attendu === 'col_blanc' ) {
-				$alertes[] = [ 'warn', 'Col noir sans ceinture noire enregistrée' ];
+			if ( $type === 'blanc' && $d['modele'] !== $attendu ) {
+				// Le col du blanc suit le grade, sans exception (Keup / Poom / Dan).
+				$alertes[] = [ 'warn', 'Col à changer : ' . self::label( $attendu ) . ' attendu (grade ' . ( $el->grade ?: '?' ) . ')' ];
 			} elseif ( $type === 'couleur' && $attendu && $d['modele'] !== $attendu ) {
 				$alertes[] = [ 'info', 'Nouveau modèle possible : ' . self::label( $attendu ) ];
 			}
@@ -1794,8 +1809,8 @@ class SP_Cal_Dobok {
 				<h3>Règle du club (appliquée par ce module)</h3>
 				<ul>
 					<li><strong>Chaque adhérent</strong> (hors renforcement musculaire) reçoit en prêt un <strong>dobok blanc</strong> et un <strong>dobok couleur</strong>. Ils restent la propriété du club et sont à rendre en cas de départ.</li>
-					<li><strong>Dobok blanc</strong> : même modèle pour tous les âges. <strong>Col noir dès la ceinture noire</strong> (Poom ou Dan), col blanc sinon — déduit du grade.</li>
-					<li><strong>Dobok couleur</strong> : acheté par ensemble (veste + pantalon), modèle déduit de la <strong>catégorie de compétition</strong> et du sexe :
+					<li><strong>Dobok blanc</strong> : même modèle pour tous les âges, <strong>col déduit du grade</strong> : blanc pour les ceintures de couleur (Keup), <strong>rouge et noir pour les Poom</strong>, noir pour les Dan.</li>
+					<li><strong>Dobok couleur</strong> : acheté par ensemble (veste + pantalon), modèle déduit de la <strong>catégorie de compétition</strong> et du sexe : le col est celui du modèle (rouge et noir pour le modèle cadet), <strong>quelle que soit la couleur de ceinture</strong>.
 						Cadet jusqu'à <?php echo $cadet; ?> ans (les plus jeunes portent aussi le modèle cadet), Junior/Senior, Master à partir de <?php echo $master; ?> ans.
 						Âge = âge atteint dans <?php echo esc_html( $ref ); ?> (onglet Réglages).</li>
 					<li>Un adhérent <strong>peut garder</strong> son ancien modèle ou sa taille : les écarts sont signalés, jamais imposés.</li>
@@ -1824,7 +1839,6 @@ class SP_Cal_Dobok {
 
 				<h3>Écarts assumés par le club</h3>
 				<ul>
-					<li>Les <strong>Poom</strong> reçoivent un blanc <strong>col noir</strong> (WT : col rouge et noir).</li>
 					<li>Le dobok couleur est prêté à <strong>tous</strong>, ceintures de couleur comprises (WT : tenue de compétition réservée aux Poom / Dan à partir de 12 ans).</li>
 					<li>Masters : le club leur prête un ensemble bleu foncé ; WT prévoit une veste dorée.<?php echo $master !== 51 ? ' WT place la limite à <strong>51 ans</strong> : le réglage actuel du club est ' . $master . ' ans.' : ''; ?></li>
 				</ul>
@@ -2042,6 +2056,6 @@ class SP_Cal_Dobok {
 		foreach ( self::MODELES as $m ) {
 			printf( '<tr><td>%s</td><td>%s</td><td>%s</td></tr>', esc_html( $m['label'] ), esc_html( $m['type'] ), esc_html( $m['detail'] ) );
 		}
-		echo '</tbody></table><p class="description">Blanc : le col est déduit du grade (col noir dès la ceinture noire, Dan ou Poom). Couleur : acheté par ensemble, modèle déduit de la catégorie de compétition et du sexe. Un adhérent peut garder son ancien modèle ou sa taille : les écarts sont signalés, jamais imposés.</p></div>';
+		echo '</tbody></table><p class="description">Blanc : le col est déduit du grade (blanc pour les Keup, rouge et noir pour les Poom, noir pour les Dan). Couleur : acheté par ensemble, modèle déduit de la catégorie de compétition et du sexe. Un adhérent peut garder son ancien modèle ou sa taille : les écarts sont signalés, jamais imposés.</p></div>';
 	}
 }

@@ -28,7 +28,7 @@ Le club **prête** (pas un don) à chaque adhérent un dobok blanc et un dobok c
 ### Règles métier
 
 - **Tailles de 10 en 10 cm** (gamme paramétrable, ex. 100 → 200). Taille suggérée = `taille_cm` arrondie à la dizaine supérieure, plus une marge de croissance paramétrable (ex. 126 cm + marge 5 → 140). C'est une **suggestion**, jamais imposée.
-- **Blanc** : un seul modèle pour tous les âges (pas de gamme enfant/adulte). Col **noir** si ceinture noire, sinon col **blanc** — déduit automatiquement du champ `grade`, jamais choisi à la main.
+- **Blanc** : un seul modèle pour tous les âges (pas de gamme enfant/adulte). Col déduit automatiquement du champ `grade` : **blanc** (Keup), **rouge et noir** (Poom), **noir** (Dan) — précision du 26/09/2026, jamais choisi à la main.
 - **Couleur** : acheté **par ensemble** (veste + pantalon). Modèle déduit de la catégorie de compétition + sexe (`extra_data['sexe']`) :
 
   | Modèle | Catégorie | Col veste | Pantalon |
@@ -45,7 +45,7 @@ Le club **prête** (pas un don) à chaque adhérent un dobok blanc et un dobok c
   - La veste master spécifique (dorée/jaune selon niveau de compétition) est hors périmètre.
   - Sexe non renseigné → modèle indéterminable → anomalie affichée au bureau.
 - **Échange de taille** : une **possibilité, jamais une obligation** (beaucoup gardent l'ancien, pour les deux types). Au plus **1 échange de taille par saison et par type** ; au-delà, **non bloquant** mais signalé au bureau (badge + alerte mail).
-- **Changement de modèle** (passage ceinture noire → col noir ; changement de catégorie, ex. cadet → junior) : demande **générée automatiquement**, validée par le bureau, **ne compte pas** comme échange de taille.
+- **Changement de modèle** (passage Poom → col rouge et noir, passage Dan → col noir ; changement de catégorie, ex. cadet → junior) : demande **générée automatiquement**, validée par le bureau, **ne compte pas** comme échange de taille.
 - **Prêt** : le dobok reste rattaché à l'adhérent jusqu'à restitution. Départ / non-renouvellement → retour attendu, liste « Doboks à récupérer », statut « non restitué » visible sur la fiche (y compris si l'adhérent revient une saison ultérieure).
 
 ### Modèle de données
@@ -72,7 +72,7 @@ Indicateurs calculés par référence : **effectif** (physiquement au club), **r
 - **Écran mobile de distribution** (séance de rentrée au dojo) : liste des remises/échanges prévus, boutons « Rendu ✓ » (avec état) / « Remis ✓ » qui convertissent retours attendus et réservations en mouvements réels. Emplacement à trancher en V2 : PWA bureau (`render_pwa_app()`) ou page admin responsive.
 - **wp-admin** :
   1. Tableau de stock type × modèle × taille (effectif / réservé / attendu / disponible, seuil d'alerte).
-  2. Adhérents actifs de la saison et leurs dotations, avec anomalies détectées : ceinture noire en col blanc ; changement de catégorie compétition ; `taille_cm` nettement au-dessus de la taille du dobok ; sexe ou taille manquants ; sans dobok ; plus d'un échange de taille dans la saison ; dobok non restitué.
+  2. Adhérents actifs de la saison et leurs dotations, avec anomalies détectées : col du blanc ne correspondant pas au grade ; changement de catégorie compétition ; `taille_cm` nettement au-dessus de la taille du dobok ; sexe ou taille manquants ; sans dobok ; plus d'un échange de taille dans la saison ; dobok non restitué.
   3. File des demandes par statut.
   4. Journal des mouvements (filtrable, export CSV).
   5. Achats : commande puis réception d'un lot (qui entre alors en stock).
@@ -131,7 +131,7 @@ Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **p
 ### Règles métier à conserver
 
 - Prêt (pas don) d'un dobok **blanc** + d'un dobok **couleur** à chaque adhérent **hors renforcement musculaire**. Restitution en cas de départ.
-- Blanc : un seul modèle ; col déduit du grade (club : **col noir dès la ceinture noire, Poom compris** — écart assumé avec WT qui prévoit rouge et noir pour les Poom).
+- Blanc : un seul modèle ; col déduit du grade, **conforme à WT** : blanc (Keup), rouge et noir (Poom), noir (Dan). Couleur : col fixé par le modèle (catégorie), quelle que soit la couleur de ceinture.
 - Couleur : ensemble veste + pantalon, modèle = catégorie de compétition × sexe, calqué sur la tenue de poomsae WT (Guidelines on Identifications 2022) : Cadet 12-14 (col rouge et noir, pantalon bleu garçon / rouge fille), Junior/Senior 15-50 (col noir, pantalon « T-Black » homme / bleu clair femme), Master 51+ (WT : veste dorée ; club : bleu foncé). Moins de 12 ans → modèle cadet (tolérance WT « aspirants » 8-11). Couleur prêté à tous, ceintures de couleur comprises (écart assumé : WT le réserve aux Poom/Dan en compétition).
 - Âge de catégorie calculé sur l'année de naissance, bornes et année de référence **paramétrables** (valeur WT par défaut, à revérifier chaque saison).
 - Tailles de 10 en 10 cm, taille suggérée = taille arrondie à la dizaine supérieure + marge paramétrable.
@@ -148,7 +148,7 @@ Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **p
 ### Fonctions reportées du legacy, à prévoir dans la refonte
 
 - Question « le dobok est-il encore à la bonne taille ? » dans le **formulaire de renouvellement**, avec création de la demande à la validation.
-- **Demandes automatiques** : passage ceinture noire (résultat d'examen) → col noir ; changement de catégorie en début de saison (proposé, l'adhérent peut garder l'ancien).
+- **Demandes automatiques** : passage Poom ou Dan (résultat d'examen) → nouveau col du blanc ; changement de catégorie en début de saison (proposé, l'adhérent peut garder l'ancien).
 - **Aide à la commande** : besoins = demandes en attente + nouveaux adhérents prévus + changements de catégorie − disponible.
 - Notifications **push PWA** (bureau et familles) à la place / en plus des mails (cf. entrée du 24/09/2026), et écran de distribution intégré à la PWA bureau.
 - Récapitulatif quotidien au bureau si un planificateur fiable existe (le legacy envoie un mail par demande, faute de cron fiable).
