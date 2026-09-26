@@ -125,6 +125,8 @@ class SP_Cal_Dobok {
 		// Priorité 5 : avant SpCalPro_Token::maybe_render_fiche() (10), qui affiche la fiche et exit.
 		add_action( 'template_redirect',                  [ $this, 'handle_front' ], 5 );
 		add_action( 'sp_cal_fiche_membre_apres_grade',    [ $this, 'render_bloc_adherent' ] );
+		// Validation d'un renouvellement par le bureau (SP_Admin_Adhesions) : réserve ses demandes en attente.
+		add_action( 'sp_cal_renouvellement_valide',       [ $this, 'apres_renouvellement' ] );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -563,7 +565,7 @@ class SP_Cal_Dobok {
 	private function creer_demande( object $el, array $d ): ?object {
 		global $wpdb;
 		$statut = 'ouverte';
-		if ( $d['souhait_modele'] !== '' && $this->disponible( $d['souhait_modele'], $d['souhait_taille'] ) <= 0 ) {
+		if ( $d['souhait_modele'] !== '' && ( $this->renouvellement_en_attente( $el ) || $this->disponible( $d['souhait_modele'], $d['souhait_taille'] ) <= 0 ) ) {
 			$statut = 'en_attente';
 		}
 		$hors_regle = $d['nature'] === 'taille'
@@ -596,16 +598,35 @@ class SP_Cal_Dobok {
 	 * Réserve, dans l'ordre d'arrivée, les demandes en attente dont le dobok est de nouveau
 	 * disponible (lot reçu, retour, inventaire, demande annulée…) et prévient la famille.
 	 */
+	/**
+	 * Adhérent dont le renouvellement n'est pas encore validé : campagne de renouvellement en
+	 * cours et fiche toujours sur la saison source (même critère que
+	 * SP_Cal_Renouvellement::get_non_renouveles()). Il peut faire une demande, mais le dobok
+	 * n'est réservé qu'à la validation (décision du 26/09/2026, « compromis C »).
+	 */
+	private function renouvellement_en_attente( object $el ): bool {
+		if ( get_option( 'sp_cal_renouv_en_cours', '0' ) !== '1' ) return false;
+		$source = (string) get_option( 'sp_cal_renouv_saison_source', '' );
+		return $source !== '' && (int) $el->actif === 1 && $el->saison === $source;
+	}
+
+	/** Hook sp_cal_renouvellement_valide : réserve les demandes de l'adhérent si le stock le permet. */
+	public function apres_renouvellement( $eleve_id ): void {
+		if ( ! $this->front_pret() ) return;
+		$this->promouvoir_attentes();
+	}
+
 	private function promouvoir_attentes(): int {
 		global $wpdb;
 		$n = 0;
 		$attentes = $wpdb->get_results( "SELECT * FROM {$this->t_dem()} WHERE statut = 'en_attente' ORDER BY created_at, id" );
 		foreach ( (array) $attentes as $d ) {
 			if ( $this->disponible( $d->souhait_modele, (int) $d->souhait_taille ) <= 0 ) continue;
+			$el = $this->eleve( (int) $d->eleve_id );
+			if ( ! $el || $this->renouvellement_en_attente( $el ) ) continue;
 			$wpdb->update( $this->t_dem(), [ 'statut' => 'ouverte', 'updated_at' => current_time( 'mysql' ) ], [ 'id' => (int) $d->id ] );
 			$d->statut = 'ouverte';
-			$el = $this->eleve( (int) $d->eleve_id );
-			if ( $el ) $this->mail_famille( $el, $d, 'reservee' );
+			$this->mail_famille( $el, $d, 'reservee' );
 			$n++;
 		}
 		return $n;
@@ -673,7 +694,9 @@ class SP_Cal_Dobok {
 		}
 		$alertes = [];
 		if ( $d->hors_regle )               $alertes[] = '⚠ Déjà un échange de taille cette saison (règle : 1 par saison).';
-		if ( $d->statut === 'en_attente' )  $alertes[] = '⚠ Pas de stock disponible : demande en attente.';
+		if ( $d->statut === 'en_attente' )  $alertes[] = $this->renouvellement_en_attente( $el )
+			? '⚠ Renouvellement pas encore validé : le dobok sera réservé automatiquement à la validation.'
+			: '⚠ Pas de stock disponible : demande en attente.';
 		$corps  = "Nouvelle demande de $qui (dobok $type) :\n" . self::libelle_demande( $d ) . "\n";
 		$corps .= "Statut : " . ( self::STATUTS[ $d->statut ] ?? $d->statut ) . "\n";
 		if ( $d->note_adherent ) $corps .= "Précisions : " . $d->note_adherent . "\n";
@@ -698,7 +721,10 @@ class SP_Cal_Dobok {
 			case 'attente':
 				$sujet = 'Demande de dobok en attente';
 				$corps = "Bonjour,\n\nLa demande pour $qui est enregistrée : $lib.\n"
-					. "Cette taille n'est pas disponible pour le moment : la demande est en liste d'attente. En attendant, gardez le dobok actuel. Vous serez prévenu(e) dès qu'il sera réservé.";
+					. ( $this->renouvellement_en_attente( $el )
+						? "Le dobok sera réservé dès que le bureau aura validé le renouvellement d'adhésion (sous réserve de stock)."
+						: "Cette taille n'est pas disponible pour le moment : la demande est en liste d'attente." )
+					. " En attendant, gardez le dobok actuel. Vous serez prévenu(e) dès qu'il sera réservé.";
 				break;
 			case 'reservee':
 				$sujet = 'Votre dobok est réservé';
@@ -1201,7 +1227,9 @@ class SP_Cal_Dobok {
 
 		$d = $this->creer_demande( $el, $dem );
 		if ( ! $d ) $retour( 'erreur' );
-		$retour( $d->nature === 'restitution' ? 'ok_rendre' : ( $d->statut === 'ouverte' ? 'ok_reservee' : 'ok_attente' ) );
+		if ( $d->nature === 'restitution' ) $retour( 'ok_rendre' );
+		if ( $d->statut === 'ouverte' )      $retour( 'ok_reservee' );
+		$retour( $this->renouvellement_en_attente( $el ) ? 'ok_attente_renouv' : 'ok_attente' );
 	}
 
 	/** Bloc « Mes doboks » inséré dans la fiche adhérent (hook de SpCalPro_Token::render_membre_fiche). */
@@ -1225,6 +1253,7 @@ class SP_Cal_Dobok {
 		$messages = [
 			'ok_reservee'    => [ 'ok',   'Demande enregistrée : le dobok est réservé. Il vous sera remis lors d\'une prochaine distribution au club (pensez à rapporter l\'ancien s\'il y a lieu).' ],
 			'ok_attente'     => [ 'info', 'Demande enregistrée. Cette taille n\'est pas disponible pour le moment : vous êtes en liste d\'attente et serez prévenu(e) par mail. Gardez votre dobok actuel en attendant.' ],
+			'ok_attente_renouv' => [ 'info', 'Demande enregistrée. Votre renouvellement d\'adhésion n\'est pas encore validé par le bureau : le dobok sera réservé automatiquement à la validation (vous serez prévenu(e) par mail). Gardez votre dobok actuel en attendant.' ],
 			'ok_rendre'      => [ 'ok',   'Demande enregistrée : merci de rapporter le dobok au club.' ],
 			'annulee'        => [ 'ok',   'Votre demande est annulée.' ],
 			'deja'           => [ 'err',  'Une demande est déjà en cours pour ce dobok.' ],
@@ -1310,7 +1339,7 @@ class SP_Cal_Dobok {
 							<?php elseif ( $dem->statut === 'ouverte' ) : ?>
 								✅ Réservé — remis lors d'une prochaine distribution au club.
 							<?php else : ?>
-								⏳ En attente de stock — gardez votre dobok actuel, vous serez prévenu(e) par mail.
+								<?php echo $this->renouvellement_en_attente( $el ) ? '⏳ En attente de la validation de votre renouvellement' : '⏳ En attente de stock'; ?> — gardez votre dobok actuel, vous serez prévenu(e) par mail.
 							<?php endif; ?>
 							<?php if ( $peut ) : ?>
 								<form method="post">
@@ -1595,6 +1624,9 @@ class SP_Cal_Dobok {
 	// Conçu pour être utilisé sur téléphone au dojo : cartes empilées, gros boutons.
 	private function render_demandes(): void {
 		global $wpdb;
+		// Filet de sécurité : réserve ce qui peut l'être (renouvellement validé ou fiche
+		// modifiée à la main hors du hook sp_cal_renouvellement_valide, stock recalé…).
+		$this->promouvoir_attentes();
 		$q      = sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) );
 		$retour = [ 'tab' => 'demandes', 'q' => $q ];
 		$tel    = $this->table_eleves();
@@ -1619,7 +1651,7 @@ class SP_Cal_Dobok {
 		$groupes = [
 			'remettre' => [ 'À remettre / échanger (dobok réservé)', [] ],
 			'retour'   => [ 'Retours attendus', [] ],
-			'attente'  => [ 'En attente de stock', [] ],
+			'attente'  => [ 'En attente (stock ou renouvellement non validé)', [] ],
 		];
 		foreach ( (array) $rows as $d ) {
 			if ( $d->statut === 'en_attente' )         $groupes['attente'][1][]  = $d;
@@ -1669,6 +1701,8 @@ class SP_Cal_Dobok {
 		echo '</div>';
 		if ( $d->hors_regle )    echo '<span class="spd-alerte spd-warn">Déjà un échange de taille cette saison</span>';
 		if ( $groupe === 'attente' ) {
+			$el_d = $this->eleve( (int) $d->eleve_id );
+			if ( $el_d && $this->renouvellement_en_attente( $el_d ) ) echo '<span class="spd-alerte spd-warn">Renouvellement non validé : réservé automatiquement à la validation</span>';
 			printf( '<span class="spd-alerte spd-info">Stock disponible : %d</span>', $this->disponible( $d->souhait_modele, (int) $d->souhait_taille ) );
 		}
 		if ( $d->note_adherent ) printf( '<div class="spd-carte-note">« %s »</div>', esc_html( $d->note_adherent ) );
@@ -1742,7 +1776,7 @@ class SP_Cal_Dobok {
 				? [ [ 'warn', self::est_concerne( $el ) ? 'Plus adhérent cette saison : dobok à récupérer' : 'Renforcement musculaire : dobok à récupérer' ] ]
 				: array_merge( $this->alertes_donnees( $el, $saison ), $sit['blanc']['alertes'], $sit['couleur']['alertes'] );
 			foreach ( $dems[ (int) $el->id ] ?? [] as $d ) {
-				$alertes[] = [ $d->statut === 'ouverte' ? 'info' : 'warn', 'Demande : ' . self::libelle_demande( $d ) . ( $d->statut === 'en_attente' ? ' (en attente de stock)' : ( $d->souhait_modele ? ' (réservé)' : ' (retour attendu)' ) ) ];
+				$alertes[] = [ $d->statut === 'ouverte' ? 'info' : 'warn', 'Demande : ' . self::libelle_demande( $d ) . ( $d->statut === 'en_attente' ? ( $this->renouvellement_en_attente( $el ) ? ' (en attente : renouvellement non validé)' : ' (en attente de stock)' ) : ( $d->souhait_modele ? ' (réservé)' : ' (retour attendu)' ) ) ];
 			}
 			$a_traiter = (bool) array_filter( $alertes, fn( $a ) => $a[0] === 'warn' );
 			if ( $a_traiter ) $nb_alertes++;

@@ -154,6 +154,16 @@ Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **p
 - Récapitulatif quotidien au bureau si un planificateur fiable existe (le legacy envoie un mail par demande, faute de cron fiable).
 - Lien optionnel avec la comptabilité (coût des lots d'achat → sp-compta).
 
+## 26/09/2026 — Refonte : une seule interface adhérent (décision validée)
+
+> À reporter dans `../md/03-proposition-refonte.md` dès que le dossier `md/` est récupéré.
+
+Constat (retour de test de l'utilisateur) : l'adhérent reçoit aujourd'hui deux accès au contenu différent — la **fiche de suivi** (`?token=`, rendue par `SpCalPro_Token::render_membre_fiche()` avec l'habillage du thème : carte, éligibilité Dan, grade, doboks, historiques) et l'**application PWA** (`[sp_cal_app]`, `SpCalPro_Admin::render_pwa_app()` : prochains cours, carte, calendrier, inscriptions, notifications push). Deux interfaces nées séparément, sans justification fonctionnelle.
+
+**Décision** : dans la refonte, **une seule interface adhérent, la PWA** (installable, notifications, utilisable aussi sur ordinateur), qui reprend tout le contenu de la fiche (grades, éligibilité, présences, doboks et demandes, historiques). Un seul lien personnel par adhérent. L'onglet « Événements » doit afficher les événements à venir **et** les inscriptions ouvertes (aujourd'hui : inscriptions ouvertes seulement, d'où un onglet souvent vide).
+
+**Étape 1 réalisée dans le legacy le 26/09/2026** (sans fusion, trop lourde dans le code actuel) : mail d'accès avec **un seul lien** (l'application si la page existe, sinon la fiche), bouton « Ouvrir l'application » sur la fiche, bouton « Ma fiche complète » dans l'application, onglet « Événements » de l'application renommé « Inscriptions ».
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

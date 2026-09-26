@@ -127,41 +127,34 @@ class SpCalPro_Token {
 
         $subject = '[' . $club . '] 🏅 Accès à la fiche de suivi de ' . $prenom . ' ' . $nom;
 
-        // URL de la PWA si la page [sp_cal_app] existe
-        $pwa_page = null;
-        global $wpdb;
-        $pwa_page_row = $wpdb->get_row(
-            "SELECT ID FROM {$wpdb->posts}
-             WHERE post_status='publish' AND post_type='page'
-             AND post_content LIKE '%sp_cal_app%' LIMIT 1"
-        );
-        $app_url = $pwa_page_row
-            ? add_query_arg( 'token', $el->token, trailingslashit( get_permalink( $pwa_page_row->ID ) ) )
-            : null;
+        // Un seul lien, valable sur téléphone comme sur ordinateur (étape 1 de l'unification
+        // fiche / application, 26/09/2026) : l'application si la page [sp_cal_app] existe —
+        // elle mène à la fiche complète via « Ma fiche complète » —, sinon la fiche.
+        $app_url = $this->get_app_url( $el->token );
+        $lien    = $app_url ?: $fiche_url;
 
         $body  = "Bonjour,\n\n";
         $body .= "L'adhésion de $prenom $nom a été activée au sein de $club.\n\n";
-        $body .= "Vous disposez de deux façons d'accéder à son espace membre :\n\n";
-
-        $body .= "💻 DEPUIS UN ORDINATEUR — Fiche de suivi en ligne :\n";
-        $body .= "➜ " . $fiche_url . "\n";
-        $body .= "Grades, présences, statut d'adhésion, historique.\n\n";
+        $body .= "Son espace membre, sur téléphone comme sur ordinateur :\n";
+        $body .= "➜ " . $lien . "\n\n";
 
         if ( $app_url ) {
-            $body .= "📱 DEPUIS UN TÉLÉPHONE — Application " . $club . " :\n";
-            $body .= "➜ " . $app_url . "\n";
-            $body .= "Prochains cours, carte de membre numérique, alertes d'annulation.\n";
+            $body .= "Vous y trouverez les prochains cours, le calendrier, la carte de membre, les inscriptions aux événements et les alertes d'annulation. ";
+            $body .= "Le bouton « Ma fiche complète » donne accès aux grades, aux présences et aux doboks.\n\n";
+            $body .= "📱 Pour l'installer sur un téléphone :\n";
             $body .= "Sur iPhone : bouton Partager ⬆︎ → \"Sur l'écran d'accueil\".\n";
             $body .= "Sur Android : menu ⋮ de Chrome → \"Ajouter à l'écran d'accueil\".\n\n";
+        } else {
+            $body .= "Grades, présences, statut d'adhésion, doboks, historique.\n\n";
         }
 
-        $body .= "Ces liens sont personnels et uniques. Ne pas les partager.\n";
+        $body .= "Ce lien est personnel et unique. Ne pas le partager.\n";
 
         // Ajouter les liens des frères/sœurs si applicable
         if ( ! empty($fratrie) ) {
-            $body .= "\nAccès aux fiches des autres membres de la famille :\n";
+            $body .= "\nAccès à l'espace des autres membres de la famille :\n";
             foreach ($fratrie as $fr) {
-                $fr_url = $this->get_fiche_url($fr->token);
+                $fr_url = $this->get_app_url( $fr->token ) ?: $this->get_fiche_url( $fr->token );
                 $body  .= "• " . $fr->prenom . ' ' . mb_strtoupper($fr->nom) . " : " . $fr_url . "\n";
             }
         }
@@ -170,6 +163,17 @@ class SpCalPro_Token {
 
         $headers = array('Content-Type: text/plain; charset=UTF-8');
         return wp_mail($dest, $subject, $body, $headers);
+    }
+
+    /** URL de l'application (page contenant [sp_cal_app]) avec le lien personnel, ou '' si pas de page. */
+    public function get_app_url( $token ) {
+        global $wpdb;
+        $page = $wpdb->get_row(
+            "SELECT ID FROM {$wpdb->posts}
+             WHERE post_status='publish' AND post_type='page'
+             AND post_content LIKE '%sp_cal_app%' LIMIT 1"
+        );
+        return ( $page && $token ) ? add_query_arg( 'token', $token, trailingslashit( get_permalink( $page->ID ) ) ) : '';
     }
 
     public function get_fiche_url( $token ) {
@@ -342,6 +346,16 @@ class SpCalPro_Token {
                     <?php endif; ?>
                 </div>
             </div>
+
+            <?php // Passerelle vers l'application (étape 1 de l'unification fiche / PWA, 26/09/2026)
+            $app_url = $el->token ? $this->get_app_url( $el->token ) : '';
+            if ( $app_url ) : ?>
+            <a href="<?php echo esc_url( $app_url ); ?>" style="display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:12px 16px;border-radius:10px;background:#111;color:#fff;text-decoration:none;font-size:14px;">
+                <span style="font-size:22px;">📱</span>
+                <span><strong>Ouvrir l'application</strong><br><small style="opacity:.75;">Prochains cours, calendrier, inscriptions, notifications — installable sur votre téléphone</small></span>
+                <span style="margin-left:auto;font-size:20px;">›</span>
+            </a>
+            <?php endif; ?>
 
             <!-- ══════════════════════════════════════════
                  CARTE DE MEMBRE NUMÉRIQUE

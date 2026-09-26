@@ -90,6 +90,9 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 
 - **Doboks : âge réel** affiché sous le nom dans l'onglet Adhérents (grade · âge · catégorie), calculé à la date du jour à partir de `date_naissance` (JJ/MM) + `annee_naissance` — simple calcul en mémoire, aucune requête supplémentaire.
 
+- **Doboks : demandes d'un adhérent au renouvellement non validé** (retour de test, option « compromis C » choisie par l'utilisateur) : la demande reste possible depuis la fiche, mais le dobok n'est **pas réservé** tant que le bureau n'a pas validé le renouvellement (campagne en cours et fiche encore sur la saison source) ; la demande passe « en attente », avec la raison affichée à la famille, dans le mail au bureau, dans l'onglet Demandes et dans l'onglet Adhérents. À la validation, elle est réservée automatiquement : nouveau hook `sp_cal_renouvellement_valide` déclenché par `SP_Admin_Adhesions::update_member_renouvellement()`, plus un filet de sécurité à l'ouverture de l'onglet Demandes.
+- **Espace adhérent : un seul lien + passerelles fiche ↔ application** (étape 1 de l'unification décidée pour la refonte, cf. `EVOLUTION.md`) : le mail d'accès (`SpCalPro_Token::send_token_email()`) n'envoie plus qu'un lien, celui de l'application (sinon la fiche), y compris pour la fratrie ; nouvelle méthode `get_app_url()` ; bouton « Ouvrir l'application » en haut de la fiche ; carte « Ma fiche complète (grades, présences, doboks) » sur l'accueil de l'application (champ `fiche_url` ajouté à `/eleve/me`) ; onglet « Événements » de l'application renommé « Inscriptions » (il n'affiche que les inscriptions ouvertes). Non testé sur un vrai WordPress.
+
 ---
 
 *Dernière mise à jour de ce fichier : 26/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

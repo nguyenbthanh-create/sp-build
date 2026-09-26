@@ -322,6 +322,8 @@ public function enqueue( $hook ) {
             'adhesion'   => array( 'statut' => $adhesion, 'jours' => $jours, 'fin' => $fin_saison ),
             'assiduite'  => array( 'present' => $nb_present, 'total' => $nb_total, 'taux' => $taux ),
             'grade_vise' => $grade_vise ?: '',
+            // Passerelle vers la fiche complète (grades, présences, doboks) — unification fiche / PWA, étape 1.
+            'fiche_url'  => ( $this->token && ! empty( $el->token ) ) ? $this->token->get_fiche_url( $el->token ) : '',
             'carte' => array(
                 'qr_url'        => home_url( '/' ) . '?token=' . rawurlencode( $el->token ?? '' ),
                 'club_nom'      => get_option( 'blogname', '' ),
@@ -666,6 +668,10 @@ window.addEventListener('error', function(e) {
 .spcal-assiduite-bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-bottom:6px;}
 .spcal-assiduite-fill{height:100%;border-radius:3px;transition:width .8s ease;}
 .spcal-assiduite-nums{font-size:13px;color:rgba(255,255,255,.6);}
+.spcal-fiche-link{display:flex;align-items:center;gap:12px;background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:20px;color:#fff;text-decoration:none;}
+.spcal-fiche-link .spcal-fl-ico{font-size:22px;}
+.spcal-fiche-link small{display:block;color:rgba(255,255,255,.5);font-size:12px;margin-top:2px;}
+.spcal-fiche-link .spcal-fl-go{margin-left:auto;font-size:20px;color:rgba(255,255,255,.4);}
 
 .spcal-adhesion-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:16px;}
 .spcal-adhesion-actif{background:rgba(34,197,94,.15);color:#4ade80;}
@@ -826,6 +832,7 @@ window.addEventListener('error', function(e) {
                 <div id="spcal-greeting-sub"></div>
                 <div id="spcal-adhesion-wrap"></div>
                 <div id="spcal-assiduite-wrap"></div>
+                <div id="spcal-fiche-wrap"></div>
                 <div class="spcal-section-title">Prochains cours</div>
                 <div id="spcal-prochains-cours"><div class="spcal-empty">Chargement…</div></div>
             </section>
@@ -856,7 +863,7 @@ window.addEventListener('error', function(e) {
 
             <!-- Événements & Inscriptions -->
             <section id="spcal-evenements" class="spcal-screen">
-                <div class="spcal-section-title">Événements</div>
+                <div class="spcal-section-title">Inscriptions ouvertes</div>
                 <div id="spcal-evt-list"><div class="spcal-empty">Chargement…</div></div>
             </section>
 
@@ -931,7 +938,7 @@ window.addEventListener('error', function(e) {
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-evenements" onclick="spCalNav('evenements',this)">
                 <span class="spcal-nav-ico">🎯</span>
-                <span>Événements</span>
+                <span>Inscriptions</span>
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-pointage" style="display:none" onclick="spCalNav('pointage',this)">
                 <span class="spcal-nav-ico">📡</span>
@@ -1185,6 +1192,17 @@ function renderAccueil() {
             '</div>';
     }
 
+    // Fiche complète (grades, présences, doboks)
+    var ficheWrap = document.getElementById('spcal-fiche-wrap');
+    if (ficheWrap && el.fiche_url) {
+        var a = document.createElement('a');
+        a.className = 'spcal-fiche-link';
+        a.href = el.fiche_url;
+        a.innerHTML = '<span class="spcal-fl-ico">📋</span><span><strong>Ma fiche complète</strong><small>Grades, présences, doboks</small></span><span class="spcal-fl-go">›</span>';
+        ficheWrap.innerHTML = '';
+        ficheWrap.appendChild(a);
+    }
+
     // Prochains cours
     var html = '';
     var shown = gCours.slice(0, 5);
@@ -1368,7 +1386,7 @@ function renderEvenements() {
     .then(function(r) {
         var evts = r.evenements || [];
         if (!evts.length) {
-            listEl.innerHTML = '<div class="spcal-empty">Aucun \u00e9v\u00e9nement en cours d\u2019inscription</div>';
+            listEl.innerHTML = '<div class="spcal-empty">Aucune inscription ouverte pour le moment</div>';
             return;
         }
         var html = '';

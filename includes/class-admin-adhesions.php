@@ -911,6 +911,10 @@ class SP_Admin_Adhesions {
 			return false;
 		}
 
+		// Renouvellement validé : les modules qui attendaient cette validation (ex. demandes
+		// de dobok en attente, SP_Cal_Dobok::apres_renouvellement()) peuvent reprendre la main.
+		do_action( 'sp_cal_renouvellement_valide', $eleve_id );
+
 		return $eleve_id;
 	}
 
