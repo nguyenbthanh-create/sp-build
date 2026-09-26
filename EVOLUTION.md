@@ -132,11 +132,11 @@ Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **p
 
 - Prêt (pas don) d'un dobok **blanc** + d'un dobok **couleur** à chaque adhérent **hors renforcement musculaire**. Restitution en cas de départ.
 - Blanc : un seul modèle ; col déduit du grade, **conforme à WT** : blanc (Keup), rouge et noir (Poom), noir (Dan). Couleur : col fixé par le modèle (catégorie), quelle que soit la couleur de ceinture.
-- Couleur : ensemble veste + pantalon, modèle = catégorie de compétition × sexe, calqué sur la tenue de poomsae WT (Guidelines on Identifications 2022) : Cadet 12-14 (col rouge et noir, pantalon bleu garçon / rouge fille), Junior/Senior 15-50 (col noir, pantalon « T-Black » homme / bleu clair femme), Master 51+ (WT : veste dorée ; club : bleu foncé). Moins de 12 ans → modèle cadet (tolérance WT « aspirants » 8-11). Couleur prêté à tous, ceintures de couleur comprises (écart assumé : WT le réserve aux Poom/Dan en compétition).
+- Couleur : ensemble veste + pantalon, modèle = catégorie de compétition × sexe, calqué sur la tenue de poomsae FFTDA / WT (règlement FFTDA des compétitions Poomsae, sept. 2025, art. 2.6, reprenant WT) : Cadet 12-14 (col rouge et noir, pantalon bleu garçon / rouge fille), Junior/Senior 15-50 (col noir, pantalon « T-Black » homme / bleu clair femme), Master 51+ (WT : veste dorée ; club : bleu foncé). Moins de 12 ans → modèle cadet (choix du club : pas de catégorie poomsae FFTDA avant 12 ans). Couleur prêté à tous, ceintures de couleur comprises (écart assumé : WT le réserve aux Poom/Dan en compétition).
 - Âge de catégorie calculé sur l'année de naissance, bornes et année de référence **paramétrables** (valeur WT par défaut, à revérifier chaque saison).
 - Tailles de 10 en 10 cm, taille suggérée = taille arrondie à la dizaine supérieure + marge paramétrable.
 - Un adhérent peut garder son ancien modèle / sa taille ; **1 échange de taille par saison et par dobok**, non bloquant (alerte bureau). Changement de modèle et remplacement ne comptent pas.
-- Rappel des règles consultable depuis l'écran de gestion (fenêtre « Règles des doboks »), avec sources WT datées.
+- Rappel des règles consultable depuis l'écran de gestion (fenêtre « Règles des doboks »), avec sources FFTDA et WT datées.
 
 ### Données (à normaliser dans le nouveau schéma)
 

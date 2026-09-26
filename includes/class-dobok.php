@@ -1793,7 +1793,8 @@ class SP_Cal_Dobok {
 	 * (celle que calcule ce module) et, pour référence, les règles World Taekwondo dont elle
 	 * s'inspire, avec les écarts assumés. Sources relevées le 26/09/2026 :
 	 *   - WT, « Guidelines on Identifications » 2022 (Poomsae Competition Uniform #2, Dobok Uniform #1) ;
-	 *   - British Taekwondo, règlement Poomsae Para (juin 2025, basé sur les règles WT) pour les 8-11 ans.
+	 *   - FFTDA, Règlement des compétitions Poomsae adopté en CD septembre 2025, art. 2.1 (catégories) et 2.6 (tenue),
+	 *     qui reprend l'article 4.2 du règlement WT Poomsae.
 	 */
 	private function render_modale_regles(): void {
 		$r      = $this->reglages();
@@ -1818,19 +1819,18 @@ class SP_Cal_Dobok {
 					<li>Tailles de 10 en 10 cm : taille suggérée = taille de l'adhérent arrondie à la dizaine supérieure<?php echo (int) $r['marge'] ? ' + ' . (int) $r['marge'] . ' cm de marge' : ''; ?>.</li>
 				</ul>
 
-				<h3>Référence World Taekwondo — tenue de poomsae (compétition)</h3>
+				<h3>Référence FFTDA / World Taekwondo — tenue de poomsae (compétition)</h3>
 				<div class="spd-scroll"><table class="widefat striped">
 					<thead><tr><th>Catégorie</th><th>Âge</th><th>Grade (ceinture)</th><th>Veste</th><th>Pantalon</th></tr></thead>
 					<tbody>
-						<tr><td>Aspirants <em>(tolérance)</em></td><td>8 – 11 ans</td><td>Keup ou Poom</td><td>Dobok blanc standard, <em>ou</em> veste blanche col rouge et noir</td><td>Blanc, <em>ou</em> bleu (garçons) / rouge (filles)</td></tr>
 						<tr><td>Cadet garçon</td><td>12 – 14 ans</td><td>Poom (ceinture rouge et noire)</td><td>Blanche, col rouge et noir</td><td>Bleu</td></tr>
 						<tr><td>Cadet fille</td><td>12 – 14 ans</td><td>Poom (ceinture rouge et noire)</td><td>Blanche, col rouge et noir</td><td>Rouge</td></tr>
-						<tr><td>Junior / Senior homme</td><td>15 – 50 ans</td><td>Dan (ceinture noire)</td><td>Blanche, col noir</td><td>« T-Black » (bleu nuit presque noir)</td></tr>
+						<tr><td>Junior / Senior homme</td><td>15 – 50 ans</td><td>Dan (ceinture noire)</td><td>Blanche, col noir</td><td>Bleu marine (WT : « T-Black », bleu nuit presque noir)</td></tr>
 						<tr><td>Junior / Senior femme</td><td>15 – 50 ans</td><td>Dan (ceinture noire)</td><td>Blanche, col noir</td><td>Bleu clair</td></tr>
-						<tr><td>Master (H/F)</td><td>51 ans et plus</td><td>Dan (ceinture noire)</td><td>Dorée</td><td>« T-Black »</td></tr>
+						<tr><td>Master (H/F)</td><td>51 ans et plus</td><td>Dan (ceinture noire)</td><td>Dorée</td><td>Bleu marine</td></tr>
 					</tbody>
 				</table></div>
-				<p class="description">En compétition WT, la tenue de poomsae est obligatoire à partir de cadet ; les divisions Keup (ceintures de couleur) concourent en dobok blanc standard.</p>
+				<p class="description">FFTDA (art. 2.6) : les Keup (ceintures de couleur) concourent en dobok blanc col blanc, les Poom et Dan en tenue de poomsae ci-dessus. Il n'y a pas de catégorie poomsae avant 12 ans : le modèle cadet prêté aux plus jeunes est un choix du club.</p>
 
 				<h3>Référence World Taekwondo — dobok blanc standard</h3>
 				<ul>
@@ -1839,13 +1839,13 @@ class SP_Cal_Dobok {
 
 				<h3>Écarts assumés par le club</h3>
 				<ul>
-					<li>Le dobok couleur est prêté à <strong>tous</strong>, ceintures de couleur comprises (WT : tenue de compétition réservée aux Poom / Dan à partir de 12 ans).</li>
+					<li>Le dobok couleur est prêté à <strong>tous</strong>, ceintures de couleur comprises (FFTDA / WT : tenue de compétition réservée aux Poom / Dan à partir de 12 ans).</li>
 					<li>Masters : le club leur prête un ensemble bleu foncé ; WT prévoit une veste dorée.<?php echo $master !== 51 ? ' WT place la limite à <strong>51 ans</strong> : le réglage actuel du club est ' . $master . ' ans.' : ''; ?></li>
 				</ul>
 
 				<p class="spd-sources">Sources : <a href="https://www.worldtaekwondo.org/att_file_up/partners_suppliers/2022/2022_WT_Guidelines_of_Identifications.pdf" target="_blank" rel="noopener">World Taekwondo, Guidelines on Identifications (2022)</a> ·
-					<a href="https://www.britishtaekwondo.org.uk/wp-content/uploads/2025/09/BT-Poomase-Para-Competition-Rules-June-2025.pdf" target="_blank" rel="noopener">British Taekwondo, règlement Poomsae (juin 2025, d'après WT)</a>.
-					Relevé le 26/09/2026 — à revérifier à chaque saison, WT fait évoluer ses règlements.</p>
+					<a href="https://www.fftda.fr/files/file/Competition/2025%202026/REGLEMENT%20COMPETITION%20POOMSAE%20FFTDA%20-%20ADOPTE%20CD%20SEPT%202025%20V2.pdf" target="_blank" rel="noopener">FFTDA, Règlement des compétitions Poomsae (sept. 2025), art. 2.6 « Tenue »</a>.
+					Relevé le 26/09/2026 — à revérifier à chaque saison, la FFTDA et WT font évoluer leurs règlements.</p>
 			</div>
 		</dialog>
 		<?php
