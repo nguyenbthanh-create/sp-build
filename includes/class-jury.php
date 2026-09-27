@@ -114,7 +114,7 @@ public function maybe_render_aire() {
     echo '<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">';
     echo '<meta name="viewport" content="width=device-width, initial-scale=1">';
     echo '<title>Jury — ' . esc_html($aire->label ?: 'Aire '.$aire->numero) . '</title>';
-    wp_enqueue_style( 'sp-cal-calendar', SP_CAL_PRO_URL.'assets/css/calendar.css', array(), SP_CAL_PRO_VERSION );
+    wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL.'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
     wp_enqueue_script( 'jquery' );
     wp_print_styles();
     wp_print_scripts();

@@ -98,7 +98,7 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 
 ## 27/09/2026
 
-- **Cache des feuilles de style** : `calendar.css` (fiche adhérent) et `dobok-admin.css` étaient chargées avec la version fixe du plugin (`SP_CAL_PRO_VERSION`, jamais incrémentée) — après une mise à jour du style, navigateurs et caches gardaient l'ancienne feuille (ex. en-tête de la fiche resté « ancien style » via « Prévisualiser page élève »). La version inclut désormais la date de modification du fichier (`SpCalPro_Token::css_ver()`, `SP_Cal_Dobok::enqueue()`).
+- **Fiche adhérent : l'ancien en-tête reprenait le dessus après une fraction de seconde** (bug remonté par l'utilisateur via « Prévisualiser page élève »). Cause : `calendar.css` était chargé **deux fois** — par la fiche (handle `sp-cal-calendar`) et par d'autres modules du plugin qui le chargent sur toutes les pages (`class-bureau-front.php`, handle `sp-cal-front`) —, toujours avec la version fixe du plugin (`SP_CAL_PRO_VERSION`, jamais incrémentée) : le navigateur ressortait l'ancienne copie en cache. Correctif : un seul handle `sp-cal-front` pour `calendar.css` partout, et nouvelle fonction `sp_cal_asset_ver()` (fichier principal) qui ajoute la date de modification du fichier à la version ; appliquée à toutes les feuilles de style et scripts chargés par `wp_enqueue_*` (calendar, admin, adhesion-front, dobok-admin).
 
 ---
 

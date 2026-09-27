@@ -120,8 +120,8 @@ $this->jury = new SP_Cal_Jury( $this->db );
 public function enqueue( $hook ) {
     if ( strpos( $hook, 'sp-cal' ) === false ) return;
     wp_enqueue_style( 'dashicons' );
-    wp_enqueue_style(  'sp-cal-admin',    SP_CAL_PRO_URL . 'assets/css/admin.css',  array(), SP_CAL_PRO_VERSION );
-    wp_enqueue_script( 'sp-cal-admin-js', SP_CAL_PRO_URL . 'assets/js/admin.js',   array( 'jquery' ), SP_CAL_PRO_VERSION, true );
+    wp_enqueue_style(  'sp-cal-admin',    SP_CAL_PRO_URL . 'assets/css/admin.css',  array(), sp_cal_asset_ver( 'assets/css/admin.css' ) );
+    wp_enqueue_script( 'sp-cal-admin-js', SP_CAL_PRO_URL . 'assets/js/admin.js',   array( 'jquery' ), sp_cal_asset_ver( 'assets/js/admin.js' ), true );
     wp_localize_script( 'sp-cal-admin-js', 'SpCalAdmin', array(
         'ajaxurl' => admin_url( 'admin-ajax.php' ),
         'nonce'   => wp_create_nonce( 'sp_cal_admin_nonce' ),

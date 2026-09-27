@@ -102,7 +102,7 @@ class SP_Front_Adhesion {
 
 	// ─── Shortcode ────────────────────────────────────────────────────────────
 	public function render_shortcode( array $atts = [] ): string {
-		wp_enqueue_style( 'sp-adhesion-front', SP_CAL_PRO_URL . 'assets/css/adhesion-front.css', [], SP_CAL_PRO_VERSION );
+		wp_enqueue_style( 'sp-adhesion-front', SP_CAL_PRO_URL . 'assets/css/adhesion-front.css', [], sp_cal_asset_ver( 'assets/css/adhesion-front.css' ) );
 
 		// Renouvellement (cf. md/06-renouvellement-saison.md) : ?renouv=TOKEN identifie
 		// une fiche élève existante à pré-remplir. Le token est le même que celui de

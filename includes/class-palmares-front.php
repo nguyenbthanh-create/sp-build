@@ -30,7 +30,7 @@ class SpCalPro_PalmaresFront {
             'sp-cal-front',
             SP_CAL_PRO_URL . 'assets/css/calendar.css',
             array(),
-            SP_CAL_PRO_VERSION
+            sp_cal_asset_ver( 'assets/css/calendar.css' )
         );
     }
 

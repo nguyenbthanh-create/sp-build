@@ -42,13 +42,13 @@ class SpCalPro_Calendar {
             'sp-cal-front',
             SP_CAL_PRO_URL . 'assets/css/calendar.css',
             array(),
-            SP_CAL_PRO_VERSION
+            sp_cal_asset_ver( 'assets/css/calendar.css' )
         );
         wp_enqueue_script(
             'sp-cal-front',
             SP_CAL_PRO_URL . 'assets/js/calendar.js',
             array( 'jquery' ),
-            SP_CAL_PRO_VERSION,
+            sp_cal_asset_ver( 'assets/js/calendar.js' ),
             true
         );
         wp_localize_script( 'sp-cal-front', 'SpCal', array(

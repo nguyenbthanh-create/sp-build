@@ -16,7 +16,7 @@ class SpCalPro_BureauFront {
     public function enqueue() {
         if ( ( defined('REST_REQUEST') && REST_REQUEST ) ||
              ( defined('DOING_AJAX')   && DOING_AJAX   ) ) return;
-        wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), SP_CAL_PRO_VERSION );
+        wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
     }
 
     public function render( $atts ) {

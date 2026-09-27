@@ -56,7 +56,7 @@ class SpCalPro_Token {
         if ( ! $el ) return; // Token invalide → 404 normale de WordPress
 
         // Token valide → afficher la fiche avec l'habillage du thème
-        wp_enqueue_style( 'sp-cal-calendar', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), self::css_ver() );
+        wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
         get_header();
         echo '<div style="max-width:860px;margin:30px auto;padding:0 16px;">';
         echo $this->render_membre_fiche( $el );
@@ -65,19 +65,9 @@ class SpCalPro_Token {
         exit;
     }
 
-    /**
-     * Version de calendar.css = version du plugin + date de modification du fichier : sans
-     * cela (SP_CAL_PRO_VERSION jamais incrémentée), les navigateurs et caches gardent
-     * l'ancienne feuille après une mise à jour du style de la fiche.
-     */
-    private static function css_ver() {
-        $p = SP_CAL_PRO_PATH . 'assets/css/calendar.css';
-        return file_exists( $p ) ? SP_CAL_PRO_VERSION . '.' . filemtime( $p ) : SP_CAL_PRO_VERSION;
-    }
-
     public function enqueue() {
         if ( isset( $_GET['token'] ) )
-            wp_enqueue_style( 'sp-cal-calendar', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), self::css_ver() );
+            wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -1683,7 +1673,7 @@ class SpCalPro_Token {
         $msg      = ( $statut === 'inscrit' ) ? 'Vous êtes inscrit(e) !' : 'Vous avez décliné.';
         $fiche_url = home_url( '/?token=' . rawurlencode( $el->token ) );
 
-        wp_enqueue_style( 'sp-cal-calendar', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), self::css_ver() );
+        wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
         get_header();
         echo '<div style="max-width:520px;margin:60px auto;padding:0 20px;text-align:center;font-family:sans-serif;">';
         echo '<div style="font-size:60px;line-height:1;margin-bottom:16px;">' . $ico . '</div>';

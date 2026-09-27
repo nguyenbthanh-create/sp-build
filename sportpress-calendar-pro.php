@@ -12,6 +12,16 @@ define( 'SP_CAL_PRO_VERSION', '10.17c' );
 define( 'SP_CAL_PRO_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'SP_CAL_PRO_URL',     plugin_dir_url( __FILE__ ) );
 
+// Version d'un fichier CSS/JS du plugin = version du plugin + date de modification du fichier.
+// SP_CAL_PRO_VERSION n'étant jamais incrémentée, les navigateurs gardaient sinon l'ancienne
+// copie en cache après chaque mise à jour (ex. en-tête de la fiche adhérent, 27/09/2026).
+if ( ! function_exists( 'sp_cal_asset_ver' ) ) {
+    function sp_cal_asset_ver( $rel ) {
+        $p = SP_CAL_PRO_PATH . ltrim( $rel, '/' );
+        return file_exists( $p ) ? SP_CAL_PRO_VERSION . '.' . filemtime( $p ) : SP_CAL_PRO_VERSION;
+    }
+}
+
 require_once SP_CAL_PRO_PATH . 'includes/class-db.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-admin.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-ajax.php';
