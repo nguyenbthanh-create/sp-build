@@ -96,6 +96,10 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 - **Espace adhérent : agenda des événements sur 3 mois** (décision de l'utilisateur) : la fiche et l'application affichent désormais **tous** les événements du club des 3 prochains mois (hors cours, anniversaires et annulations), avec un badge « 🎯 Vous concerne » (discipline + tranche d'âge de l'événement, ou tout le club) et un badge plus visible « 📝 Inscription ouverte » quand l'adhérent peut répondre (boutons Je participe / Je ne peux pas inchangés), et un filtre « Tout / Me concerne » mémorisé. Calcul partagé dans une nouvelle méthode `SpCalPro_DB::get_agenda_eleve()` (l'éligibilité aux inscriptions reprend la logique de l'application du 18/09/2026 ; la fiche utilisait jusqu'ici un autre filtre, `inscriptions_public`). L'onglet de l'application reprend le nom « Événements ».
 - **Fiche adhérent restylée en clair** (style du planning : fond blanc, texte #222, titres Lato, accent rouge #D4000F) dans `assets/css/calendar.css` : en-tête, sections, grade, tableaux, présences, agenda ; la carte de membre garde son design. L'application reste en thème sombre (décision : elle s'ouvre en plein écran hors du site, un contraste s'y justifie ; la fiche s'affiche dans le site). Non visualisé sur le vrai site : à valider sur le site de test.
 
+## 27/09/2026
+
+- **Cache des feuilles de style** : `calendar.css` (fiche adhérent) et `dobok-admin.css` étaient chargées avec la version fixe du plugin (`SP_CAL_PRO_VERSION`, jamais incrémentée) — après une mise à jour du style, navigateurs et caches gardaient l'ancienne feuille (ex. en-tête de la fiche resté « ancien style » via « Prévisualiser page élève »). La version inclut désormais la date de modification du fichier (`SpCalPro_Token::css_ver()`, `SP_Cal_Dobok::enqueue()`).
+
 ---
 
-*Dernière mise à jour de ce fichier : 26/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+*Dernière mise à jour de ce fichier : 27/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

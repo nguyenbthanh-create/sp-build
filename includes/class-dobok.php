@@ -241,7 +241,9 @@ class SP_Cal_Dobok {
 
 	public function enqueue( $hook ): void {
 		if ( strpos( (string) $hook, self::PAGE ) === false ) return;
-		wp_enqueue_style( 'sp-cal-dobok', SP_CAL_PRO_URL . 'assets/css/dobok-admin.css', [], SP_CAL_PRO_VERSION );
+		$css = SP_CAL_PRO_PATH . 'assets/css/dobok-admin.css';
+		// Version = date du fichier : SP_CAL_PRO_VERSION n'est jamais incrémentée (cache navigateur).
+		wp_enqueue_style( 'sp-cal-dobok', SP_CAL_PRO_URL . 'assets/css/dobok-admin.css', [], SP_CAL_PRO_VERSION . ( file_exists( $css ) ? '.' . filemtime( $css ) : '' ) );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
