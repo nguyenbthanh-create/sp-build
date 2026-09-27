@@ -485,10 +485,10 @@ public function enqueue( $hook ) {
         }
     }
 
-    /** Code du Service Worker (cache-first pour le shell, network-first pour l'API). */
+    /** Code du Service Worker : réseau d'abord pour la seule page de l'application, rien d'autre n'est intercepté. */
     private function get_pwa_sw_code( string $app_url ) : string {
         return <<<'SWJS'
-const CACHE_NAME = 'spcal-pwa-v1';
+const CACHE_NAME = 'spcal-pwa-v2';
 const SHELL_URLS = [self.registration.scope + 'app/'];
 
 /* ── Événements push ─────────────────────────────────────────── */
@@ -528,24 +528,28 @@ self.addEventListener('activate', function(e) {
     );
 });
 
+// Correctif du 27/09/2026 : l'ancienne version interceptait TOUTES les requêtes GET du site
+// (scope « / ») en « cache d'abord » — pages, CSS, et même l'admin : tout navigateur ayant
+// ouvert l'application une fois revoyait d'anciennes versions (ex. ancien en-tête de la fiche
+// adhérent après sa mise à jour). Désormais seule la page de l'application est mise en
+// cache, en « réseau d'abord » (cache = secours hors ligne) ; le reste du site n'est jamais
+// intercepté. CACHE_NAME changé : l'activation supprime l'ancien cache.
 self.addEventListener('fetch', function(e) {
-    var url = e.request.url;
-    // Ne pas intercepter les appels API ni les requêtes non-GET
-    if (e.request.method !== 'GET') return;
-    if (url.indexOf('/wp-json/') !== -1) return;
-    if (url.indexOf('admin-ajax') !== -1) return;
-    if (url.indexOf('wp-login') !== -1) return;
+    if (e.request.method !== 'GET' || e.request.mode !== 'navigate') return;
+    var url = new URL(e.request.url);
+    if (url.origin !== self.location.origin) return;
+    var estApp = SHELL_URLS.some(function(s){ return new URL(s).pathname === url.pathname; });
+    if (!estApp) return;
 
     e.respondWith(
-        caches.match(e.request).then(function(cached) {
-            var networkFetch = fetch(e.request).then(function(response) {
-                if (response.ok) {
-                    var clone = response.clone();
-                    caches.open(CACHE_NAME).then(function(cache){ cache.put(e.request, clone); });
-                }
-                return response;
-            });
-            return cached || networkFetch;
+        fetch(e.request).then(function(response) {
+            if (response.ok) {
+                var clone = response.clone();
+                caches.open(CACHE_NAME).then(function(cache){ cache.put(SHELL_URLS[0], clone); });
+            }
+            return response;
+        }).catch(function() {
+            return caches.match(SHELL_URLS[0]);
         })
     );
 });
