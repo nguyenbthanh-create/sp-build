@@ -55,7 +55,28 @@ class SpCalPro_Token {
         $el  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE token = %s", $token ) );
         if ( ! $el ) return; // Token invalide → 404 normale de WordPress
 
-        // Token valide → afficher la fiche avec l'habillage du thème
+        // Page de la fiche ([sp_cal_fiche_membre]) : laisser WordPress rendre la page normalement,
+        // le shortcode y affiche la fiche. Intercepter ici (template_redirect + exit) court-circuitait
+        // Elementor Pro, qui n'a pas encore mis en place son en-tête à ce stade : get_header()
+        // retombait sur l'en-tête d'origine du thème (ancien style) — bug du 27/09/2026.
+        if ( $this->est_page_fiche() ) {
+            // Page personnelle : ne jamais la garder en cache (navigateur, extension de cache).
+            nocache_headers();
+            if ( ! defined( 'DONOTCACHEPAGE' ) ) define( 'DONOTCACHEPAGE', true );
+            return;
+        }
+
+        // Autre adresse avec ?token= (anciens liens « /?token= », mails déjà envoyés) : rediriger
+        // vers la page de la fiche, si elle existe et n'est pas l'adresse demandée (pas de boucle).
+        $cible        = $this->get_fiche_url( $el->token );
+        $chemin_cible = trailingslashit( (string) wp_parse_url( $cible, PHP_URL_PATH ) );
+        $chemin_ici   = trailingslashit( (string) wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ) );
+        if ( $chemin_cible !== $chemin_ici && $chemin_cible !== trailingslashit( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) ) ) {
+            wp_safe_redirect( $cible, 302 );
+            exit;
+        }
+
+        // Pas de page dédiée : afficher la fiche avec l'habillage du thème (ancien comportement)
         wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
         get_header();
         echo '<div style="max-width:860px;margin:30px auto;padding:0 16px;">';
@@ -63,6 +84,19 @@ class SpCalPro_Token {
         echo '</div>'; // ferme max-width wrapper
         get_footer();
         exit;
+    }
+
+    /**
+     * La page courante contient-elle le shortcode de la fiche ? Pour une page construite avec
+     * Elementor, le shortcode peut ne figurer que dans ses données (_elementor_data).
+     */
+    private function est_page_fiche() {
+        if ( ! is_page() ) return false;
+        $post = get_queried_object();
+        if ( ! $post instanceof WP_Post ) return false;
+        if ( has_shortcode( $post->post_content, 'sp_cal_fiche_membre' ) ) return true;
+        $data = (string) get_post_meta( $post->ID, '_elementor_data', true );
+        return strpos( $data, 'sp_cal_fiche_membre' ) !== false;
     }
 
     public function enqueue() {
@@ -210,7 +244,9 @@ class SpCalPro_Token {
         ) );
         if ( ! $el ) return '<div class="sp-membre-error">🔒 Lien invalide ou expiré. Contactez votre club.</div>';
 
-        return $this->render_membre_fiche($el);
+        // Même marges que l'affichage direct (maybe_render_fiche) : la page de la fiche imprime
+        // son contenu sans conteneur (modèle Elementor « en-tête et pied de page »).
+        return '<div style="max-width:860px;margin:30px auto;padding:0 16px;">' . $this->render_membre_fiche($el) . '</div>';
     }
 
     private function render_no_token() {
