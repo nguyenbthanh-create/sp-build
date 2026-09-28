@@ -269,17 +269,12 @@ body { font-family: Arial, sans-serif; font-size: 11pt; color: #111; background:
             }
         }
 
-        $fin_s  = get_option('sp_cal_fin_saison','');
-        $alerte = intval(get_option('sp_cal_alerte_jours', 60));
-        $statut_adhesion = 'Actif';
+        $statut_saison   = SpCalPro_DB::statut_saison_eleve($el);
+        $statut_adhesion = $statut_saison['libelle'];
         $statut_class    = 'status-ok';
-        if (!intval($el->actif ?? 1)) {
+        if ($statut_saison['code'] === 'inactif') {
             $statut_adhesion = 'Inactif' . ($el->motif_inactif ? ' — ' . $el->motif_inactif : '');
             $statut_class    = 'status-inactif';
-        } elseif ($fin_s) {
-            $jr = intval(ceil((strtotime($fin_s) - time()) / 86400));
-            if ($jr < 0)          $statut_adhesion = 'Actif — Saison expirée';
-            elseif ($jr <= $alerte) $statut_adhesion = 'Actif — Fin de saison dans ' . $jr . ' jours';
         }
 
         $this->print_head('Fiche — ' . $el->prenom . ' ' . mb_strtoupper($el->nom));

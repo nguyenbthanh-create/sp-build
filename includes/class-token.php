@@ -285,18 +285,14 @@ class SpCalPro_Token {
         $taux = $nb_t ? round($nb_p / $nb_t * 100) : null;
 
         // Statut adhésion
-        $actif = intval($el->actif ?? 1);
-        $fin_s  = get_option('sp_cal_fin_saison','');
-        $alerte = intval(get_option('sp_cal_alerte_jours', 60));
-        $adhesion_label = 'Actif';
-        $adhesion_class = 'sp-membre-badge-ok';
-        if (!$actif) {
-            $adhesion_label = 'Inactif'; $adhesion_class = 'sp-membre-badge-ko';
-        } elseif ($fin_s) {
-            $jr = intval(ceil((strtotime($fin_s) - time()) / 86400));
-            if ($jr < 0)          { $adhesion_label = 'Saison terminée';                   $adhesion_class = 'sp-membre-badge-warn'; }
-            elseif ($jr <= $alerte){ $adhesion_label = 'Actif — expire dans '.$jr.' j.'; $adhesion_class = 'sp-membre-badge-warn'; }
-        }
+        // Statut d'après la saison de la fiche (SpCalPro_DB::statut_saison_eleve), plus une date globale.
+        $statut_saison  = SpCalPro_DB::statut_saison_eleve($el);
+        $adhesion_label = $statut_saison['libelle'];
+        $adhesion_class = array(
+            'inactif'      => 'sp-membre-badge-ko',
+            'a_renouveler' => 'sp-membre-badge-warn',
+            'bientot'      => 'sp-membre-badge-warn',
+        )[$statut_saison['code']] ?? 'sp-membre-badge-ok';
 
         // Chronologie grades — séparer courant vs archives
         $timeline_all = array();

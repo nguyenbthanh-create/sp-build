@@ -35,7 +35,7 @@ class SP_Cal_Dobok {
 	private static ?self $instance = null;
 	private $db;
 
-	const SCHEMA_VERSION = '2';
+	const SCHEMA_VERSION = '3';
 	const PAGE           = 'sp-cal-dobok';
 
 	const MODELES = [
@@ -208,6 +208,8 @@ class SP_Cal_Dobok {
 			hors_regle tinyint(1) NOT NULL DEFAULT 0,
 			note_adherent varchar(255) NOT NULL DEFAULT '',
 			note_bureau varchar(255) NOT NULL DEFAULT '',
+			mesures_maj varchar(255) NOT NULL DEFAULT '',
+			mesures_maj_at datetime DEFAULT NULL,
 			saison varchar(20) NOT NULL DEFAULT '',
 			created_at datetime NOT NULL,
 			updated_at datetime DEFAULT NULL,
@@ -817,7 +819,7 @@ class SP_Cal_Dobok {
 	/** Retour à la page d'origine (onglet, filtres, adhérent ouvert) avec un message. */
 	private function retour( string $msg, array $extra = [] ): void {
 		$args = [ 'page' => self::PAGE ];
-		foreach ( [ 'tab', 'saison', 'q', 'vue', 'f_type', 'f_modele' ] as $k ) {
+		foreach ( [ 'tab', 'saison', 'q', 'tri', 'vue', 'f_type', 'f_modele' ] as $k ) {
 			if ( isset( $_POST[ 'r_' . $k ] ) && $_POST[ 'r_' . $k ] !== '' ) {
 				$args[ $k ] = sanitize_text_field( wp_unslash( $_POST[ 'r_' . $k ] ) );
 			}
@@ -1160,9 +1162,16 @@ class SP_Cal_Dobok {
 		};
 
 		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_spd_nonce'] ?? '' ) ), 'sp_dobok_front_' . $el->id ) ) $retour( 'expire' );
-		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
 
 		$action = sanitize_key( $_POST['sp_dobok_front'] );
+
+		// Mise à jour des mesures : possible même si les demandes sont désactivées.
+		if ( $action === 'mesures' ) {
+			if ( ! (int) $el->actif ) $retour( 'ferme' );
+			$retour( $this->maj_mesures( $el ) );
+		}
+
+		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
 
 		if ( $action === 'annuler' ) {
 			$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
@@ -1232,6 +1241,74 @@ class SP_Cal_Dobok {
 		$retour( $this->renouvellement_en_attente( $el ) ? 'ok_attente_renouv' : 'ok_attente' );
 	}
 
+	const MESURES = [
+		'taille_cm'       => 'Taille',
+		'poids_kg'        => 'Poids',
+		'pointure'        => 'Pointure',
+		'taille_tshirt'   => 'T-shirt',
+		'taille_pantalon' => 'Pantalon',
+	];
+
+	/**
+	 * Mesures modifiées par l'adhérent depuis sa fiche. Enregistrées tout de suite sur la
+	 * fiche (et sur un renouvellement en attente, sinon sa validation les écraserait).
+	 * Si une demande de dobok est en cours, elle est annotée et le bureau prévenu : c'est
+	 * lui qui décide si la taille demandée doit changer (décision du 28/09/2026).
+	 * Retourne le code du message à afficher.
+	 */
+	private function maj_mesures( object $el ): string {
+		global $wpdb;
+		$num = function ( string $k, float $min, float $max ): ?string {
+			$v = str_replace( ',', '.', trim( sanitize_text_field( wp_unslash( $_POST[ $k ] ?? '' ) ) ) );
+			if ( $v === '' ) return '';
+			if ( ! is_numeric( $v ) || (float) $v < $min || (float) $v > $max ) return null;
+			return (string) ( round( (float) $v * 10 ) / 10 );   // 38 / 38.5, sans zéros superflus
+		};
+		$new = [
+			'taille_cm'       => $num( 'taille_cm', 50, 250 ),
+			'poids_kg'        => $num( 'poids_kg', 10, 250 ),
+			'pointure'        => $num( 'pointure', 20, 55 ),
+			'taille_tshirt'   => mb_substr( sanitize_text_field( wp_unslash( $_POST['taille_tshirt'] ?? '' ) ), 0, 20 ),
+			'taille_pantalon' => mb_substr( sanitize_text_field( wp_unslash( $_POST['taille_pantalon'] ?? '' ) ), 0, 20 ),
+		];
+		if ( in_array( null, $new, true ) || $new['taille_cm'] === '' ) return 'mesures_erreur';
+
+		$changes = [];
+		foreach ( self::MESURES as $k => $lib ) {
+			$old = trim( (string) ( $el->$k ?? '' ) );
+			if ( $old === $new[ $k ] ) continue;
+			if ( $k === 'taille_cm' && self::parse_cm( $old ) !== null && self::parse_cm( $old ) == (float) $new[ $k ] ) continue;
+			$unite     = [ 'taille_cm' => ' cm', 'poids_kg' => ' kg' ][ $k ] ?? '';
+			$changes[] = $lib . ' ' . ( $old !== '' ? $old : '—' ) . ' → ' . ( $new[ $k ] !== '' ? $new[ $k ] . $unite : '—' );
+		}
+		if ( ! $changes ) return 'mesures_identiques';
+
+		$wpdb->update( $this->table_eleves(), $new, [ 'id' => (int) $el->id ] );
+		$wpdb->update( $wpdb->prefix . 'sp_adhesions_pending', $new, [ 'renouvellement_eleve_id' => (int) $el->id, 'statut' => 'pending' ] );
+
+		$ouvertes = $this->demandes_ouvertes( [ (int) $el->id ] )[ (int) $el->id ] ?? [];
+		if ( ! $ouvertes ) return 'mesures_ok';
+
+		$texte = mb_substr( implode( ' ; ', $changes ), 0, 255 );
+		foreach ( $ouvertes as $d ) {
+			$wpdb->update( $this->t_dem(), [ 'mesures_maj' => $texte, 'mesures_maj_at' => current_time( 'mysql' ) ], [ 'id' => (int) $d->id ] );
+		}
+		if ( $this->reglages()['mail_bureau'] ) {
+			$qui   = $el->prenom . ' ' . mb_strtoupper( $el->nom );
+			$sugg  = $this->taille_pour( self::parse_cm( $new['taille_cm'] ), (int) $this->reglages()['marge'] );
+			$corps = "$qui a mis à jour ses mesures alors qu'une demande de dobok est en cours :\n" . implode( "\n", $changes ) . "\n\n";
+			foreach ( $ouvertes as $d ) {
+				$corps .= 'Demande en cours : ' . self::libelle_demande( $d ) . "\n";
+				if ( $d->souhait_taille && $sugg && (int) $d->souhait_taille !== $sugg ) {
+					$corps .= "⚠ Taille demandée : {$d->souhait_taille} — taille conseillée d'après les nouvelles mesures : $sugg\n";
+				}
+			}
+			$corps .= "\nÀ vérifier : " . admin_url( 'admin.php?page=' . self::PAGE . '&tab=demandes' );
+			$this->envoyer( $this->email_bureau(), 'Dobok : mesures mises à jour par ' . $qui, $corps );
+		}
+		return 'mesures_ok_demande';
+	}
+
 	/** Bloc « Mes doboks » inséré dans la fiche adhérent (hook de SpCalPro_Token::render_membre_fiche). */
 	public function render_bloc_adherent( $el ): void {
 		if ( ! is_object( $el ) || ! $this->front_pret() ) return;
@@ -1263,6 +1340,10 @@ class SP_Cal_Dobok {
 			'ferme'          => [ 'err',  'Les demandes ne sont pas possibles pour le moment : contactez le bureau.' ],
 			'expire'         => [ 'err',  'La page a expiré : rechargez-la puis recommencez.' ],
 			'erreur'         => [ 'err',  'La demande n\'a pas pu être enregistrée : vérifiez vos choix.' ],
+			'mesures_ok'     => [ 'ok',   'Vos mesures sont mises à jour. Si votre dobok est devenu trop petit, faites une demande de changement ci-dessous.' ],
+			'mesures_ok_demande' => [ 'ok', 'Vos mesures sont mises à jour. Le bureau en est informé pour votre demande en cours ; si la taille demandée ne convient plus, vous pouvez aussi annuler la demande et en refaire une.' ],
+			'mesures_identiques' => [ 'info', 'Aucune mesure modifiée.' ],
+			'mesures_erreur' => [ 'err',  'Mesures non enregistrées : vérifiez les valeurs (taille en cm obligatoire, entre 50 et 250 ; poids en kg ; pointure entre 20 et 55).' ],
 		];
 		$msg = sanitize_key( $_GET['dobok_msg'] ?? '' );
 		?>
@@ -1274,6 +1355,13 @@ class SP_Cal_Dobok {
 				.spd-front .spd-f-err{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
 				.spd-front .spd-f-mesures{display:flex;flex-wrap:wrap;gap:8px 24px;font-size:14px;margin-bottom:6px}
 				.spd-front .spd-f-mesures b{font-size:16px}
+				.spd-front .spd-f-edit{background:none;border:1px solid #e5e7eb;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:14px;line-height:1.4}
+				.spd-front .spd-f-edit:hover{border-color:#D4000F}
+				.spd-front .spd-f-mesures-form{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin:8px 0 10px;background:#f9fafb}
+				.spd-front .spd-f-mesures-form[hidden]{display:none}
+				.spd-front .spd-f-grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px 14px}
+				.spd-front .spd-f-grille label{margin:0}
+				.spd-front .spd-f-grille input{display:block;width:100%;box-sizing:border-box;margin-top:2px}
 				.spd-front .spd-f-cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px}
 				.spd-front .spd-f-carte{border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff}
 				.spd-front .spd-f-carte h3{margin:0 0 8px;font-size:16px}
@@ -1302,10 +1390,32 @@ class SP_Cal_Dobok {
 			<div class="spd-f-mesures">
 				<span>Taille : <b><?php echo esc_html( $cm !== null ? round( $cm ) . ' cm' : '—' ); ?></b></span>
 				<span>Poids : <b><?php echo esc_html( ( $el->poids_kg ?? '' ) !== '' ? $el->poids_kg . ' kg' : '—' ); ?></b></span>
+				<span>Pointure : <b><?php echo esc_html( ( $el->pointure ?? '' ) ?: '—' ); ?></b></span>
 				<span>T-shirt : <b><?php echo esc_html( ( $el->taille_tshirt ?? '' ) ?: '—' ); ?></b></span>
 				<span>Pantalon : <b><?php echo esc_html( ( $el->taille_pantalon ?? '' ) ?: '—' ); ?></b></span>
+				<?php if ( (int) $el->actif ) : ?>
+					<button type="button" class="spd-f-edit" title="Modifier mes mesures" aria-label="Modifier mes mesures" aria-expanded="<?php echo $msg === 'mesures_erreur' ? 'true' : 'false'; ?>"
+						onclick="var f=document.getElementById('spd-f-mesures-form');f.hidden=!f.hidden;this.setAttribute('aria-expanded',!f.hidden);">✏️</button>
+				<?php endif; ?>
 			</div>
-			<p class="sp-membre-muted">Mesures saisies à l'inscription ou au renouvellement. Si elles ont changé, précisez-le dans votre demande.</p>
+			<?php if ( (int) $el->actif ) : ?>
+				<form method="post" id="spd-f-mesures-form" class="spd-f-mesures-form"<?php echo $msg === 'mesures_erreur' ? '' : ' hidden'; ?>>
+					<?php $this->champs_front( $el ); ?>
+					<input type="hidden" name="sp_dobok_front" value="mesures">
+					<div class="spd-f-grille">
+						<label>Taille (cm) <input type="number" name="taille_cm" min="50" max="250" required value="<?php echo esc_attr( $cm !== null ? round( $cm ) : '' ); ?>"></label>
+						<label>Poids (kg) <input type="number" name="poids_kg" min="10" max="250" step="0.1" value="<?php echo esc_attr( is_numeric( str_replace( ',', '.', (string) ( $el->poids_kg ?? '' ) ) ) ? str_replace( ',', '.', $el->poids_kg ) : '' ); ?>"></label>
+						<label>Pointure <input type="number" name="pointure" min="20" max="55" step="0.5" value="<?php echo esc_attr( is_numeric( str_replace( ',', '.', (string) ( $el->pointure ?? '' ) ) ) ? str_replace( ',', '.', $el->pointure ) : '' ); ?>"></label>
+						<label>T-shirt <input type="text" name="taille_tshirt" maxlength="20" placeholder="Ex : M, 12 ans…" value="<?php echo esc_attr( $el->taille_tshirt ?? '' ); ?>"></label>
+						<label>Pantalon <input type="text" name="taille_pantalon" maxlength="20" placeholder="Ex : 40, 12 ans…" value="<?php echo esc_attr( $el->taille_pantalon ?? '' ); ?>"></label>
+					</div>
+					<?php if ( $ouvertes ) : ?>
+						<p class="spd-f-conseil">ℹ️ Une demande de dobok est en cours : le bureau sera informé de ces nouvelles mesures.</p>
+					<?php endif; ?>
+					<button type="submit" class="spd-f-btn">Enregistrer mes mesures</button>
+				</form>
+			<?php endif; ?>
+			<p class="sp-membre-muted">Mesures saisies à l'inscription ou au renouvellement. Mettez-les à jour avec ✏️ si elles ont changé en cours d'année.</p>
 			<?php endif; ?>
 
 			<div class="spd-f-cartes">
@@ -1628,11 +1738,12 @@ class SP_Cal_Dobok {
 		// modifiée à la main hors du hook sp_cal_renouvellement_valide, stock recalé…).
 		$this->promouvoir_attentes();
 		$q      = sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) );
-		$retour = [ 'tab' => 'demandes', 'q' => $q ];
+		$tri    = ( $_GET['tri'] ?? '' ) === 'nom' ? 'nom' : '';
+		$retour = [ 'tab' => 'demandes', 'q' => $q, 'tri' => $tri ];
 		$tel    = $this->table_eleves();
 
 		$rows = $wpdb->get_results(
-			"SELECT d.*, e.nom, e.prenom FROM {$this->t_dem()} d
+			"SELECT d.*, e.nom, e.prenom, e.taille_cm FROM {$this->t_dem()} d
 			 LEFT JOIN $tel e ON e.id = d.eleve_id
 			 WHERE d.statut IN ('ouverte','en_attente') ORDER BY d.created_at, d.id"
 		);
@@ -1647,6 +1758,12 @@ class SP_Cal_Dobok {
 			$rows   = array_filter( (array) $rows, $match );
 			$hist   = array_filter( (array) $hist, $match );
 		}
+		if ( $tri === 'nom' ) {
+			$cmp = fn( $a, $b ) => strcmp( remove_accents( mb_strtolower( $a->nom . ' ' . $a->prenom ) ), remove_accents( mb_strtolower( $b->nom . ' ' . $b->prenom ) ) );
+			$rows = (array) $rows; $hist = (array) $hist;
+			usort( $rows, $cmp );
+			usort( $hist, $cmp );
+		}
 
 		$groupes = [
 			'remettre' => [ 'À remettre / échanger (dobok réservé)', [] ],
@@ -1660,7 +1777,11 @@ class SP_Cal_Dobok {
 		}
 
 		echo '<form method="get" class="spd-filtres"><input type="hidden" name="page" value="' . esc_attr( self::PAGE ) . '"><input type="hidden" name="tab" value="demandes">';
-		printf( '<input type="search" name="q" value="%s" placeholder="Rechercher un adhérent"><button class="button">Rechercher</button></form>', esc_attr( $q ) );
+		printf( '<input type="search" name="q" value="%s" placeholder="Rechercher par nom ou prénom">', esc_attr( $q ) );
+		printf( '<label>Tri <select name="tri" onchange="this.form.submit()"><option value="">Par date de demande</option><option value="nom"%s>Par nom (A → Z)</option></select></label>', selected( $tri, 'nom', false ) );
+		echo '<button class="button">Rechercher</button>';
+		if ( $q !== '' || $tri !== '' ) printf( ' <a href="%s">Réinitialiser</a>', esc_url( admin_url( 'admin.php?page=' . self::PAGE . '&tab=demandes' ) ) );
+		echo '</form>';
 
 		if ( ! $this->reglages()['demandes_on'] ) {
 			echo '<div class="notice notice-info inline"><p>Les demandes depuis la fiche adhérent sont désactivées (onglet Réglages).</p></div>';
@@ -1700,6 +1821,14 @@ class SP_Cal_Dobok {
 		if ( $d->souhait_modele ) printf( '<div>Reçoit : <b>%s %d</b></div>', esc_html( self::label( $d->souhait_modele ) ), (int) $d->souhait_taille );
 		echo '</div>';
 		if ( $d->hors_regle )    echo '<span class="spd-alerte spd-warn">Déjà un échange de taille cette saison</span>';
+		if ( ! empty( $d->mesures_maj ) ) {
+			// Mesures changées par l'adhérent après sa demande : la taille demandée est-elle encore la bonne ?
+			$sugg = $this->taille_pour( self::parse_cm( $d->taille_cm ?? '' ), (int) $this->reglages()['marge'] );
+			printf( '<span class="spd-alerte spd-warn">📏 Mesures modifiées le %s : %s%s</span>',
+				esc_html( mysql2date( 'd/m/Y', $d->mesures_maj_at ) ), esc_html( $d->mesures_maj ),
+				$d->souhait_taille && $sugg && (int) $d->souhait_taille !== $sugg
+					? esc_html( ' — taille conseillée maintenant ' . $sugg . ' (demandée : ' . (int) $d->souhait_taille . ')' ) : '' );
+		}
 		if ( $groupe === 'attente' ) {
 			$el_d = $this->eleve( (int) $d->eleve_id );
 			if ( $el_d && $this->renouvellement_en_attente( $el_d ) ) echo '<span class="spd-alerte spd-warn">Renouvellement non validé : réservé automatiquement à la validation</span>';

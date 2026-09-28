@@ -1138,6 +1138,78 @@ class SpCalPro_DB {
     }
 
     /**
+     * Prochaine fin de saison (Y-m-d), aujourd'hui compris. Seuls le jour et le mois du
+     * réglage sp_cal_fin_saison comptent : reconduit automatiquement chaque année, pour ne
+     * plus afficher « Saison terminée » partout le 1er septembre faute d'avoir changé
+     * l'année (retour de test du 28/09/2026). '' si non réglé.
+     */
+    public static function fin_saison_prochaine() {
+        $opt = (string) get_option( 'sp_cal_fin_saison', '' );
+        if ( ! preg_match( '/^\d{4}-(\d{2})-(\d{2})$/', $opt, $m ) ) return '';
+        $mois = (int) $m[1]; $jour = (int) $m[2];
+        $today = current_time( 'Y-m-d' );
+        $annee = (int) substr( $today, 0, 4 );
+        foreach ( array( $annee, $annee + 1 ) as $a ) {
+            $j   = checkdate( $mois, $jour, $a ) ? $jour : 28;   // 29/02 les années non bissextiles
+            $fin = sprintf( '%04d-%02d-%02d', $a, $mois, $j );
+            if ( $fin >= $today ) return $fin;
+        }
+        return '';
+    }
+
+    /** Jours restants avant la prochaine fin de saison (0 le jour même), null si non réglée. */
+    public static function jours_avant_fin_saison() {
+        $fin = self::fin_saison_prochaine();
+        if ( $fin === '' ) return null;
+        return (int) round( ( strtotime( $fin ) - strtotime( current_time( 'Y-m-d' ) ) ) / 86400 );
+    }
+
+    /**
+     * Saison sportive en cours, au format des fiches ("2026/2027") : celle qui se termine à
+     * la prochaine fin de saison. Sans réglage : bascule au 1er septembre (même calcul de
+     * secours que SP_Admin_Adhesions::create_member()).
+     */
+    public static function saison_en_cours() {
+        $fin = self::fin_saison_prochaine();
+        if ( $fin !== '' ) {
+            $a = (int) substr( $fin, 0, 4 );
+            return ( $a - 1 ) . '/' . $a;
+        }
+        $y = (int) current_time( 'Y' ); $m = (int) current_time( 'n' );
+        return $m >= 9 ? $y . '/' . ( $y + 1 ) : ( $y - 1 ) . '/' . $y;
+    }
+
+    /**
+     * Statut de saison d'un adhérent, d'après la saison de SA fiche comparée à la saison en cours.
+     * Retourne ['code' => …, 'jours' => int|null, 'saison' => saison de la fiche, 'libelle' => texte court] :
+     *  - 'inactif'      : fiche désactivée ;
+     *  - 'a_renouveler' : fiche sur une saison passée (renouvellement non fait / non validé) ;
+     *  - 'bientot'      : saison en cours, fin dans moins de sp_cal_alerte_jours jours ;
+     *  - 'renouvele'    : fiche déjà sur la saison suivante (renouvellement validé en avance) ;
+     *  - 'ok'           : à jour (ou saison de la fiche non renseignée / illisible).
+     */
+    public static function statut_saison_eleve( $el ) {
+        $saison = trim( (string) ( $el->saison ?? '' ) );
+        $jours  = self::jours_avant_fin_saison();
+        $out    = array( 'code' => 'ok', 'jours' => $jours, 'saison' => $saison, 'libelle' => 'Actif' );
+        if ( ! intval( $el->actif ?? 1 ) ) {
+            return array_merge( $out, array( 'code' => 'inactif', 'libelle' => 'Inactif' ) );
+        }
+        $debut_fiche = preg_match( '/^(\d{4})\s*[\/-]/', $saison, $m ) ? (int) $m[1] : 0;
+        $debut_cours = (int) substr( self::saison_en_cours(), 0, 4 );
+        if ( $debut_fiche && $debut_fiche < $debut_cours ) {
+            return array_merge( $out, array( 'code' => 'a_renouveler', 'libelle' => 'Saison ' . $saison . ' — renouvellement à faire' ) );
+        }
+        if ( $debut_fiche && $debut_fiche > $debut_cours ) {
+            return array_merge( $out, array( 'code' => 'renouvele', 'libelle' => 'Actif — renouvelé pour ' . $saison ) );
+        }
+        if ( $jours !== null && $jours <= intval( get_option( 'sp_cal_alerte_jours', 60 ) ) ) {
+            return array_merge( $out, array( 'code' => 'bientot', 'libelle' => 'Actif — fin de saison dans ' . $jours . ' j.' ) );
+        }
+        return $out;
+    }
+
+    /**
      * Comptes globaux pour le bandeau : nb inactifs, jours avant fin de saison.
      */
     public function get_adhesions_counts( $saison = '' ) {
@@ -1151,11 +1223,8 @@ class SpCalPro_DB {
             "SELECT COUNT(*) FROM $tel WHERE 1=1 $where_saison"
         ) );
         // Jours avant fin de saison (option globale)
-        $fin_saison = get_option( 'sp_cal_fin_saison', '' );
-        $jours_fin  = null;
-        if ( $fin_saison ) {
-            $jours_fin = intval( ceil( ( strtotime($fin_saison) - time() ) / 86400 ) );
-        }
+        $fin_saison = self::fin_saison_prochaine();
+        $jours_fin  = self::jours_avant_fin_saison();
         return compact( 'inactif', 'total', 'jours_fin', 'fin_saison' );
     }
 

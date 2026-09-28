@@ -3550,16 +3550,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                             if ($el->motif_inactif) echo ' <span class="sp-muted" style="font-size:11px;">— ' . esc_html($el->motif_inactif) . '</span>';
                         } else {
                             echo ' <span class="sp-lic-badge sp-lic-ok">✅ Actif</span>';
-                            // Alerte fin de saison sur la fiche
-                            $fin_s   = get_option('sp_cal_fin_saison','');
-                            $alerte  = intval(get_option('sp_cal_alerte_jours', 60));
-                            if ($fin_s) {
-                                $jours_r = intval(ceil((strtotime($fin_s) - time()) / 86400));
-                                if ($jours_r < 0)
-                                    echo ' <span class="sp-lic-badge sp-lic-expired" title="Saison terminée">Saison expirée</span>';
-                                elseif ($jours_r <= $alerte)
-                                    echo ' <span class="sp-lic-badge sp-lic-expiring" title="Fin de saison dans '.$jours_r.' jours">⚠️ '.$jours_r.'j</span>';
-                            }
+                            // Alerte saison sur la fiche (SpCalPro_DB::statut_saison_eleve)
+                            $st_saison = SpCalPro_DB::statut_saison_eleve($el);
+                            if ($st_saison['code'] === 'a_renouveler')
+                                echo ' <span class="sp-lic-badge sp-lic-expired" title="' . esc_attr($st_saison['libelle']) . '">Renouvellement à faire</span>';
+                            elseif ($st_saison['code'] === 'bientot')
+                                echo ' <span class="sp-lic-badge sp-lic-expiring" title="Fin de saison dans '.$st_saison['jours'].' jours">⚠️ '.$st_saison['jours'].'j</span>';
                         }
                     ?></span>
                     <?php endif; ?>
@@ -4129,15 +4125,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 </div>
                 <input type="submit" name="sp_save_fin_saison" class="button button-primary" value="Enregistrer">
             </form>
-            <?php if ( $fin_saison ) :
-                $jours = intval(ceil((strtotime($fin_saison) - time()) / 86400));
-                $color = $jours < 0 ? '#b91c1c' : ($jours <= 30 ? '#b45309' : '#15803d');
+            <p class="description" style="margin-top:8px;">
+                Seuls le jour et le mois comptent : la date est reconduite automatiquement chaque année.
+                Le statut de chaque adhérent dépend de la saison de sa fiche (renouvellement fait ou non).
+            </p>
+            <?php $fin_prochaine = SpCalPro_DB::fin_saison_prochaine();
+            if ( $fin_prochaine ) :
+                $jours = SpCalPro_DB::jours_avant_fin_saison();
+                $color = $jours <= 30 ? '#b45309' : '#15803d';
             ?>
             <p style="margin-top:8px;font-size:13px;">
-                Fin de saison : <strong><?php echo date('d/m/Y', strtotime($fin_saison)); ?></strong>
-                — <strong style="color:<?php echo $color; ?>;">
-                    <?php echo $jours < 0 ? 'terminée depuis ' . abs($jours) . ' jours' : $jours . ' jours restants'; ?>
-                </strong>
+                Saison en cours : <strong><?php echo esc_html( SpCalPro_DB::saison_en_cours() ); ?></strong>
+                — fin le <strong><?php echo date('d/m/Y', strtotime($fin_prochaine)); ?></strong>
+                — <strong style="color:<?php echo $color; ?>;"><?php echo $jours; ?> jours restants</strong>
             </p>
             <?php endif; ?>
         </div>

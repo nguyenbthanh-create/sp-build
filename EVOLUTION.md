@@ -120,6 +120,11 @@ Nouvelle table `sp_cal_dobok_demandes` (schéma v2). Bloc « Mes doboks » dans 
 
 **Précision du 25/09/2026** : les adhérents du **renforcement musculaire** (`categorie_saisie` RENFO) ne sont pas concernés par les doboks — exclus de la liste, de l'attribution présumée et des demandes, sauf pour rendre un dobok qu'ils auraient encore (`SP_Cal_Dobok::est_concerne()`).
 
+**Retours de test du 28/09/2026** (schéma v3 : colonnes `mesures_maj`, `mesures_maj_at` sur les demandes) :
+- Bloc « Mes doboks » : pointure affichée avec les autres mesures ; bouton ✏️ pour les **modifier en cours d'année** (auparavant seulement à l'inscription / au renouvellement, ou par le bureau dans wp-admin). Enregistré tout de suite sur la fiche, et aussi sur un renouvellement en attente de validation (sinon la validation écraserait la mise à jour).
+- **Mesures changées alors qu'une demande est en cours** : la demande n'est pas modifiée automatiquement (le bureau décide) ; elle est annotée (« 📏 Mesures modifiées le … : Taille 128 → 135 cm », avec la nouvelle taille conseillée si elle diffère de la taille demandée), sur la carte de l'onglet Demandes, et le bureau reçoit un mail. Sans demande en cours : pas de mail, l'alerte « A grandi » de l'onglet Adhérents suffit, et l'adhérent est invité à faire une demande si son dobok est trop petit.
+- Onglet Demandes : tri par nom (A → Z) en plus de l'ordre d'arrivée (la recherche par nom existait déjà).
+
 **Reporté (V3)** : question « le dobok est-il encore à la bonne taille ? » dans le formulaire de renouvellement — touche le flux d'adhésion (table `sp_adhesions_pending`, validation), le plus sensible du plugin ; en attendant, le lien vers la fiche (et donc le bloc « Mes doboks ») est déjà envoyé aux familles. Également en V3 : demandes automatiques (ceinture noire, changement de catégorie), aide à la commande plus complète (prévision nouveaux adhérents).
 
 ## 26/09/2026 — Refonte : cahier des charges du module Doboks

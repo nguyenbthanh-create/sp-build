@@ -32,7 +32,7 @@ class SpCalPro_Top5Front {
     }
 
     private function get_saison_courante() {
-        $fin = get_option( 'sp_cal_fin_saison', '' );
+        $fin = SpCalPro_DB::fin_saison_prochaine();   // jour/mois reconduits chaque année
         if ( $fin ) {
             $annee_fin = intval( substr( $fin, 0, 4 ) );
             return ( $annee_fin - 1 ) . '-' . $annee_fin;

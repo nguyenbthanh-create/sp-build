@@ -301,15 +301,11 @@ public function enqueue( $hook ) {
         $nb_present = count( array_filter( $pres_cours, static function( $p ) { return intval( $p->present ) === 1; } ) );
         $nb_total   = count( $pres_cours );
         $taux       = $nb_total > 0 ? round( $nb_present / $nb_total * 100 ) : null;
-        $fin_saison = get_option( 'sp_cal_fin_saison', '' );
-        $alerte     = intval( get_option( 'sp_cal_alerte_jours', 60 ) );
-        $adhesion   = 'actif'; $jours = null;
-        if ( $fin_saison ) {
-            $jr = intval( ceil( ( strtotime( $fin_saison ) - time() ) / 86400 ) );
-            $jours = $jr;
-            if ( $jr < 0 ) $adhesion = 'expire';
-            elseif ( $jr <= $alerte ) $adhesion = 'expire_bientot';
-        }
+        // Statut d'après la saison de la fiche (SpCalPro_DB::statut_saison_eleve) ; codes de l'API inchangés.
+        $statut_saison = SpCalPro_DB::statut_saison_eleve( $el );
+        $fin_saison    = SpCalPro_DB::fin_saison_prochaine();
+        $jours         = $statut_saison['jours'];
+        $adhesion      = array( 'a_renouveler' => 'expire', 'bientot' => 'expire_bientot' )[ $statut_saison['code'] ] ?? 'actif';
         $grade_vise = $this->db->get_grade_vise_eleve( $el );
         return rest_ensure_response( array(
             'id' => intval( $el->id ), 'prenom' => $el->prenom, 'nom' => mb_strtoupper( $el->nom ),
@@ -1161,9 +1157,9 @@ function renderAccueil() {
     var adh = el.adhesion || {};
     var adhHtml = '';
     if (adh.statut === 'expire') {
-        adhHtml = '<div class="spcal-adhesion-badge spcal-adhesion-ko">❌ Adhésion expirée</div>';
+        adhHtml = '<div class="spcal-adhesion-badge spcal-adhesion-ko">❌ Renouvellement à faire</div>';
     } else if (adh.statut === 'expire_bientot') {
-        adhHtml = '<div class="spcal-adhesion-badge spcal-adhesion-warn">⚠️ Expire dans '+adh.jours+' jours</div>';
+        adhHtml = '<div class="spcal-adhesion-badge spcal-adhesion-warn">⚠️ Fin de saison dans '+adh.jours+' jours</div>';
     } else {
         adhHtml = '<div class="spcal-adhesion-badge spcal-adhesion-actif">✅ Adhésion active</div>';
     }
