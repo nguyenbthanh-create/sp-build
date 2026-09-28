@@ -152,7 +152,7 @@ Le module legacy (`includes/class-dobok.php`, V1 + V2 du 25/09/2026) sert de **p
 
 ### Fonctions reportées du legacy, à prévoir dans la refonte
 
-- Question « le dobok est-il encore à la bonne taille ? » dans le **formulaire de renouvellement**, avec création de la demande à la validation.
+- Question « le dobok est-il encore à la bonne taille ? » dans le **formulaire de renouvellement**, avec création de la demande à la validation. Forme retenue le 28/09/2026 (reportée à la refonte, saison déjà entamée) : une seule question par dobok (blanc / couleur) — « Oui / Trop petit / Abîmé / Je n'en ai plus besoin » —, taille déduite des mesures saisies dans le même formulaire (taille conseillée), demande créée à la validation par le bureau (échange, remplacement ou restitution) avec réservation si stock. Option : demande « premier dobok » automatique à la validation d'une première inscription.
 - **Demandes automatiques** : passage Poom ou Dan (résultat d'examen) → nouveau col du blanc ; changement de catégorie en début de saison (proposé, l'adhérent peut garder l'ancien).
 - **Aide à la commande** : besoins = demandes en attente + nouveaux adhérents prévus + changements de catégorie − disponible.
 - Notifications **push PWA** (bureau et familles) à la place / en plus des mails (cf. entrée du 24/09/2026), et écran de distribution intégré à la PWA bureau.
