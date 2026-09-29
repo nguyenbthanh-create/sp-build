@@ -28,7 +28,7 @@ class SpCalPro_BureauFront {
             'roles'        => 'bureau',
             'titre'        => '',
             'colonnes'     => '3',
-            'taille_photo' => '110',
+            'taille_photo' => '130',
             'couleur_nom'  => '#1a1a1a',
             'couleur_fn'   => '#666666',
         ), $atts, 'sp_cal_bureau' );

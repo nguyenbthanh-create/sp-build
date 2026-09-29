@@ -110,6 +110,10 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 
 - **« Saison terminée » affiché à tort sur les fiches** (retour de test : fin de saison réglée au 31/08, badge au 28/09). La date `sp_cal_fin_saison` était une date complète, année comprise (31/08/2026), à changer chaque année. Désormais : (1) seuls le jour et le mois comptent, reconduits automatiquement (`SpCalPro_DB::fin_saison_prochaine()`, `jours_avant_fin_saison()`, `saison_en_cours()`) ; (2) le statut dépend de la **saison de la fiche** comparée à la saison en cours (`SpCalPro_DB::statut_saison_eleve()`) : « Actif », « Actif — fin de saison dans N j. », « Actif — renouvelé pour … », « Saison … — renouvellement à faire », « Inactif ». Appliqué à la fiche `?token=`, à l'application (API profil, codes `expire` / `expire_bientot` inchangés, libellés revus), à la fiche PDF, à la fiche admin, au bandeau du calendrier, au Top 5 et au cadre « Fin de saison » de la page Adhésions.
 
+## 29/09/2026
+
+- **Page Encadrement ([sp_cal_bureau]) restylée selon la charte du site** (aperçu avant/après validé par l'utilisateur) : noms en Montserrat majuscules espacées avec un trait rouge #D4000F, fonctions en texte courant gris, photos rondes à liseré clair (130 px par défaut), initiales sur fond beige, plus d'effet de survol ni de police système. Le style quitte le `<style>` inline répété à chaque shortcode pour une section « Bureau » de `assets/css/calendar.css` (déjà chargé par `class-bureau-front.php`) ; colonnes et taille des photos passent par des variables CSS. Les attributs `couleur_nom` / `couleur_fn` sont désormais ignorés (charte commune). Non testé sur un vrai WordPress.
+
 ---
 
-*Dernière mise à jour de ce fichier : 28/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+*Dernière mise à jour de ce fichier : 29/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
