@@ -5,15 +5,12 @@
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-// Helper médaille
+// Helper médaille : pastille colorée (styles dans assets/css/calendar.css, section « Palmarès »)
 if ( ! function_exists('sp_palm_front_medal') ) :
 function sp_palm_front_medal( $med ) {
-    switch ( $med ) {
-        case 'or':     return array( 'emoji' => '🥇', 'label' => 'Or',     'bg' => '#fef9c3', 'color' => '#854d0e' );
-        case 'argent': return array( 'emoji' => '🥈', 'label' => 'Argent', 'bg' => '#f1f5f9', 'color' => '#334155' );
-        case 'bronze': return array( 'emoji' => '🥉', 'label' => 'Bronze', 'bg' => '#fef3c7', 'color' => '#92400e' );
-        default:       return array( 'emoji' => '',   'label' => '',       'bg' => 'transparent', 'color' => '#9ca3af' );
-    }
+    $labels = array( 'or' => 'Or', 'argent' => 'Argent', 'bronze' => 'Bronze' );
+    if ( ! isset( $labels[ $med ] ) ) return '';
+    return '<span class="sp-palm-med sp-palm-med-' . $med . '" title="' . $labels[ $med ] . '" aria-label="' . $labels[ $med ] . '"></span>';
 }
 endif;
 
@@ -43,13 +40,13 @@ foreach ( $competitions as $comp ) {
 <div class="sp-palm-front-wrap">
 
     <!-- ── En-tête ── -->
-    <div class="sp-cal-toolbar" style="margin-bottom:24px;">
-        <span style="font-size:17px;font-weight:700;">🏆 Palmarès du club</span>
-        <span style="font-size:13px;opacity:.8;"><?php echo count($comps_avec_resultats); ?> compétition<?php echo count($comps_avec_resultats) !== 1 ? 's' : ''; ?></span>
+    <div class="sp-palm-front-head">
+        <h2 class="sp-palm-front-titre">Palmarès du club</h2>
+        <div class="sp-palm-front-count"><?php echo count($comps_avec_resultats); ?> compétition<?php echo count($comps_avec_resultats) !== 1 ? 's' : ''; ?></div>
     </div>
 
     <?php if ( empty($comps_avec_resultats) ) : ?>
-        <p style="color:#6b7280;font-style:italic;padding:16px;">Aucun résultat de compétition disponible pour le moment.</p>
+        <p class="sp-palm-front-empty">Aucun résultat de compétition disponible pour le moment.</p>
     <?php else : ?>
 
     <!-- ── Filtre années ── -->
@@ -112,26 +109,26 @@ foreach ( $competitions as $comp ) {
 					<?php echo esc_html($comp->titre); ?>
 					<?php
 					$niv_labels = array(
-						'international' => '🌐 International',
-						'national'      => '🇫🇷 National',
-						'regional'      => '🌍 Régional',
-						'departemental' => '🏘️ Départemental',
+						'international' => 'International',
+						'national'      => 'National',
+						'regional'      => 'Régional',
+						'departemental' => 'Départemental',
 					);
-					$niv = $niv_labels[$comp->niveau ?? 'departemental'] ?? '🏘️ Départemental';
-					echo '<span style="font-size:11px;font-weight:600;opacity:.75;margin-left:8px;vertical-align:middle;">(' . esc_html($niv) . ')</span>';
+					$niv = $niv_labels[$comp->niveau ?? 'departemental'] ?? 'Départemental';
+					echo '<span class="sp-palm-niveau">' . esc_html($niv) . '</span>';
 					?>
 				</h2>
                 <div class="sp-palm-front-comp-meta">
-                    📅 <?php echo esc_html($date_f); ?>
+                    <?php echo esc_html($date_f); ?>
                     <?php if ( $comp->lieu ?? '' ) : ?>
-                        &nbsp;·&nbsp; 📍 <?php echo esc_html($comp->lieu); ?>
+                        &nbsp;·&nbsp; <?php echo esc_html($comp->lieu); ?>
                     <?php endif; ?>
                 </div>
             </div>
             <div class="sp-palm-front-medals-summary">
-                <?php if ($nb_or)  : ?><span class="sp-palm-front-badge sp-palm-badge-or">🥇 <?php echo $nb_or; ?></span><?php endif; ?>
-                <?php if ($nb_arg) : ?><span class="sp-palm-front-badge sp-palm-badge-argent">🥈 <?php echo $nb_arg; ?></span><?php endif; ?>
-                <?php if ($nb_bro) : ?><span class="sp-palm-front-badge sp-palm-badge-bronze">🥉 <?php echo $nb_bro; ?></span><?php endif; ?>
+                <?php if ($nb_or)  : ?><span class="sp-palm-front-badge"><?php echo sp_palm_front_medal('or');     ?> <?php echo $nb_or; ?></span><?php endif; ?>
+                <?php if ($nb_arg) : ?><span class="sp-palm-front-badge"><?php echo sp_palm_front_medal('argent'); ?> <?php echo $nb_arg; ?></span><?php endif; ?>
+                <?php if ($nb_bro) : ?><span class="sp-palm-front-badge"><?php echo sp_palm_front_medal('bronze'); ?> <?php echo $nb_bro; ?></span><?php endif; ?>
             </div>
         </div>
 
@@ -146,7 +143,7 @@ foreach ( $competitions as $comp ) {
             });
         ?>
         <div class="sp-palm-front-cat-block">
-            <h3 class="sp-palm-front-cat-title">👥 <?php echo esc_html($cat_label); ?></h3>
+            <h3 class="sp-palm-front-cat-title"><?php echo esc_html($cat_label); ?></h3>
             <table class="sp-palm-front-table">
                 <thead>
                     <tr>
@@ -181,18 +178,17 @@ foreach ( $competitions as $comp ) {
                             ?>
                         </td>
                         <?php foreach ( $ep_noms_cat as $epn ) :
-                            $med = $row['ep'][$epn] ?? '';
-                            $mi  = sp_palm_front_medal($med);
+                            $pastille = sp_palm_front_medal( $row['ep'][$epn] ?? '' );
                         ?>
-                        <td class="sp-palm-td-ep" style="background:<?php echo $mi['bg']; ?>;">
-                            <?php echo $mi['emoji'] ?: '<span style="color:#d1d5db;">—</span>'; ?>
+                        <td class="sp-palm-td-ep">
+                            <?php echo $pastille ?: '<span class="sp-palm-vide">—</span>'; ?>
                         </td>
                         <?php endforeach; ?>
                         <td class="sp-palm-td-total">
                             <?php if ($nb_med) : ?>
-                                <strong style="color:#b45309;"><?php echo $nb_med; ?> 🏅</strong>
+                                <strong><?php echo $nb_med; ?></strong>
                             <?php else : ?>
-                                <span style="color:#d1d5db;">—</span>
+                                <span class="sp-palm-vide">—</span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -208,51 +204,6 @@ foreach ( $competitions as $comp ) {
     <?php endif; ?>
 
 </div><!-- .sp-palm-front-wrap -->
-
-<style>
-.sp-palm-front-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:960px;color:#1f2937}
-/* Filtre années */
-.sp-palm-front-years{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
-.sp-palm-year-btn{padding:5px 14px;border:2px solid #d1d5db;border-radius:20px;background:#fff;color:#374151;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
-.sp-palm-year-btn:hover{border-color:#1e3a5f;color:#1e3a5f}
-.sp-palm-year-btn.active{background:#1e3a5f!important;border-color:#1e3a5f!important;color:#fff!important}
-/* Bloc compétition */
-.sp-palm-front-block{margin-bottom:32px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden}
-.sp-palm-front-block[data-hidden="1"]{display:none}
-/* En-tête compétition */
-.sp-palm-front-comp-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;background:linear-gradient(135deg,#1e3a5f 0%,#2d5a9e 100%);flex-wrap:wrap}
-.sp-palm-front-comp-titre{margin:0 0 4px;font-size:17px;font-weight:700;color:#fff}
-.sp-palm-front-comp-meta{font-size:13px;color:rgba(255,255,255,.8)}
-.sp-palm-front-medals-summary{display:flex;gap:8px;flex-shrink:0}
-.sp-palm-front-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:20px;font-size:14px;font-weight:700}
-.sp-palm-badge-or{background:#fef9c3;color:#854d0e}
-.sp-palm-badge-argent{background:#f1f5f9;color:#334155}
-.sp-palm-badge-bronze{background:#fef3c7;color:#92400e}
-/* Catégorie */
-.sp-palm-front-cat-block{padding:0 20px 16px}
-.sp-palm-front-cat-title{font-size:14px;font-weight:700;color:#1e3a5f;margin:16px 0 10px;padding-bottom:6px;border-bottom:2px solid #e2e8f0}
-/* Tableau */
-.sp-palm-front-table{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
-.sp-palm-front-table thead tr{background:#f8fafc}
-.sp-palm-front-table thead th{padding:8px 12px;text-align:left;font-size:12px;font-weight:700;color:#6b7280!important;background:#f8fafc!important;border-bottom:2px solid #e2e8f0!important;border-top:none!important;border-left:none!important;border-right:none!important;white-space:nowrap}
-.sp-palm-th-nom{min-width:160px}
-.sp-palm-th-ep{text-align:center!important;min-width:80px}
-.sp-palm-th-total{text-align:center!important;min-width:60px}
-.sp-palm-front-table tbody tr{border-bottom:1px solid #f1f5f9!important;background:#fff!important;transition:background .1s}
-.sp-palm-front-table tbody tr:last-child{border-bottom:none!important}
-.sp-palm-front-table tbody tr:hover{background:#f8fafc!important}
-.sp-palm-row-medal{background:#fffbeb!important}
-.sp-palm-row-medal:hover{background:#fef9c3!important}
-.sp-palm-front-table td{padding:9px 12px;vertical-align:middle;border:none!important;color:#1f2937!important;background:transparent!important}
-.sp-palm-td-nom{font-weight:700;color:#1e3a5f!important}
-.sp-palm-td-ep{text-align:center;font-size:18px}
-.sp-palm-td-total{text-align:center}
-@media(max-width:600px){
-    .sp-palm-front-comp-header{padding:12px 14px}
-    .sp-palm-front-cat-block{padding:0 12px 12px}
-    .sp-palm-th-ep,.sp-palm-td-ep{min-width:50px}
-}
-</style>
 
 <script>
 (function(){

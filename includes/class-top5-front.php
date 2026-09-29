@@ -7,7 +7,7 @@
  * Attributs optionnels :
  *   - nb            : nombre d'élèves affichés (défaut 5)
  *   - saison        : ex "2025-2026" (défaut : saison en cours)
- *   - titre         : titre affiché (défaut : "🏆 Top 5 de la saison")
+ *   - titre         : titre affiché (défaut : "Top 5 de la saison" ; émoji de tête retiré)
  *   - categorie_age : filtrer par tranche d'âge
  *   - discipline    : filtrer par nom d'épreuve (ex "Renfo")
  *
@@ -171,14 +171,15 @@ class SpCalPro_Top5Front {
         $atts = shortcode_atts( array(
             'nb'            => 5,
             'saison'        => '',
-            'titre'         => '🏆 Top 5 de la saison',
+            'titre'         => 'Top 5 de la saison',
             'categorie_age' => '',
             'discipline'    => '',
         ), $atts, 'sp_top5_saison' );
 
         $nb            = max( 1, intval( $atts['nb'] ) );
         $saison        = $atts['saison'] ?: $this->get_saison_courante();
-        $titre         = esc_html( $atts['titre'] );
+        // Émoji éventuel en tête du titre (ex. « 🏆 Top 5 Baby ») retiré : charte sobre du site
+        $titre         = esc_html( preg_replace( '/^[^\p{L}\p{N}]+/u', '', $atts['titre'] ) );
         $categorie_age = sanitize_text_field( $atts['categorie_age'] );
         $discipline    = sanitize_text_field( $atts['discipline'] );
 
@@ -209,91 +210,46 @@ class SpCalPro_Top5Front {
             }
         }
 
+        // Styles : section « Top 5 » de assets/css/calendar.css (charte du site, comme le Palmarès)
+        if ( ! wp_style_is( 'sp-cal-front', 'enqueued' ) ) {
+            wp_enqueue_style( 'sp-cal-front', SP_CAL_PRO_URL . 'assets/css/calendar.css', array(), sp_cal_asset_ver( 'assets/css/calendar.css' ) );
+        }
+        // Pastilles médailles, mêmes classes que le Palmarès
+        $med_or     = '<span class="sp-palm-med sp-palm-med-or" title="Or"></span>';
+        $med_argent = '<span class="sp-palm-med sp-palm-med-argent" title="Argent"></span>';
+        $med_bronze = '<span class="sp-palm-med sp-palm-med-bronze" title="Bronze"></span>';
+
         ob_start();
         ?>
         <div class="sp-top5-wrap">
-            <style>
-            .sp-top5-wrap {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                max-width: 100%;
-                width: 100%;
-                margin-bottom: 32px;
-            }
-            .sp-top5-titre { font-size: 18px; font-weight: 800; color: #1e3a5f; margin-bottom: 4px; }
-            .sp-top5-saison { font-size: 12px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .05em; }
-            .sp-top5-legende {
-                display: flex; flex-wrap: wrap; gap: 8px;
-                margin-bottom: 18px; padding: 12px 16px;
-                background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
-            }
-            .sp-top5-legende-title {
-                width: 100%; font-size: 11px; font-weight: 700; color: #94a3b8;
-                text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
-            }
-            .sp-top5-legende-item {
-                display: inline-flex; align-items: center; gap: 5px;
-                background: #fff; border: 1px solid #e2e8f0; border-radius: 20px;
-                padding: 3px 10px; font-size: 12px; font-weight: 600; color: #1e3a5f;
-            }
-            .sp-top5-legende-pts { font-size: 11px; color: #94a3b8; font-weight: 400; }
-            .sp-top5-liste { display: flex; flex-direction: column; gap: 8px; }
-            .sp-top5-row {
-                display: flex; align-items: center; gap: 12px;
-                background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
-                padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
-                width: 100%; box-sizing: border-box;
-            }
-            .sp-top5-row.rank-1 { border-left: 4px solid #f59e0b; background: #fffbeb; }
-            .sp-top5-row.rank-2 { border-left: 4px solid #94a3b8; background: #f8fafc; }
-            .sp-top5-row.rank-3 { border-left: 4px solid #b45309; background: #fdf8f0; }
-            .sp-top5-rang { font-size: 18px; font-weight: 900; color: #64748b; min-width: 28px; text-align: center; flex-shrink: 0; }
-            .sp-top5-rang.rank-1 { color: #f59e0b; }
-            .sp-top5-rang.rank-2 { color: #94a3b8; }
-            .sp-top5-rang.rank-3 { color: #b45309; }
-            .sp-top5-info { flex: 1; min-width: 0; }
-            .sp-top5-nom { font-size: 15px; font-weight: 700; color: #0f172a; }
-            .sp-top5-nom.anonymous { color: #94a3b8; font-style: italic; }
-            .sp-top5-cat { font-size: 11px; color: #94a3b8; margin-top: 1px; }
-            .sp-top5-medailles { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-            .sp-top5-badge { display: flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 20px; font-weight: 700; font-size: 12px; }
-            .sp-top5-badge.or     { background: #fef3c7; color: #92400e; }
-            .sp-top5-badge.argent { background: #f1f5f9; color: #475569; }
-            .sp-top5-badge.bronze { background: #fdf4e7; color: #92400e; }
-            .sp-top5-points { font-size: 18px; font-weight: 900; color: #1e3a5f; min-width: 56px; text-align: right; flex-shrink: 0; }
-            .sp-top5-points span { font-size: 11px; font-weight: 400; color: #94a3b8; display: block; text-align: right; }
-            .sp-top5-vide { color: #94a3b8; font-size: 13px; padding: 16px 0; }
-            @media (max-width: 480px) {
-                .sp-top5-nom { font-size: 13px; }
-                .sp-top5-points { font-size: 15px; min-width: 44px; }
-                .sp-top5-badge { font-size: 11px; padding: 2px 7px; }
-            }
-            </style>
 
-            <div class="sp-top5-titre"><?php echo $titre; ?></div>
-            <div class="sp-top5-saison">
-                Saison <?php echo esc_html( $saison ); ?>
-                <?php echo $sous_titre ? ' · ' . $sous_titre : ''; ?>
+            <div class="sp-top5-head">
+                <h3 class="sp-top5-titre"><?php echo $titre; ?></h3>
+                <div class="sp-top5-saison">
+                    Saison <?php echo esc_html( $saison ); ?>
+                    <?php echo $sous_titre ? ' · ' . $sous_titre : ''; ?>
+                </div>
             </div>
 
             <!-- Légende coefficients -->
             <div class="sp-top5-legende">
                 <div class="sp-top5-legende-title">Coefficients de niveau appliqués</div>
+                <?php
+                $niveaux = array(
+                    'Départemental' => $coef_dep,
+                    'Régional'      => $coef_reg,
+                    'National'      => $coef_nat,
+                    'International' => $coef_int,
+                );
+                foreach ( $niveaux as $niv_label => $coef ) : ?>
                 <span class="sp-top5-legende-item">
-                    🏘️ Départemental
-                    <span class="sp-top5-legende-pts">×<?php echo number_format($coef_dep,1,',',''); ?> (🥇=<?php echo number_format($pts_or*$coef_dep,1,',',''); ?> · 🥈=<?php echo number_format($pts_argent*$coef_dep,1,',',''); ?> · 🥉=<?php echo number_format($pts_bronze*$coef_dep,1,',',''); ?> pts)</span>
+                    <?php echo esc_html( $niv_label ); ?>
+                    <span class="sp-top5-legende-pts">×<?php echo number_format( $coef, 1, ',', '' ); ?>
+                        (<?php echo $med_or; ?> <?php echo number_format( $pts_or * $coef, 1, ',', '' ); ?>
+                        · <?php echo $med_argent; ?> <?php echo number_format( $pts_argent * $coef, 1, ',', '' ); ?>
+                        · <?php echo $med_bronze; ?> <?php echo number_format( $pts_bronze * $coef, 1, ',', '' ); ?> pts)</span>
                 </span>
-                <span class="sp-top5-legende-item">
-                    🌍 Régional
-                    <span class="sp-top5-legende-pts">×<?php echo number_format($coef_reg,1,',',''); ?> (🥇=<?php echo number_format($pts_or*$coef_reg,1,',',''); ?> · 🥈=<?php echo number_format($pts_argent*$coef_reg,1,',',''); ?> · 🥉=<?php echo number_format($pts_bronze*$coef_reg,1,',',''); ?> pts)</span>
-                </span>
-                <span class="sp-top5-legende-item">
-                    🇫🇷 National
-                    <span class="sp-top5-legende-pts">×<?php echo number_format($coef_nat,1,',',''); ?> (🥇=<?php echo number_format($pts_or*$coef_nat,1,',',''); ?> · 🥈=<?php echo number_format($pts_argent*$coef_nat,1,',',''); ?> · 🥉=<?php echo number_format($pts_bronze*$coef_nat,1,',',''); ?> pts)</span>
-                </span>
-                <span class="sp-top5-legende-item">
-                    🌐 International
-                    <span class="sp-top5-legende-pts">×<?php echo number_format($coef_int,1,',',''); ?> (🥇=<?php echo number_format($pts_or*$coef_int,1,',',''); ?> · 🥈=<?php echo number_format($pts_argent*$coef_int,1,',',''); ?> · 🥉=<?php echo number_format($pts_bronze*$coef_int,1,',',''); ?> pts)</span>
-                </span>
+                <?php endforeach; ?>
             </div>
 
             <?php if ( empty( $top ) ) : ?>
@@ -301,14 +257,13 @@ class SpCalPro_Top5Front {
                 Aucune médaille enregistrée<?php
                 $ctx = array_filter( array( $categorie_age, $discipline ) );
                 echo $ctx ? ' pour ' . esc_html( implode( ' / ', $ctx ) ) : '';
-                ?>.
+                ?> pour la saison <?php echo esc_html( $saison ); ?>.
             </div>
             <?php else : ?>
             <div class="sp-top5-liste">
             <?php foreach ( $top as $i => $el ) :
                 $rang        = $i + 1;
                 $rank_class  = $rang <= 3 ? ' rank-' . $rang : '';
-                $emoji       = array( 1 => '🥇', 2 => '🥈', 3 => '🥉' )[$rang] ?? $rang . '.';
                 $pts_fmt     = number_format( floatval( $el->total_points ), 1, ',', '' );
                 $has_droit   = intval( $el->droit_image ) === 1;
                 $nom_affiche = $has_droit
@@ -317,7 +272,7 @@ class SpCalPro_Top5Front {
                 $nom_class   = $has_droit ? '' : ' anonymous';
             ?>
                 <div class="sp-top5-row<?php echo $rank_class; ?>">
-                    <div class="sp-top5-rang<?php echo $rank_class; ?>"><?php echo $emoji; ?></div>
+                    <div class="sp-top5-rang<?php echo $rank_class; ?>"><?php echo $rang; ?></div>
                     <div class="sp-top5-info">
                         <div class="sp-top5-nom<?php echo $nom_class; ?>"><?php echo $nom_affiche; ?></div>
                         <?php if ( $el->categorie_age ) : ?>
@@ -326,13 +281,13 @@ class SpCalPro_Top5Front {
                     </div>
                     <div class="sp-top5-medailles">
                         <?php if ( $el->nb_or > 0 ) : ?>
-                        <span class="sp-top5-badge or">🥇 <?php echo intval( $el->nb_or ); ?></span>
+                        <span class="sp-top5-badge"><?php echo $med_or; ?> <?php echo intval( $el->nb_or ); ?></span>
                         <?php endif; ?>
                         <?php if ( $el->nb_argent > 0 ) : ?>
-                        <span class="sp-top5-badge argent">🥈 <?php echo intval( $el->nb_argent ); ?></span>
+                        <span class="sp-top5-badge"><?php echo $med_argent; ?> <?php echo intval( $el->nb_argent ); ?></span>
                         <?php endif; ?>
                         <?php if ( $el->nb_bronze > 0 ) : ?>
-                        <span class="sp-top5-badge bronze">🥉 <?php echo intval( $el->nb_bronze ); ?></span>
+                        <span class="sp-top5-badge"><?php echo $med_bronze; ?> <?php echo intval( $el->nb_bronze ); ?></span>
                         <?php endif; ?>
                     </div>
                     <div class="sp-top5-points">

@@ -762,3 +762,205 @@ textarea.sp-input { height:auto; padding:8px 10px; resize:vertical; }
 @media (max-width: 360px) {
     .sp-bureau-wrap .sp-bureau-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Palmarès — [sp_cal_palmares] (templates/palmares-front.php)
+   Même charte que la section « Bureau » (29/09/2026) : titre Montserrat majuscules + trait
+   rouge, années en onglets soulignés, compétitions en cartes blanches à liseré rouge,
+   médailles en pastilles or / argent / bronze. Les !important sur le tableau neutralisent
+   les styles de tableau du thème.
+   ============================================================ */
+.sp-palm-front-wrap {
+    --sp-red:#D4000F; --sp-ink:#222; --sp-muted:#7a7a7a; --sp-line:#e8e5e2;
+    max-width: 960px; margin: 0 auto; font-family: inherit; color: var(--sp-ink);
+}
+.sp-palm-front-wrap .sp-palm-front-head { text-align: center; margin-bottom: 28px; }
+.sp-palm-front-wrap .sp-palm-front-titre {
+    margin: 0; font-family: Montserrat, sans-serif; font-weight: 300; font-size: 26px;
+    text-transform: uppercase; letter-spacing: .12em; color: #111; line-height: 1.3;
+}
+.sp-palm-front-wrap .sp-palm-front-titre::after {
+    content: ""; display: block; width: 26px; height: 2px; background: var(--sp-red); margin: 12px auto;
+}
+.sp-palm-front-wrap .sp-palm-front-count {
+    font-family: Montserrat, sans-serif; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .15em; color: var(--sp-muted);
+}
+.sp-palm-front-wrap .sp-palm-front-empty { color: var(--sp-muted); font-style: italic; text-align: center; padding: 16px; }
+
+/* Filtre années */
+.sp-palm-front-wrap .sp-palm-front-years {
+    display: flex; justify-content: center; flex-wrap: wrap; gap: 0 28px;
+    border-bottom: 1px solid var(--sp-line); margin-bottom: 32px;
+}
+.sp-palm-front-wrap .sp-palm-year-btn,
+.sp-palm-front-wrap .sp-palm-year-btn:hover,
+.sp-palm-front-wrap .sp-palm-year-btn:focus {
+    background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none;
+    margin: 0 0 -1px; padding: 12px 2px; cursor: pointer;
+    font-family: Montserrat, sans-serif; font-weight: 400; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .14em; color: #888;
+}
+.sp-palm-front-wrap .sp-palm-year-btn:hover { color: #111; }
+.sp-palm-front-wrap .sp-palm-year-btn.active { color: #111; border-bottom-color: var(--sp-red); }
+
+/* Bloc compétition */
+.sp-palm-front-wrap .sp-palm-front-block {
+    text-align: left; /* le thème centre le texte des tableaux et de leurs conteneurs */
+    background: #fff; border: 1px solid var(--sp-line); border-radius: 6px;
+    box-shadow: inset 3px 0 0 var(--sp-red); margin-bottom: 28px; overflow: hidden;
+}
+.sp-palm-front-wrap .sp-palm-front-block[data-hidden="1"] { display: none; }
+.sp-palm-front-wrap .sp-palm-front-comp-header {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px;
+    padding: 18px 22px; border-bottom: 1px solid var(--sp-line);
+}
+.sp-palm-front-wrap .sp-palm-front-comp-titre {
+    margin: 0 0 6px; font-family: Montserrat, sans-serif; font-weight: 500; font-size: 16px;
+    text-transform: uppercase; letter-spacing: .08em; line-height: 1.35; color: #111;
+}
+.sp-palm-front-wrap .sp-palm-niveau {
+    display: inline-block; margin-left: 8px; padding: 2px 9px; vertical-align: middle;
+    border: 1px solid var(--sp-line); border-radius: 20px;
+    font-family: Montserrat, sans-serif; font-weight: 500; font-size: 10px; letter-spacing: .12em; color: var(--sp-muted);
+}
+.sp-palm-front-wrap .sp-palm-front-comp-meta { font-size: 13px; color: var(--sp-muted); }
+.sp-palm-front-wrap .sp-palm-front-medals-summary { display: flex; gap: 8px; flex-shrink: 0; }
+.sp-palm-front-wrap .sp-palm-front-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px;
+    border: 1px solid var(--sp-line); border-radius: 20px; background: #fff;
+    font-size: 14px; font-weight: 600; color: #333;
+}
+
+/* Pastilles médailles (partagées avec le Top 5) */
+.sp-palm-front-wrap .sp-palm-med,
+.sp-top5-wrap .sp-palm-med {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.12);
+}
+.sp-palm-front-wrap .sp-palm-td-ep .sp-palm-med { width: 15px; height: 15px; }
+.sp-palm-front-wrap .sp-palm-med-or,     .sp-top5-wrap .sp-palm-med-or     { background: radial-gradient(circle at 35% 35%, #f7e08a, #c9a227); }
+.sp-palm-front-wrap .sp-palm-med-argent, .sp-top5-wrap .sp-palm-med-argent { background: radial-gradient(circle at 35% 35%, #eef0f3, #a4a9b0); }
+.sp-palm-front-wrap .sp-palm-med-bronze, .sp-top5-wrap .sp-palm-med-bronze { background: radial-gradient(circle at 35% 35%, #e9b384, #a8612a); }
+
+/* Catégorie + tableau */
+.sp-palm-front-wrap .sp-palm-front-cat-block { padding: 0 22px 18px; overflow-x: auto; }
+.sp-palm-front-wrap .sp-palm-front-cat-title {
+    margin: 20px 0 8px; padding: 0; border: 0;
+    font-family: Montserrat, sans-serif; font-weight: 500; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .14em; color: var(--sp-muted);
+}
+.sp-palm-front-wrap .sp-palm-front-table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0; border: 0 !important; background: transparent; }
+.sp-palm-front-wrap .sp-palm-front-table thead,
+.sp-palm-front-wrap .sp-palm-front-table thead tr { background: #555 !important; /* bandeau gris du thème, gardé à la demande de l'utilisateur */ }
+.sp-palm-front-wrap .sp-palm-front-table thead th {
+    padding: 8px 10px; text-align: left; white-space: nowrap;
+    font-family: Montserrat, sans-serif; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .08em; color: #fff !important;
+    background: transparent !important; border: 0 !important; border-bottom: 0 !important;
+}
+.sp-palm-front-wrap .sp-palm-th-nom   { min-width: 160px; }
+.sp-palm-front-wrap .sp-palm-th-ep    { text-align: center !important; min-width: 80px; }
+.sp-palm-front-wrap .sp-palm-th-total { text-align: center !important; min-width: 60px; }
+.sp-palm-front-wrap .sp-palm-front-table tbody tr,
+.sp-palm-front-wrap .sp-palm-front-table tbody tr:hover { background: transparent !important; }
+.sp-palm-front-wrap .sp-palm-front-table td {
+    padding: 10px; vertical-align: middle; color: var(--sp-ink) !important;
+    background: transparent !important; border: 0 !important; border-bottom: 1px solid #f0edea !important;
+}
+.sp-palm-front-wrap .sp-palm-front-table tbody tr:last-child td { border-bottom: 0 !important; }
+.sp-palm-front-wrap .sp-palm-td-nom { font-weight: 600; }
+.sp-palm-front-wrap .sp-palm-td-ep,
+.sp-palm-front-wrap .sp-palm-td-total { text-align: center; }
+.sp-palm-front-wrap .sp-palm-vide { color: #ccc; }
+@media (max-width: 600px) {
+    .sp-palm-front-wrap .sp-palm-front-titre { font-size: 20px; }
+    .sp-palm-front-wrap .sp-palm-front-comp-header { padding: 14px 16px; }
+    .sp-palm-front-wrap .sp-palm-front-comp-titre { font-size: 14px; }
+    .sp-palm-front-wrap .sp-palm-front-cat-block { padding: 0 14px 14px; }
+    .sp-palm-front-wrap .sp-palm-front-table thead th,
+    .sp-palm-front-wrap .sp-palm-front-table td { padding: 8px 6px; }
+    .sp-palm-front-wrap .sp-palm-th-ep { min-width: 50px; }
+}
+
+/* ============================================================
+   Top 5 de la saison — [sp_top5_saison] (includes/class-top5-front.php)
+   Même charte que le Palmarès (29/09/2026) : carte blanche à liseré rouge, titre Montserrat,
+   rang en pastille or / argent / bronze pour le podium, médailles en pastilles.
+   ============================================================ */
+.sp-top5-wrap {
+    --sp-red:#D4000F; --sp-ink:#222; --sp-muted:#7a7a7a; --sp-line:#e8e5e2;
+    max-width: 960px; margin: 0 auto 32px; text-align: left; font-family: inherit; color: var(--sp-ink);
+    background: #fff; border: 1px solid var(--sp-line); border-radius: 6px;
+    box-shadow: inset 3px 0 0 var(--sp-red); overflow: hidden; box-sizing: border-box;
+}
+.sp-top5-wrap .sp-top5-head { padding: 18px 22px 14px; border-bottom: 1px solid var(--sp-line); }
+.sp-top5-wrap .sp-top5-titre {
+    margin: 0 0 6px; font-family: Montserrat, sans-serif; font-weight: 500; font-size: 16px;
+    text-transform: uppercase; letter-spacing: .08em; line-height: 1.35; color: #111;
+}
+.sp-top5-wrap .sp-top5-saison { font-size: 13px; color: var(--sp-muted); }
+
+/* Légende des coefficients */
+.sp-top5-wrap .sp-top5-legende {
+    display: flex; flex-wrap: wrap; gap: 6px 8px; padding: 12px 22px; background: #faf9f7;
+    border-bottom: 1px solid var(--sp-line);
+}
+.sp-top5-wrap .sp-top5-legende-title {
+    width: 100%; margin-bottom: 2px; font-family: Montserrat, sans-serif; font-weight: 500; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .12em; color: var(--sp-muted);
+}
+.sp-top5-wrap .sp-top5-legende-item {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+    background: #fff; border: 1px solid var(--sp-line); border-radius: 20px;
+    font-size: 12px; font-weight: 600; color: #333;
+}
+.sp-top5-wrap .sp-top5-legende-pts { font-size: 11px; font-weight: 400; color: var(--sp-muted); }
+.sp-top5-wrap .sp-top5-legende-pts .sp-palm-med { width: 9px; height: 9px; }
+
+/* Classement */
+.sp-top5-wrap .sp-top5-liste { display: flex; flex-direction: column; padding: 4px 22px 8px; }
+.sp-top5-wrap .sp-top5-row {
+    display: flex; align-items: center; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid #f0edea; background: transparent;
+}
+.sp-top5-wrap .sp-top5-row:last-child { border-bottom: 0; }
+.sp-top5-wrap .sp-top5-rang {
+    width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Montserrat, sans-serif; font-weight: 500; font-size: 14px; color: var(--sp-muted);
+}
+.sp-top5-wrap .sp-top5-rang.rank-1,
+.sp-top5-wrap .sp-top5-rang.rank-2,
+.sp-top5-wrap .sp-top5-rang.rank-3 { color: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); text-shadow: 0 1px 1px rgba(0,0,0,.25); }
+.sp-top5-wrap .sp-top5-rang.rank-1 { background: radial-gradient(circle at 35% 35%, #f7e08a, #c9a227); }
+.sp-top5-wrap .sp-top5-rang.rank-2 { background: radial-gradient(circle at 35% 35%, #eef0f3, #a4a9b0); }
+.sp-top5-wrap .sp-top5-rang.rank-3 { background: radial-gradient(circle at 35% 35%, #e9b384, #a8612a); }
+.sp-top5-wrap .sp-top5-info { flex: 1; min-width: 0; }
+.sp-top5-wrap .sp-top5-nom { font-size: 15px; font-weight: 600; color: var(--sp-ink); }
+.sp-top5-wrap .sp-top5-nom.anonymous { color: var(--sp-muted); font-style: italic; font-weight: 400; }
+.sp-top5-wrap .sp-top5-cat { margin-top: 2px; font-size: 12px; color: var(--sp-muted); }
+.sp-top5-wrap .sp-top5-medailles { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sp-top5-wrap .sp-top5-badge {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+    border: 1px solid var(--sp-line); border-radius: 20px; background: #fff;
+    font-size: 12px; font-weight: 600; color: #333;
+}
+.sp-top5-wrap .sp-top5-points {
+    min-width: 56px; flex-shrink: 0; text-align: right;
+    font-family: Montserrat, sans-serif; font-weight: 500; font-size: 18px; color: #111;
+}
+.sp-top5-wrap .sp-top5-points span {
+    display: block; font-family: inherit; font-size: 10px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: .12em; color: var(--sp-muted);
+}
+.sp-top5-wrap .sp-top5-vide { padding: 16px 22px; font-size: 14px; font-style: italic; color: var(--sp-muted); }
+@media (max-width: 480px) {
+    .sp-top5-wrap .sp-top5-head,
+    .sp-top5-wrap .sp-top5-legende { padding-left: 16px; padding-right: 16px; }
+    .sp-top5-wrap .sp-top5-liste { padding: 4px 16px 8px; }
+    .sp-top5-wrap .sp-top5-row { gap: 10px; flex-wrap: wrap; }
+    .sp-top5-wrap .sp-top5-medailles { order: 4; width: 100%; padding-left: 40px; }
+    .sp-top5-wrap .sp-top5-nom { font-size: 14px; }
+    .sp-top5-wrap .sp-top5-points { font-size: 16px; min-width: 44px; }
+}
