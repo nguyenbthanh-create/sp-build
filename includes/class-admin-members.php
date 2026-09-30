@@ -224,6 +224,13 @@ class SP_Cal_Members {
             wp_redirect( $redirect ); exit;
         }
 
+        /* ── Harmonisation des grades avec TKD Parcours ── */
+        if ( isset( $_POST['sp_harmoniser_grades'] ) && check_admin_referer( 'sp_harmoniser_grades' ) ) {
+            $choix = ( isset( $_POST['sp_grade_choix'] ) && is_array( $_POST['sp_grade_choix'] ) ) ? wp_unslash( $_POST['sp_grade_choix'] ) : array();
+            $nb    = $this->db->appliquer_harmonisation_grades( $choix );
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-eleves&grades_harmo_done=1&nb=' . $nb ) ); exit;
+        }
+
         /* ── Normalisation écriture catégories d'âge ── */
         if ( isset( $_POST['sp_normaliser_categories_age'] ) && check_admin_referer( 'sp_normaliser_categories_age' ) ) {
             $dry = isset( $_POST['sp_normaliser_preview'] );
@@ -518,6 +525,86 @@ class SP_Cal_Members {
         </div>
 
         <?php
+        // ── Harmonisation des grades avec TKD Parcours ──────────────────────
+        // La liste « Grade actuel » suit TKD Parcours (schéma des grades du site) : les fiches
+        // encore écrites avec l'ancienne numérotation Baby / Enfant sont proposées à la conversion.
+        if ( isset( $_GET['grades_harmo_done'] ) ) {
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Grades harmonisés — <strong>' . intval( $_GET['nb'] ) . '</strong> élève(s) mis à jour. La progression des examens (Jury → Grades) suit maintenant TKD Parcours.</p></div>';
+        }
+        if ( $this->db->claira_grades_actif() && $grades_ref ) :
+            $harmo          = $this->db->preview_harmonisation_grades();
+            $progression_ok = $this->db->progression_a_jour_claira();
+            if ( $harmo || ! $progression_ok ) :
+                $voir_harmo = isset( $_GET['sp_grades_harmo'] );
+                $nb_auto    = count( array_filter( $harmo, function( $h ) { return $h['propose'] !== ''; } ) );
+        ?>
+        <div class="sp-box" style="border-left:4px solid #f59e0b;margin-bottom:18px;">
+            <strong>🥋 Grades à harmoniser avec TKD Parcours</strong>
+            <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
+                La liste « Grade actuel » suit désormais le schéma des grades du site (TKD Parcours).
+                <?php if ( $harmo ) : ?>
+                <strong><?php echo count( $harmo ); ?></strong> élève(s) ont un grade écrit avec l'ancienne numérotation
+                (<?php echo $nb_auto; ?> correspondance(s) trouvée(s) automatiquement, <?php echo count( $harmo ) - $nb_auto; ?> à choisir).
+                <?php endif; ?>
+                <?php if ( ! $progression_ok ) : ?>
+                La progression des examens (Jury → Grades) utilise encore l'ancienne liste.
+                <?php endif; ?>
+            </p>
+            <?php if ( ! $voir_harmo ) : ?>
+            <p style="margin:10px 0 0;">
+                <a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-eleves&sp_grades_harmo=1' ) ); ?>">👁️ Voir et corriger</a>
+            </p>
+            <?php else : ?>
+            <form method="post" style="margin-top:12px;">
+                <?php wp_nonce_field( 'sp_harmoniser_grades' ); ?>
+                <input type="hidden" name="sp_harmoniser_grades" value="1">
+                <?php if ( $harmo ) : ?>
+                <table class="wp-list-table widefat fixed striped" style="max-width:860px;margin-bottom:10px;">
+                    <thead><tr><th>Élève</th><th style="width:110px;">Catégorie</th><th style="width:150px;">Grade actuel</th><th>Nouveau grade</th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $harmo as $h ) :
+                        // Liste de la catégorie de l'élève en premier, puis les autres
+                        $groupes = $grades_ref;
+                        if ( $h['cat_ref'] ) $groupes = array( $h['cat_ref'] => $grades_ref[ $h['cat_ref'] ] ) + $grades_ref;
+                    ?>
+                    <tr<?php echo $h['propose'] === '' ? ' style="background:#fef9c3;"' : ''; ?>>
+                        <td><?php echo esc_html( $h['nom'] ); ?></td>
+                        <td><?php echo esc_html( $h['cat'] ?: '—' ); ?></td>
+                        <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html( $h['actuel'] ); ?></span></td>
+                        <td>
+                            <select name="sp_grade_choix[<?php echo intval( $h['id'] ); ?>]" style="width:100%;">
+                                <option value="">— ne pas changer —</option>
+                                <?php foreach ( $groupes as $cat_g => $chain_g ) : ?>
+                                <optgroup label="<?php echo esc_attr( $cat_g ); ?>">
+                                    <?php foreach ( $chain_g as $g ) : ?>
+                                    <option value="<?php echo esc_attr( $g ); ?>" <?php selected( $h['propose'], $g ); ?>><?php echo esc_html( $g ); ?></option>
+                                    <?php endforeach; ?>
+                                </optgroup>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p style="margin:0 0 10px;color:#64748b;font-size:12px;">
+                    Lignes en jaune : pas de correspondance sûre (ex. POOM → Il / Yi / Sam Poom), à choisir à la main ou à laisser inchangées.
+                </p>
+                <?php endif; ?>
+                <p style="margin:0 0 10px;color:#64748b;font-size:12px;">
+                    En validant, la progression des examens (Jury → Grades) est aussi recalculée depuis TKD Parcours
+                    pour Baby, Enfant, Ado/adulte et Adulte (chaque grade → le suivant du schéma).
+                    À faire de préférence en dehors d'une session d'examen en préparation.
+                </p>
+                <input type="submit" class="button button-primary" value="✅ Appliquer">
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-eleves' ) ); ?>" class="button" style="margin-left:8px;">Annuler</a>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php
+            endif;
+        endif;
+
         // ── Normalisation écriture catégories d'âge ─────────────────────────
         if ( isset($_GET['normalisation_done']) ) {
             $nb = intval($_GET['nb']);
