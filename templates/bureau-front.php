@@ -5,7 +5,7 @@
  * Attributs shortcode :
  *   roles          = "bureau"
  *   titre          = ""
- *   colonnes       = "3"           2 ou 3
+ *   colonnes       = "3"           1 à 4 (3 max. sous 900 px, 2 sur téléphone)
  *   taille_photo   = "130"         px
  *   couleur_nom, couleur_fn       ignorés depuis le 29/09/2026 : le style suit la charte du
  *                                  site (styles dans assets/css/calendar.css, section « Bureau »)
@@ -44,6 +44,25 @@ $role_labels = array( 'bureau' => 'Bureau', 'entraineur' => 'Entraîneur' );
             $fonction_sport = implode( ' / ', array_unique( $fn_parts ) );
         }
 
+        // Photo : la fiche stocke l'adresse du fichier d'origine (souvent 2000 px et plus).
+        // Si c'est un fichier de la médiathèque, on sert sa version réduite « medium »
+        // (300 px, avec srcset) : le cercle ne fait que ~130 px. Sinon, adresse d'origine.
+        $photo_html = '';
+        if ( ! empty( $m->photo_url ) ) {
+            $photo_id = attachment_url_to_postid( $m->photo_url );
+            if ( $photo_id ) {
+                $photo_html = wp_get_attachment_image( $photo_id, 'medium', false, array(
+                    'class'   => 'sp-bureau-photo',
+                    'alt'     => $m->nom,
+                    'loading' => 'lazy',
+                    'sizes'   => $sz * 2 . 'px',
+                ) );
+            }
+            if ( ! $photo_html ) {
+                $photo_html = '<img src="' . esc_url( $m->photo_url ) . '" alt="' . esc_attr( $m->nom ) . '" class="sp-bureau-photo" loading="lazy">';
+            }
+        }
+
         // Initiales fallback
         $initiales = '';
         foreach ( explode( ' ', $m->nom ) as $p ) {
@@ -53,10 +72,8 @@ $role_labels = array( 'bureau' => 'Bureau', 'entraineur' => 'Entraîneur' );
     ?>
     <div class="sp-bureau-card">
         <div class="sp-bureau-avatar">
-            <?php if ( ! empty( $m->photo_url ) ) : ?>
-                <img src="<?php echo esc_url( $m->photo_url ); ?>"
-                     alt="<?php echo esc_attr( $m->nom ); ?>"
-                     class="sp-bureau-photo" loading="lazy">
+            <?php if ( $photo_html ) : ?>
+                <?php echo $photo_html; // phpcs:ignore WordPress.Security.EscapeOutput -- généré par wp_get_attachment_image() ou échappé ci-dessus. ?>
             <?php else : ?>
                 <div class="sp-bureau-initiales"><?php echo esc_html( $initiales ); ?></div>
             <?php endif; ?>
