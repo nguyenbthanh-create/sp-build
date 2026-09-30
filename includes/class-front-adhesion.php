@@ -730,7 +730,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 	// ─── Succès ───────────────────────────────────────────────────────────────
 	private function render_success( array $r ): void { ?>
 		<div class="sp-adh-success">
-			<div class="sp-adh-success-icon">✅</div>
+			<div class="sp-adh-success-icon" aria-hidden="true"></div>
 			<h2>Demande envoyée !</h2>
 			<p>Bonjour <strong><?= esc_html( $r['prenom'] ) ?></strong>,</p>
 			<p>Votre demande a bien été enregistrée. Un email de confirmation a été envoyé à <strong><?= esc_html( $r['email'] ) ?></strong>.</p>
@@ -756,24 +756,24 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		// point laissé à mon appréciation) : titre, bandeau et libellé du bouton changent — jamais juste
 		// une mention discrète, pour éviter toute confusion avec une nouvelle inscription.
 		$titre = $renouv_eleve
-			? '🔄 Renouvellement d\'adhésion — ' . esc_html( $renouv_eleve->prenom . ' ' . $renouv_eleve->nom )
+			? 'Renouvellement d\'adhésion — ' . esc_html( $renouv_eleve->prenom . ' ' . $renouv_eleve->nom )
 			: 'Demande d\'adhésion';
 		$intro = $renouv_eleve
 			? 'Vos informations sont pré-remplies ci-dessous à partir de votre fiche existante : vérifiez-les, complétez ce qui manque, puis envoyez pour renouveler votre adhésion.'
 			: 'Remplissez ce formulaire pour rejoindre notre club. Notre équipe vous contactera pour finaliser votre inscription et le règlement de la cotisation.';
-		$btn_label = $renouv_eleve ? 'Confirmer mon renouvellement →' : 'Envoyer ma demande d\'adhésion →';
+		$btn_label = $renouv_eleve ? 'Confirmer mon renouvellement' : 'Envoyer ma demande d\'adhésion';
 		?>
 		<div class="sp-adh-wrapper">
 			<h2 class="sp-adh-title"><?= $titre ?></h2>
 			<?php if ( $renouv_eleve ) : ?>
-				<div class="sp-adh-renouv-banner">🔄 <?= esc_html( $intro ) ?></div>
+				<div class="sp-adh-renouv-banner"><?= esc_html( $intro ) ?></div>
 			<?php else : ?>
 				<p class="sp-adh-intro"><?= esc_html( $intro ) ?></p>
 			<?php endif; ?>
 
 			<?php if ( ! empty( $errors ) ) : ?>
 				<div class="sp-adh-errors" role="alert">
-					<strong>⚠️ Veuillez corriger les erreurs suivantes :</strong>
+					<strong>Veuillez corriger les erreurs suivantes :</strong>
 					<ul><?php foreach ( $errors as $e ) echo '<li>' . esc_html( $e ) . '</li>'; ?></ul>
 				</div>
 			<?php endif; ?>
@@ -787,7 +787,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ IDENTITÉ ══════════════════════════════════════════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">👤 Identité de l'adhérent</h3>
+					<h3 class="sp-adh-group-title">Identité de l'adhérent</h3>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col">
 							<label for="sp_nom">Nom <span class="sp-req">*</span></label>
@@ -850,7 +850,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ CONTACT ADHÉRENT ══════════════════════════════════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">📞 Contact de l'adhérent</h3>
+					<h3 class="sp-adh-group-title">Contact de l'adhérent</h3>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col">
 							<label for="sp_email">Email <span class="sp-req">*</span></label>
@@ -866,7 +866,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 				<!-- ══ REPRÉSENTANTS LÉGAUX ══════════════════════════════════ -->
 				<div class="sp-adh-group" id="sp_repres_bloc">
 					<h3 class="sp-adh-group-title">
-						👨‍👩‍👧 Représentant(s) légal/légaux
+						Représentant(s) légal/légaux
 						<span id="sp_repres_mineur_badge" style="display:none;background:#dc2626;color:#fff;font-size:.75rem;padding:1px 8px;border-radius:10px;font-weight:600;margin-left:8px;vertical-align:middle;">Mineur</span>
 					</h3>
 					<p class="sp-adh-group-desc">Une personne par bloc — utilisé pour les communications officielles et autorisations.</p>
@@ -887,14 +887,14 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ CONTACT URGENCE ═══════════════════════════════════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">🚨 Contact d'urgence</h3>
+					<h3 class="sp-adh-group-title">Contact d'urgence</h3>
 					<p class="sp-adh-group-desc">Personne à contacter immédiatement en cas d'incident — peut être différente du/des représentant(s) légal/légaux.</p>
 					<?php echo $this->render_personne_block( 'urgence', null, $urgence_posted, 'required' ); ?>
 				</div>
 
 				<!-- ══ CLUB ══════════════════════════════════════════════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">🥋 Pratique au club</h3>
+					<h3 class="sp-adh-group-title">Pratique au club</h3>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col">
 							<label for="sp_disc">Discipline souhaitée <span class="sp-req">*</span></label>
@@ -944,7 +944,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ DOCUMENTS OBLIGATOIRES (selon discipline) ═════════════ -->
 				<div class="sp-adh-group" id="sp_docs_group" style="display:none;">
-					<h3 class="sp-adh-group-title">📎 Documents obligatoires</h3>
+					<h3 class="sp-adh-group-title">Documents obligatoires</h3>
 					<p class="sp-adh-group-desc">Les documents demandés dépendent de la discipline choisie ci-dessus.</p>
 
 					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_certif_row" style="display:none;">
@@ -957,7 +957,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 							<label for="sp_date_certif">Date du certificat <span class="sp-req">*</span></label>
 							<input type="date" id="sp_date_certif" name="date_certificat_medical" value="<?= $v('date_certificat_medical') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
 							<p class="sp-optional">Le certificat de non contre-indication au Taekwondo en compétition doit être renouvelé régulièrement (règlement FFTDA — actuellement <?= (int) get_option( 'sp_cal_certif_medical_mois', 12 ) ?> mois).</p>
-							<p id="sp_certif_perime" class="sp-adh-warning" style="display:none;">⚠️ Ce certificat dépasse la durée de validité recommandée — il ne sera plus valide selon le règlement FFTDA. Vous pouvez tout de même envoyer votre demande, mais pensez à fournir un certificat plus récent dès que possible.</p>
+							<p id="sp_certif_perime" class="sp-adh-warning" style="display:none;">Ce certificat dépasse la durée de validité recommandée — il ne sera plus valide selon le règlement FFTDA. Vous pouvez tout de même envoyer votre demande, mais pensez à fournir un certificat plus récent dès que possible.</p>
 						</div>
 					</div>
 
@@ -972,7 +972,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 					<div class="sp-adh-row sp-adh-doc-row" id="sp_doc_decharge_row" style="display:none;">
 						<div class="sp-adh-col sp-adh-col-full">
 							<label for="sp_doc_decharge">Décharge sur l'honneur <span class="sp-optional">(obligatoire pour le Renforcement musculaire)</span> <span class="sp-req">*</span></label>
-							<p class="sp-optional">Vous n'avez pas de modèle ? <button type="button" class="sp-adh-link-btn" id="sp_attestation_print">🖨️ Imprimer le modèle à signer</button>, puis déposez-le ci-dessous une fois signé.</p>
+							<p class="sp-optional">Vous n'avez pas de modèle ? <button type="button" class="sp-adh-link-btn" id="sp_attestation_print">Imprimer le modèle à signer</button>, puis déposez-le ci-dessous une fois signé.</p>
 							<input type="file" id="sp_doc_decharge" name="doc_decharge_honneur" accept=".pdf,.jpg,.jpeg,.png">
 							<p class="sp-optional">Formats acceptés : PDF, JPG, PNG — 5 Mo maximum.</p>
 						</div>
@@ -1012,7 +1012,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ PRATIQUE ANTÉRIEURE ═══════════════════════════════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">🏅 Pratique antérieure</h3>
+					<h3 class="sp-adh-group-title">Pratique antérieure</h3>
 					<label class="sp-adh-check sp-adh-check-trigger">
 						<input type="checkbox" name="pratique_anterieure" id="sp_pratique_anterieure" value="1"
 						       <?= !empty($data['pratique_anterieure'])?'checked':'' ?>>
@@ -1041,7 +1041,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ MENSURATIONS (obligatoire — cf. doléance #5) ══════════ -->
 				<div class="sp-adh-group">
-					<h3 class="sp-adh-group-title">📏 Mensurations <span class="sp-optional" style="font-weight:400;font-size:.85rem;">(nécessaire pour la commande des équipements)</span></h3>
+					<h3 class="sp-adh-group-title">Mensurations <span class="sp-optional" style="font-weight:400;font-size:.85rem;">(nécessaire pour la commande des équipements)</span></h3>
 					<div class="sp-adh-row">
 						<div class="sp-adh-col">
 							<label for="sp_taille">Taille (cm) <span class="sp-req">*</span></label>
@@ -1075,7 +1075,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 				<!-- ══ LÉGAL ═════════════════════════════════════════════════ -->
 				<div class="sp-adh-group sp-adh-group-legal">
-					<h3 class="sp-adh-group-title">📋 Autorisations &amp; Règlement</h3>
+					<h3 class="sp-adh-group-title">Autorisations &amp; Règlement</h3>
 					<label class="sp-adh-check">
 						<input type="checkbox" name="autorisation_photo" value="1" <?= !empty($data['autorisation_photo'])?'checked':'' ?>>
 						<span>J'autorise la prise de <strong>photos et vidéos</strong> lors des activités du club.</span>
@@ -1107,7 +1107,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		<div class="sp-adh-modal-overlay" id="sp_reglement_overlay" style="display:none;">
 			<div class="sp-adh-modal" role="dialog" aria-modal="true" aria-labelledby="sp_reglement_title">
 				<div class="sp-adh-modal-header">
-					<h3 id="sp_reglement_title">📋 Règlement intérieur</h3>
+					<h3 id="sp_reglement_title">Règlement intérieur</h3>
 					<button type="button" class="sp-adh-modal-close" id="sp_reglement_close" aria-label="Fermer">✕</button>
 				</div>
 				<div class="sp-adh-modal-body">
@@ -1414,7 +1414,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		?>
 		<div class="sp-adh-personne-block">
 			<?php if ( $removable ) : ?>
-				<button type="button" class="sp-adh-personne-remove" aria-label="Retirer ce représentant">✕ Retirer</button>
+				<button type="button" class="sp-adh-personne-remove" aria-label="Retirer ce représentant">Retirer</button>
 			<?php endif; ?>
 			<div class="sp-adh-row">
 				<div class="sp-adh-col">
