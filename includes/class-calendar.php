@@ -87,6 +87,10 @@ class SpCalPro_Calendar {
     public function render_evenements( $atts ) {
         global $wpdb;
 
+        if ( ! wp_style_is( 'sp-cal-front', 'enqueued' ) ) {
+            $this->do_enqueue();
+        }
+
         $atts = shortcode_atts( array(
             'nb'        => 10,
             'type'      => '',
@@ -140,10 +144,10 @@ class SpCalPro_Calendar {
         }
 
         $type_labels = array(
-            'evenement'   => array( 'label' => 'Événement',   'color' => '#3B82F6', 'icon' => '📅' ),
-            'competition' => array( 'label' => 'Compétition', 'color' => '#b8860b', 'icon' => '🏆' ),
-            'examen'      => array( 'label' => 'Examen',      'color' => '#7c3aed', 'icon' => '🎓' ),
-            'stage'       => array( 'label' => 'Stage',       'color' => '#0891b2', 'icon' => '⭐' ),
+            'evenement'   => array( 'label' => 'Événement' ),
+            'competition' => array( 'label' => 'Compétition' ),
+            'examen'      => array( 'label' => 'Examen' ),
+            'stage'       => array( 'label' => 'Stage' ),
         );
 
         $mois_fr = array(
@@ -151,8 +155,9 @@ class SpCalPro_Calendar {
             '05'=>'mai','06'=>'juin','07'=>'juillet','08'=>'août',
             '09'=>'septembre','10'=>'octobre','11'=>'novembre','12'=>'décembre',
         );
-        $jours_fr = array( 'Sunday'=>'dimanche','Monday'=>'lundi','Tuesday'=>'mardi',
-            'Wednesday'=>'mercredi','Thursday'=>'jeudi','Friday'=>'vendredi','Saturday'=>'samedi' );
+
+        $jours_courts = array( 'Sunday'=>'dim.','Monday'=>'lun.','Tuesday'=>'mar.',
+            'Wednesday'=>'mer.','Thursday'=>'jeu.','Friday'=>'ven.','Saturday'=>'sam.' );
 
         ob_start();
         ?>
@@ -167,11 +172,6 @@ class SpCalPro_Calendar {
         foreach ( $events as $ev ) :
             $date_obj  = $ev->date ? date_create( $ev->date ) : null;
             $ev_month  = $date_obj ? $date_obj->format('Y-m') : '';
-            $ev_month_label = $date_obj
-                ? ucfirst( $jours_fr[ $date_obj->format('l') ] ?? $date_obj->format('l') ) . ' ' .
-                  intval( $date_obj->format('d') ) . ' ' .
-                  $mois_fr[ $date_obj->format('m') ] . ' ' . $date_obj->format('Y')
-                : '';
             $month_label = $date_obj
                 ? ucfirst( $mois_fr[ $date_obj->format('m') ] ) . ' ' . $date_obj->format('Y')
                 : '';
@@ -180,10 +180,11 @@ class SpCalPro_Calendar {
             if ( $ev_month !== $current_month ) :
                 $current_month = $ev_month;
                 ?>
-                <div class="spcal-evts-month"><?php echo esc_html( $month_label ); ?></div>
+                <div class="spcal-evts-month"><span><?php echo esc_html( $month_label ); ?></span></div>
             <?php endif;
 
-            $cfg      = $type_labels[ $ev->type ] ?? $type_labels['evenement'];
+            $type_key = isset( $type_labels[ $ev->type ] ) ? $ev->type : 'evenement';
+            $cfg      = $type_labels[ $type_key ];
             $is_past  = $ev->date && $ev->date < $today;
             $heure    = '';
             if ( $ev->heure_debut ) {
@@ -199,14 +200,14 @@ class SpCalPro_Calendar {
                     $palmares_base = get_option( 'sp_cal_palmares_url', '' );
                     if ( $palmares_base ) {
                         $doc_url   = rtrim( $palmares_base, '#' ) . '#competition-' . intval( $ev->id );
-                        $doc_label = '🏆 Voir les résultats';
+                        $doc_label = 'Voir les résultats';
                     } else {
                         $doc_url   = $ev->document_url;
-                        $doc_label = '📄 ' . ( $ev->document_nom ?: 'Document' );
+                        $doc_label = $ev->document_nom ?: 'Document';
                     }
                 } else {
                     $doc_url   = $ev->document_url;
-                    $doc_label = '📄 ' . ( $ev->document_nom ?: 'Document' );
+                    $doc_label = $ev->document_nom ?: 'Document';
                 }
             }
 
@@ -218,22 +219,18 @@ class SpCalPro_Calendar {
         ?>
 
         <div class="spcal-evt-card<?php echo $is_past ? ' spcal-evt-past' : ''; ?>">
-            <!-- Bande couleur type -->
-            <div class="spcal-evt-stripe" style="background:<?php echo esc_attr( $cfg['color'] ); ?>;"></div>
-
-            <!-- Bloc date façon calendrier -->
+            <!-- Bloc date -->
             <div class="spcal-evt-date-block">
+                <div class="spcal-evt-date-wday"><?php echo $date_obj ? esc_html( $jours_courts[ $date_obj->format('l') ] ?? '' ) : ''; ?></div>
                 <div class="spcal-evt-date-day"><?php echo $date_obj ? intval($date_obj->format('d')) : ''; ?></div>
-                <div class="spcal-evt-date-month"><?php echo $date_obj ? ($mois_fr[$date_obj->format('m')] ?? '') : ''; ?></div>
+                <div class="spcal-evt-date-month"><?php echo $date_obj ? esc_html( $mois_fr[$date_obj->format('m')] ?? '' ) : ''; ?></div>
             </div>
 
             <div class="spcal-evt-body">
-                <!-- En-tête : badges + heure -->
+                <!-- En-tête : étiquettes + horaire -->
                 <div class="spcal-evt-head">
                     <div class="spcal-evt-meta">
-                        <span class="spcal-evt-badge" style="background:<?php echo esc_attr( $cfg['color'] ); ?>;color:#fff;">
-                            <?php echo $cfg['icon']; ?> <?php echo esc_html( $cfg['label'] ); ?>
-                        </span>
+                        <span class="spcal-evt-badge spcal-evt-type-<?php echo esc_attr( $type_key ); ?>"><?php echo esc_html( $cfg['label'] ); ?></span>
                         <?php if ( $ev->categorie && $ev->categorie !== 'Général' ) : ?>
                         <span class="spcal-evt-cat"><?php echo esc_html( $ev->categorie ); ?></span>
                         <?php endif; ?>
@@ -242,7 +239,7 @@ class SpCalPro_Calendar {
                         <?php endif; ?>
                     </div>
                     <?php if ( $heure ) : ?>
-                    <span class="spcal-evt-heure-badge">🕐 <?php echo esc_html( $heure ); ?></span>
+                    <span class="spcal-evt-heure-badge"><?php echo esc_html( $heure ); ?></span>
                     <?php endif; ?>
                 </div>
 
@@ -255,7 +252,7 @@ class SpCalPro_Calendar {
                 <?php endif; ?>
                 <!-- Message inscription -->
                 <?php if ( ! empty( $ev->inscriptions_message ) ) : ?>
-                <div class="spcal-evt-insc-note">💬 <?php echo nl2br( esc_html( wp_unslash( $ev->inscriptions_message ) ) ); ?></div>
+                <div class="spcal-evt-insc-note"><?php echo nl2br( esc_html( wp_unslash( $ev->inscriptions_message ) ) ); ?></div>
                 <?php endif; ?>
 
                 <!-- Actions : document + inscription -->
@@ -283,30 +280,30 @@ class SpCalPro_Calendar {
                                 $statut = $row ? $row->statut : '';
                             }
                             if ( $statut === 'inscrit' ) : ?>
-                                <span class="spcal-evt-insc-ok">✅ Vous êtes inscrit(e)</span>
+                                <span class="spcal-evt-insc-ok">Vous êtes inscrit(e)</span>
                             <?php elseif ( $statut === 'refuse' ) : ?>
-                                <span class="spcal-evt-insc-ko">❌ Inscription déclinée</span>
+                                <span class="spcal-evt-insc-ko">Inscription déclinée</span>
                             <?php else :
                                 // En attente ou pas encore répondu
                                 $dl_txt = '';
                                 if ( $insc_deadline ) {
                                     $dl_obj = date_create( $insc_deadline );
-                                    if ( $dl_obj ) $dl_txt = 'avant le ' . $dl_obj->format('d/m/Y');
+                                    if ( $dl_obj ) $dl_txt = 'Réponse avant le ' . $dl_obj->format('d/m/Y');
                                 }
                             ?>
                                 <div class="spcal-evt-insc-wrap"
                                      data-event="<?php echo intval($ev->id); ?>"
                                      data-token="<?php echo esc_attr( $token ); ?>">
-                                    <button class="spcal-evt-btn spcal-evt-btn-oui spcal-insc-rep" data-rep="oui">✅ Je participe</button>
-                                    <button class="spcal-evt-btn spcal-evt-btn-non spcal-insc-rep" data-rep="non">❌ Je ne peux pas</button>
+                                    <button type="button" class="spcal-evt-btn spcal-evt-btn-oui spcal-insc-rep" data-rep="oui">Je participe</button>
+                                    <button type="button" class="spcal-evt-btn spcal-evt-btn-non spcal-insc-rep" data-rep="non">Je ne peux pas</button>
                                     <?php if ( $dl_txt ) : ?>
-                                    <span class="spcal-evt-insc-dl">⏰ <?php echo esc_html( $dl_txt ); ?></span>
+                                    <span class="spcal-evt-insc-dl"><?php echo esc_html( $dl_txt ); ?></span>
                                     <?php endif; ?>
                                     <span class="spcal-evt-insc-msg" style="display:none;"></span>
                                 </div>
                             <?php endif; ?>
                         <?php else : ?>
-                            <span class="spcal-evt-insc-public">🔒 Événement réservé aux adhérents — <a href="<?php echo esc_url( home_url('/contact/') ); ?>">Contacter le club</a> si vous êtes intéressé(e).</span>
+                            <span class="spcal-evt-insc-public">Événement réservé aux adhérents — <a href="<?php echo esc_url( home_url('/contact/') ); ?>">contactez le club</a> si vous êtes intéressé(e).</span>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
@@ -317,150 +314,6 @@ class SpCalPro_Calendar {
         <?php endforeach; ?>
         <?php endif; ?>
         </div>
-
-        <style>
-        /* ── Wrapper — pleine largeur, cohérent avec le calendrier ── */
-        .spcal-evts-wrap {
-            width:100%;
-            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-            background:#f1f5f9;
-            padding:0;
-        }
-
-        /* ── Message vide ── */
-        .spcal-evts-empty {
-            text-align:center; padding:48px 0;
-            color:#6b7280; font-size:15px; font-style:italic;
-        }
-
-        /* ── Séparateur mensuel — style "header semaine" du calendrier ── */
-        .spcal-evts-month {
-            display:flex; align-items:center; gap:10px;
-            background:#1e3a5f;
-            color:#fff;
-            font-size:14px; font-weight:700; letter-spacing:.5px;
-            padding:12px 20px;
-            border-radius:10px 10px 0 0;
-            margin-top:24px;
-        }
-        .spcal-evts-month:first-child { margin-top:0; }
-        .spcal-evts-month::before { content:'📅'; font-size:16px; }
-
-        /* ── Carte événement ── */
-        .spcal-evt-card {
-            display:flex;
-            background:#fff;
-            border-radius:0;
-            overflow:hidden;
-            border-bottom:1px solid #e2e8f0;
-            transition:background .15s;
-        }
-        .spcal-evt-card:last-of-type,
-        .spcal-evts-month + .spcal-evt-card:last-child {
-            border-radius:0 0 10px 10px;
-        }
-        /* Grouper les cartes sous leur header mensuel */
-        .spcal-evts-group { border-radius:0 0 10px 10px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.08); margin-bottom:8px; }
-
-        .spcal-evt-card:hover { background:#f8fafc; }
-        .spcal-evt-past { opacity:.6; }
-
-        /* Bande couleur latérale */
-        .spcal-evt-stripe { width:6px; flex-shrink:0; }
-
-        /* Bloc date — style pastille calendrier */
-        .spcal-evt-date-block {
-            flex-shrink:0;
-            width:64px;
-            display:flex; flex-direction:column; align-items:center; justify-content:center;
-            background:#1e3a5f;
-            color:#fff;
-            padding:12px 0;
-        }
-        .spcal-evt-date-day   { font-size:26px; font-weight:800; line-height:1; }
-        .spcal-evt-date-month { font-size:10px; text-transform:uppercase; letter-spacing:1px; opacity:.75; margin-top:3px; }
-
-        /* Corps de la carte */
-        .spcal-evt-body { flex:1; padding:14px 18px; min-width:0; }
-
-        .spcal-evt-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px; }
-        .spcal-evt-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-
-        /* Badge type — style "pill" du calendrier */
-        .spcal-evt-badge {
-            display:inline-flex; align-items:center; gap:4px;
-            padding:3px 10px; border-radius:20px;
-            font-size:11px; font-weight:700; white-space:nowrap;
-            text-transform:uppercase; letter-spacing:.4px;
-        }
-        .spcal-evt-cat {
-            display:inline-block; padding:3px 10px; border-radius:20px;
-            font-size:11px; font-weight:500;
-            background:#e2e8f0; color:#475569;
-        }
-        .spcal-evt-past-badge {
-            display:inline-block; padding:3px 10px; border-radius:20px;
-            font-size:11px; background:#f1f5f9; color:#94a3b8;
-        }
-
-        /* Heure — à droite du head */
-        .spcal-evt-heure-badge {
-            font-size:12px; font-weight:600; color:#1e3a5f;
-            background:#e0e7ff; padding:3px 10px; border-radius:20px;
-            white-space:nowrap;
-        }
-
-        /* Titre */
-        .spcal-evt-titre {
-            font-size:16px; font-weight:700; color:#0f172a;
-            margin-bottom:4px; line-height:1.3;
-        }
-
-        /* Description */
-        .spcal-evt-desc {
-            font-size:13px; color:#475569; line-height:1.6;
-            margin-bottom:10px; margin-top:4px;
-        }
-
-        /* Actions */
-        .spcal-evt-actions {
-            display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-            margin-top:10px; padding-top:10px;
-            border-top:1px solid #f1f5f9;
-        }
-        .spcal-evt-btn {
-            display:inline-flex; align-items:center; gap:5px;
-            padding:7px 16px; border-radius:6px;
-            font-size:13px; font-weight:600;
-            border:none; cursor:pointer; text-decoration:none;
-            transition:opacity .15s, transform .1s;
-        }
-        .spcal-evt-btn:hover { opacity:.88; transform:translateY(-1px); text-decoration:none; }
-        .spcal-evt-btn-doc { background:#1e3a5f; color:#fff; }
-        .spcal-evt-btn-oui { background:#16a34a; color:#fff; }
-        .spcal-evt-btn-non { background:#fff; color:#dc2626; border:2px solid #dc2626; }
-
-        .spcal-evt-insc-ok  { font-size:13px; font-weight:700; color:#15803d; background:#dcfce7; padding:5px 12px; border-radius:6px; }
-        .spcal-evt-insc-ko  { font-size:13px; font-weight:700; color:#b91c1c; background:#fee2e2; padding:5px 12px; border-radius:6px; }
-        .spcal-evt-insc-dl  { font-size:12px; color:#f59e0b; font-weight:500; }
-        .spcal-evt-insc-msg { font-size:13px; }
-        .spcal-evt-insc-wrap { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-        .spcal-evt-insc-public {
-            font-size:12px; color:#64748b;
-            background:#f8fafc; border:1px solid #e2e8f0;
-            padding:6px 12px; border-radius:6px;
-        }
-        .spcal-evt-insc-public a { color:#1e3a5f; font-weight:600; }
-        .spcal-evt-insc-note { font-size:13px; color:#374151; background:#fff8e1; border-left:3px solid #f59e0b; padding:8px 12px; border-radius:4px; margin-bottom:8px; line-height:1.5; }
-
-        /* ── Responsive mobile ── */
-        @media (max-width:540px) {
-            .spcal-evt-date-block { width:52px; }
-            .spcal-evt-date-day   { font-size:20px; }
-            .spcal-evt-titre      { font-size:14px; }
-            .spcal-evts-month     { font-size:13px; padding:10px 14px; }
-        }
-        </style>
 
         <script>
         (function(){
@@ -484,8 +337,8 @@ class SpCalPro_Calendar {
                         if (r.success) {
                             var ok  = r.data.statut === 'inscrit';
                             wrap.innerHTML = ok
-                                ? '<span class="spcal-evt-insc-ok">✅ Vous êtes inscrit(e)</span>'
-                                : '<span class="spcal-evt-insc-ko">❌ Inscription déclinée</span>';
+                                ? '<span class="spcal-evt-insc-ok">Vous êtes inscrit(e)</span>'
+                                : '<span class="spcal-evt-insc-ko">Inscription déclinée</span>';
                         } else {
                             if (msg) { msg.style.color='#b91c1c'; msg.textContent='Erreur, réessayez.'; }
                             wrap.querySelectorAll('.spcal-insc-rep').forEach(function(b){ b.disabled = false; });

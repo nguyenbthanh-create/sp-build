@@ -119,4 +119,8 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 
 ---
 
-*Dernière mise à jour de ce fichier : 29/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+## 30/09/2026
+
+- **Événements à venir ([sp_cal_evenements]) restylés selon la charte du site** (même charte que Palmarès / Top 5) : mois en Montserrat majuscules espacées précédés d'un trait rouge (au lieu du bandeau bleu marine), cartes blanches à liseré rouge, date sobre (jour de la semaine, jour, mois) au lieu du bloc bleu marine, étiquettes fines pour le type (petite pastille de couleur par type) et la catégorie, horaire en texte simple, boutons arrondis (document en contour noir, « Je participe » en rouge, « Je ne peux pas » en contour). Plus d'émojis dans les libellés du plugin (📅 🏆 🕐 📄 💬 ✅ ❌ 🔒 ⏰) ; ceux saisis dans les titres et descriptions des événements sont conservés. Le `<style>` inline du shortcode est supprimé → section « Événements à venir » de `assets/css/calendar.css`, entièrement préfixée par `.spcal-evts-wrap` (l'application membre, qui réutilise certains noms de classes `spcal-evt-*`, n'est pas touchée). Le shortcode charge lui-même `calendar.css` s'il n'est pas déjà chargé. Aperçu local (données de la page « Évènements à venir » + un exemple de compétition avec inscription) sur ordinateur et téléphone ; non testé sur un vrai WordPress.
+
+*Dernière mise à jour de ce fichier : 30/09/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
