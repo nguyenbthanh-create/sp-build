@@ -372,8 +372,12 @@ public function enqueue( $hook ) {
         $to       = date( 'Y-m-d', strtotime( $from . ' +90 days' ) );
         $occs     = $this->db->get_slot_occurrences( $from, $to );
         $cours    = array();
+        $encadrement_par_date = array();
         foreach ( $occs as $occ ) {
             if ( $occ['annul_id'] ) continue;
+            if ( ! isset( $encadrement_par_date[ $occ['date'] ] ) ) {
+                $encadrement_par_date[ $occ['date'] ] = $this->encadrement_du_jour( $occ['date'] );
+            }
             $cours[] = array(
                 'slot_id'     => intval( $occ['slot_id'] ),
                 'mat_id'      => $occ['mat_id'] ? intval( $occ['mat_id'] ) : null,
@@ -382,10 +386,45 @@ public function enqueue( $hook ) {
                 'heure_fin'   => $occ['heure_fin']   ?? '',
                 'titre'       => $occ['titre']        ?? '',
                 'categorie'   => $occ['categorie']    ?? '',
+                'encadrement' => $encadrement_par_date[ $occ['date'] ],
             );
             if ( count( $cours ) >= $nb ) break;
         }
         return rest_ensure_response( array( 'from' => $from, 'nb' => count( $cours ), 'cours' => $cours ) );
+    }
+
+    /**
+     * Encadrement d'une journée d'entraînement, d'après les disponibilités déclarées (par jour) :
+     * un entraîneur qui se déplace reste pour tous les cours du jour (choix du 01/10/2026,
+     * plutôt qu'un titulaire par créneau). Même règle que les cases du calendrier admin :
+     * seuls les entraîneurs actifs déclarés disponibles, plus le remplaçant désigné par le
+     * bureau pour un entraîneur absent (« Noé (remplace Thanh) »).
+     *
+     * @return string[] noms à afficher, dans l'ordre des entraîneurs ; vide = non renseigné
+     */
+    private function encadrement_du_jour( $date ) {
+        static $entraineurs = null, $tous = null;
+        if ( $entraineurs === null ) {
+            $entraineurs = $this->db->get_trainers_entraineurs( true );
+            $tous        = array();
+            foreach ( $this->db->get_trainers( false ) as $t ) {
+                $tous[ intval( $t->id ) ] = $t->nom_public ?: $t->nom;
+            }
+        }
+        $dispos = $this->db->get_dispos_for_date( $date );
+        $noms   = array(); // trainer_id affiché => libellé (le remplaçant remplace sa propre ligne « disponible »)
+        foreach ( $entraineurs as $t ) {
+            $id = intval( $t->id );
+            $d  = $dispos[ $id ] ?? null;
+            if ( ! $d ) continue;
+            $nom = $t->nom_public ?: $t->nom;
+            if ( $d['disponible'] === 1 ) {
+                if ( ! isset( $noms[ $id ] ) ) $noms[ $id ] = $nom;
+            } elseif ( ! empty( $d['remplacant_id'] ) && isset( $tous[ $d['remplacant_id'] ] ) ) {
+                $noms[ $d['remplacant_id'] ] = $tous[ $d['remplacant_id'] ] . ' (remplace ' . $nom . ')';
+            }
+        }
+        return array_values( $noms );
     }
 
     public function rest_pwa_calendrier( WP_REST_Request $req ) {
@@ -663,6 +702,8 @@ window.addEventListener('error', function(e) {
 .spcal-cours-left{flex:1;min-width:0;}
 .spcal-cours-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .spcal-cours-cat{font-size:12px;color:rgba(255,255,255,.4);margin-top:2px;}
+.spcal-cours-encadr{font-size:12px;color:rgba(255,255,255,.75);margin-top:4px;}
+.spcal-cours-encadr.vide{color:#f59e0b;}
 .spcal-cours-right{text-align:right;flex-shrink:0;}
 .spcal-cours-heure{font-size:14px;font-weight:600;color:#0f70b7;}
 .spcal-cours-card.today .spcal-cours-heure{color:#22c55e;}
@@ -1228,7 +1269,7 @@ function renderAccueil() {
             html += '<div class="spcal-cours-card'+cls+'">'+
                 '<div class="spcal-cours-left">'+
                 '<div class="spcal-cours-titre">'+esc(c.titre)+'</div>'+
-                (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')+
+                (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')+spCalEncadrementHtml(c)+
                 '</div>'+
                 '<div class="spcal-cours-right">'+
                 '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'+
@@ -1365,7 +1406,7 @@ function renderCalendrier() {
             '<div class="spcal-cours-card'+cls+'">'+
             '<div class="spcal-cours-left">'+
             '<div class="spcal-cours-titre">'+esc(c.titre)+'</div>'+
-            (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')+
+            (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')+spCalEncadrementHtml(c)+
             '</div>'+
             '<div class="spcal-cours-right">'+
             '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'+
@@ -1956,6 +1997,14 @@ function spCalAddLog(nom, status) {
 
 /* Stopper la caméra quand on quitte l'onglet pointage */
 /* Mode entraineur : calendrier club */
+/* Encadrement du jour (mode entraîneur, route /calendrier/club) : entraîneurs disponibles d'après
+   leurs disponibilités, ou alerte si personne ne s'est encore déclaré. Absent pour les adhérents. */
+function spCalEncadrementHtml(c) {
+    if (!c || !Array.isArray(c.encadrement)) return '';
+    if (!c.encadrement.length) return '<div class="spcal-cours-encadr vide">⚠️ Encadrement non renseigné</div>';
+    return '<div class="spcal-cours-encadr">👤 ' + c.encadrement.map(esc).join(', ') + '</div>';
+}
+
 function spCalLoadCalendrierClub(pin) {
     var apiBase = CFG.apiBase || '/wp-json/spcal/v1';
     fetch(apiBase + '/calendrier/club?pin=' + encodeURIComponent(pin) + '&nb=20')
@@ -1982,7 +2031,7 @@ function spCalLoadCalendrierClub(pin) {
                 html += '<div class="spcal-cours-card'+cls+'">'
                       + '<div class="spcal-cours-left">'
                       + '<div class="spcal-cours-titre">'+esc(c.titre)+'</div>'
-                      + (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')
+                      + (c.categorie ? '<div class="spcal-cours-cat">'+esc(c.categorie)+'</div>' : '')+spCalEncadrementHtml(c)
                       + '</div>'
                       + '<div class="spcal-cours-right">'
                       + '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'
@@ -2001,6 +2050,10 @@ function spCalLoadCalendrierClub(pin) {
 var _origSpCalNav = window.spCalNav;
 window.spCalNav = function(screen, btn) {
     if (screen !== 'pointage') spCalStopScan();
+    // Retour sur l'onglet Pointage : toujours la liste des cours du jour, jamais l'écran de
+    // scan du dernier cours ouvert (caméra coupée en quittant l'onglet → image noire, et
+    // impression qu'il n'y a qu'un seul cours). Retour terrain du 01/10/2026.
+    else if (gPtgCours) spCalBackToCours();
     _origSpCalNav(screen, btn);
 };
 
