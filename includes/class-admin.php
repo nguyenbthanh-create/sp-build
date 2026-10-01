@@ -916,7 +916,8 @@ window.addEventListener('error', function(e) {
                                 <div id="spcal-scan-frame" class="spcal-scan-frame"><div class="spcal-scan-line"></div></div>
                             </div>
                         </div>
-                        <p style="text-align:center;font-size:13px;color:rgba(255,255,255,.4);margin-bottom:16px;">Scannez la carte QR de l'élève</p>
+                        <p style="text-align:center;font-size:13px;color:rgba(255,255,255,.4);margin-bottom:4px;">Scannez la carte QR de l'élève</p>
+                        <p id="spcal-scan-etat" style="text-align:center;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:16px;"></p>
                         <!-- Feedback scan -->
                         <div id="spcal-scan-feedback" style="display:none;border-radius:12px;padding:14px 16px;text-align:center;margin-bottom:12px;">
                             <div id="spcal-scan-nom" style="font-size:17px;font-weight:700;"></div>
@@ -1778,17 +1779,23 @@ function spCalStartScan() {
             // fonctionne sur les téléphones du club : lecteur intégré du navigateur
             // (BarcodeDetector) d'abord, jsQR seulement s'il est absent. Le forçage de jsQR
             // seul (10/09/2026) laissait la caméra « muette » (cadre vert, aucune réaction).
-            if (typeof BarcodeDetector !== 'undefined') {
-                spCalScanWithBarcodeDetector(video);
-            } else {
-                spCalLoadJsQR(function(){
-                    if (typeof jsQR === 'undefined') {
-                        spCalScanShowError('📷 Lecteur QR non chargé', 'Ni le lecteur intégré du navigateur ni jsQR ne sont disponibles. Vérifiez la connexion puis rechargez la page.');
-                        return;
-                    }
+            // 01/10/2026 (2e retour terrain : « tourne dans le vide ») : sur certains
+            // téléphones le lecteur intégré existe mais ne détecte rien ou renvoie des
+            // erreurs ignorées. Les deux lecteurs tournent donc en parallèle : le premier
+            // qui lit gagne (le doublon est filtré par spCalHandleScanResult).
+            gScanLecteurs = { natif: typeof BarcodeDetector !== 'undefined', jsqr: false };
+            if (gScanLecteurs.natif) spCalScanWithBarcodeDetector(video);
+            spCalScanEtat();
+            spCalLoadJsQR(function(){
+                if (!gScanActive) return;
+                if (typeof jsQR !== 'undefined') {
+                    gScanLecteurs.jsqr = true;
+                    spCalScanEtat();
                     spCalScanWithJsQR(video);
-                });
-            }
+                } else if (!gScanLecteurs.natif) {
+                    spCalScanShowError('📷 Lecteur QR non chargé', 'Ni le lecteur intégré du navigateur ni jsQR ne sont disponibles. Vérifiez la connexion puis rechargez la page.');
+                }
+            });
         })
         .catch(function(e) {
             spCalScanShowError('📷 Caméra inaccessible', (e && (e.name + ' : ' + e.message)) || 'Autorisez l\'accès à la caméra.');
@@ -1806,17 +1813,33 @@ function spCalStopScan() {
     }
 }
 
+var gScanLecteurs = { natif: false, jsqr: false };
+
+/* Petite ligne d'état sous la caméra : quel lecteur analyse l'image (aide au diagnostic sur le terrain). */
+function spCalScanEtat() {
+    var el = document.getElementById('spcal-scan-etat');
+    if (!el) return;
+    var l = [];
+    if (gScanLecteurs.natif) l.push('lecteur du téléphone');
+    if (gScanLecteurs.jsqr)  l.push('jsQR');
+    el.textContent = l.length ? 'Lecture active : ' + l.join(' + ') : 'Démarrage de la lecture…';
+}
+
 function spCalScanWithBarcodeDetector(video) {
-    var detector;
+    var detector, echecs = 0;
     try { detector = new BarcodeDetector({ formats: ['qr_code'] }); }
-    catch (e) { spCalLoadJsQR(function(){ spCalScanWithJsQR(video); }); return; }
+    catch (e) { gScanLecteurs.natif = false; spCalScanEtat(); return; } // jsQR prend le relais
     function tick() {
-        if (!gScanActive) return;
+        if (!gScanActive || !gScanLecteurs.natif) return;
         // iOS : readyState n'atteint pas toujours HAVE_ENOUGH_DATA (4), >=2 suffit
         if (video.readyState >= 2 && video.videoWidth > 0) {
             detector.detect(video).then(function(codes) {
+                echecs = 0;
                 if (codes.length > 0) spCalHandleScanResult(codes[0].rawValue);
-            }).catch(function(){});
+            }).catch(function() {
+                // Lecteur intégré défaillant sur cet appareil : on l'arrête, jsQR continue seul.
+                if (++echecs >= 5) { gScanLecteurs.natif = false; spCalScanEtat(); }
+            });
         }
         setTimeout(tick, 300);
     }
