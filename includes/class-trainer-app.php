@@ -39,6 +39,88 @@ class SP_Cal_Trainer_App {
 		add_action( 'wp_ajax_nopriv_sp_cal_dispo_app_save', [ $this, 'ajax_save' ] );
 
 		add_action( 'wp_ajax_sp_cal_send_dispo_app_link', [ $this, 'ajax_send_link' ] );
+
+		// 01/10/2026 — le lien personnel des disponibilités ouvre désormais l'application
+		// entraîneur complète (Accueil / Mes dispos / Pointage), identifiée par ce même jeton.
+		add_action( 'template_redirect', [ $this, 'maybe_redirect_to_app' ] );
+		add_action( 'template_redirect', [ $this, 'maybe_serve_embed' ], 1 );
+		add_action( 'rest_api_init', [ $this, 'register_rest' ] );
+	}
+
+	// ─── Application entraîneur unifiée (lien personnel → /app/) ───────────────
+
+	/** URL de la page de l'application (shortcode [sp_cal_app]), '' si absente. */
+	private function url_pwa(): string {
+		global $wpdb;
+		$page_id = $wpdb->get_var(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' AND post_content LIKE '%[sp_cal_app%' LIMIT 1"
+		);
+		return $page_id ? (string) get_permalink( $page_id ) : '';
+	}
+
+	/** Page des disponibilités dans l'onglet « Mes dispos » de l'application (sans habillage du thème). */
+	public static function url_embed( string $token ): string {
+		return add_query_arg( [ 'sp_dispo_embed' => '1', 'token' => $token ], home_url( '/' ) );
+	}
+
+	/**
+	 * Lien personnel habituel (page [sp_cal_dispo_app]?token=…) : redirige vers l'application
+	 * en mode entraîneur identifié. Le lien et les raccourcis existants restent valables.
+	 * Secours : &classique=1 garde l'ancienne page seule ; pas de redirection non plus si
+	 * la page de l'application n'existe pas ou si le jeton est invalide.
+	 */
+	public function maybe_redirect_to_app(): void {
+		if ( ! is_singular() || isset( $_GET['classique'] ) ) return;
+		$post = get_post();
+		if ( ! $post || ! has_shortcode( (string) $post->post_content, 'sp_cal_dispo_app' ) ) return;
+		$token = sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) );
+		if ( ! $this->trainer_by_token( $token ) ) return;
+		$app = $this->url_pwa();
+		if ( $app === '' ) return;
+		wp_safe_redirect( add_query_arg( 'entraineur', $token, $app ) );
+		exit;
+	}
+
+	/** Disponibilités seules, en ambiance sombre, pour l'iframe de l'onglet « Mes dispos ». */
+	public function maybe_serve_embed(): void {
+		if ( empty( $_GET['sp_dispo_embed'] ) ) return;
+		nocache_headers();
+		header( 'Content-Type: text/html; charset=utf-8' );
+		echo '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+		   . '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+		   . '<title>Mes disponibilités</title>'
+		   . '<style>html,body{margin:0;padding:0;background:#0d0d0d;}</style></head><body>'
+		   . $this->render( [ 'theme' => 'sombre' ] ) // phpcs:ignore WordPress.Security.EscapeOutput -- échappé dans render()
+		   . '</body></html>';
+		exit;
+	}
+
+	public function register_rest(): void {
+		register_rest_route( 'spcal/v1', '/entraineur/session', [
+			'methods'             => 'POST',
+			'callback'            => [ $this, 'rest_session' ],
+			'permission_callback' => '__return_true', // contrôle par le jeton personnel ci-dessous
+		] );
+	}
+
+	/**
+	 * Ouverture de l'application par un entraîneur identifié par son jeton personnel : renvoie
+	 * son nom, l'adresse de ses disponibilités et le PIN de pointage commun (qu'un entraîneur
+	 * connaît déjà) pour que le Pointage s'ouvre sans le ressaisir.
+	 */
+	public function rest_session( WP_REST_Request $req ) {
+		$token = sanitize_text_field( (string) $req->get_param( 'token' ) );
+		$me    = $this->trainer_by_token( $token );
+		if ( ! $me ) {
+			return new WP_REST_Response( [ 'success' => false, 'data' => 'Lien invalide ou expiré.' ], 403 );
+		}
+		$pin = function_exists( 'sp_pointage_pin' ) ? sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		return new WP_REST_Response( [
+			'success'    => true,
+			'nom'        => $me->nom_public ?: $me->nom,
+			'pin'        => (string) $pin,
+			'dispos_url' => self::url_embed( $token ),
+		], 200 );
 	}
 
 	// ─── Schéma : colonnes token sur la table entraîneurs ──────────────────────
@@ -192,8 +274,9 @@ class SP_Cal_Trainer_App {
 
 	// ─── Rendu de l'app ──────────────────────────────────────────────────────────
 	public function render( $atts ): string {
-		$token = sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) );
-		$me    = $this->trainer_by_token( $token );
+		$token  = sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) );
+		$me     = $this->trainer_by_token( $token );
+		$sombre = is_array( $atts ) && ( $atts['theme'] ?? '' ) === 'sombre'; // onglet « Mes dispos » de l'application
 
 		ob_start();
 
@@ -208,7 +291,7 @@ class SP_Cal_Trainer_App {
 
 		$club = esc_html( get_option( 'blogname', 'Club' ) );
 		?>
-		<div id="sp-dispo-app" data-token="<?php echo esc_attr( $token ); ?>">
+		<div id="sp-dispo-app" class="<?php echo $sombre ? 'sda-sombre' : ''; ?>" data-token="<?php echo esc_attr( $token ); ?>">
 			<style>
 			#sp-dispo-app { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; color: #111827; }
 			#sp-dispo-app * { box-sizing: border-box; }
@@ -241,6 +324,28 @@ class SP_Cal_Trainer_App {
 			.sda-clear { display: block; text-align: center; margin-top: 10px; font-size: 12px; color: #9ca3af; cursor: pointer; }
 			.sda-saved { text-align: center; font-size: 11px; color: #16a34a; height: 16px; margin-top: 6px; }
 			.sda-hint { text-align: center; font-size: 12px; color: #9ca3af; padding: 14px; }
+
+			/* Ambiance sombre de l'application entraîneur (onglet « Mes dispos ») — 01/10/2026.
+			   Le nom est déjà dans l'en-tête de l'application : pas de bandeau ici. */
+			#sp-dispo-app.sda-sombre { color: #fff; max-width: 560px; padding: 12px 12px 24px; }
+			.sda-sombre .sda-header { display: none; }
+			.sda-sombre .sda-nav { background: #1a1a1a; border: none; border-radius: 12px 12px 0 0; }
+			.sda-sombre .sda-nav button { background: #262626; border: none; color: #fff; }
+			.sda-sombre .sda-grid { background: #1a1a1a; border: none; }
+			.sda-sombre .sda-dow { color: rgba(255,255,255,.35); }
+			.sda-sombre .sda-cell { background: #262626; color: rgba(255,255,255,.85); }
+			.sda-sombre .sda-cell.sda-empty { background: transparent; }
+			.sda-sombre .sda-cell.sda-ok { background: rgba(22,163,74,.28); color: #86efac; }
+			.sda-sombre .sda-cell.sda-ko { background: rgba(220,38,38,.28); color: #fca5a5; }
+			.sda-sombre .sda-cell.sda-today { border-color: #0f70b7; }
+			.sda-sombre .sda-cell-count { color: rgba(255,255,255,.45); }
+			.sda-sombre .sda-panel { background: #1a1a1a; border: none; border-top: 1px solid rgba(255,255,255,.06); }
+			.sda-sombre .sda-team-avatar { background: #333; color: #fff; }
+			.sda-sombre .sda-me-label { color: rgba(255,255,255,.45); }
+			.sda-sombre .sda-btn { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-note { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-note::placeholder { color: rgba(255,255,255,.35); }
+			.sda-sombre .sda-clear, .sda-sombre .sda-hint { color: rgba(255,255,255,.4); }
 			</style>
 
 			<div class="sda-header">

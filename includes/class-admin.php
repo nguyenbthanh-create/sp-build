@@ -666,6 +666,9 @@ window.addEventListener('error', function(e) {
 #spcal-main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
 .spcal-screen{display:none;padding:16px;}
 .spcal-screen.active{display:block;}
+/* Onglet « Mes dispos » (lien personnel entraîneur) : page des dispos en ambiance sombre dans un cadre */
+#spcal-dispos{padding:0;}
+#spcal-dispos-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;border:0;background:#0d0d0d;}
 
 /* ── BOTTOM NAV ──────────────────────────────────────────────── */
 #spcal-nav{flex-shrink:0;background:#1a1a1a;border-top:1px solid rgba(255,255,255,.08);display:flex;padding-bottom:max(8px,env(safe-area-inset-bottom));}
@@ -810,7 +813,7 @@ window.addEventListener('error', function(e) {
 .spcal-scan-frame.flash-ok .spcal-scan-line,.spcal-scan-frame.flash-already .spcal-scan-line,.spcal-scan-frame.flash-err .spcal-scan-line{opacity:0;}
 @media (prefers-reduced-motion:reduce){.spcal-scan-line{animation:none;top:50%;}}
 /* Anniversaires du mois (onglet Pointage) */
-.spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:16px 0 4px;border-left:3px solid #D4000F;}
+.spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:0 0 4px;border-left:3px solid #D4000F;}
 .spcal-anniv-titre{font-size:13px;font-weight:700;margin-bottom:8px;}
 .spcal-anniv-cat{font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 4px;}
 .spcal-anniv-ligne{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:14px;}
@@ -932,14 +935,12 @@ window.addEventListener('error', function(e) {
                 <div id="spcal-pointage-dashboard" style="display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                         <div class="spcal-section-title" style="margin:0;">Pointage du <span id="spcal-ptg-date"></span></div>
-                        <button onclick="spCalPinLogout()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:12px;cursor:pointer;">Déconnexion</button>
+                        <button id="spcal-ptg-logout" onclick="spCalPinLogout()" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:12px;cursor:pointer;">Déconnexion</button>
                     </div>
                     <!-- Sélecteur cours -->
                     <div id="spcal-cours-list-wrap">
                         <p style="font-size:13px;color:rgba(255,255,255,.5);">Sélectionnez un cours :</p>
                         <div id="spcal-ptg-cours-list"></div>
-                        <!-- Anniversaires du mois (class-anniversaires.php, route /anniversaires) -->
-                        <div id="spcal-ptg-anniv"></div>
                     </div>
                     <!-- Zone scan (affichée après sélection cours) -->
                     <div id="spcal-scan-wrap" style="display:none;">
@@ -947,8 +948,6 @@ window.addEventListener('error', function(e) {
                             <button onclick="spCalBackToCours()" style="background:#1a1a1a;border:none;border-radius:8px;padding:8px 12px;color:rgba(255,255,255,.6);font-size:13px;cursor:pointer;">← Cours</button>
                             <div id="spcal-ptg-cours-title" style="font-size:14px;font-weight:600;"></div>
                         </div>
-                        <!-- Anniversaires du mois dans la catégorie du cours choisi -->
-                        <div id="spcal-ptg-anniv-cours"></div>
                         <!-- Caméra QR -->
                         <div style="position:relative;width:100%;max-width:320px;margin:0 auto 16px;border-radius:12px;overflow:hidden;background:#000;">
                             <video id="spcal-qr-video" style="width:100%;display:block;" playsinline autoplay muted></video>
@@ -971,6 +970,17 @@ window.addEventListener('error', function(e) {
                 </div>
             </section>
 
+            <!-- Anniversaires du mois (class-anniversaires.php, route /anniversaires) : onglet 🎂 à part,
+                 pour ne pas mêler ces prénoms aux présences du pointage (choix de l'utilisateur, 01/10/2026) -->
+            <section id="spcal-anniv" class="spcal-screen">
+                <div id="spcal-ptg-anniv"><div class="spcal-empty">Chargement…</div></div>
+            </section>
+
+            <!-- Mes dispos (mode entraîneur par lien personnel) — chargé à la première ouverture -->
+            <section id="spcal-dispos" class="spcal-screen">
+                <iframe id="spcal-dispos-frame" title="Mes disponibilités"></iframe>
+            </section>
+
         </main>
 
         <!-- Bottom nav -->
@@ -983,7 +993,7 @@ window.addEventListener('error', function(e) {
                 <span class="spcal-nav-ico">🪪</span>
                 <span>Carte</span>
             </button>
-            <button class="spcal-nav-btn" onclick="spCalNav('calendrier',this)">
+            <button class="spcal-nav-btn" id="spcal-nav-calendrier" onclick="spCalNav('calendrier',this)">
                 <span class="spcal-nav-ico">📅</span>
                 <span>Calendrier</span>
             </button>
@@ -994,6 +1004,10 @@ window.addEventListener('error', function(e) {
             <button class="spcal-nav-btn" id="spcal-nav-pointage" style="display:none" onclick="spCalNav('pointage',this)">
                 <span class="spcal-nav-ico">📡</span>
                 <span>Pointage</span>
+            </button>
+            <button class="spcal-nav-btn" id="spcal-nav-anniv" style="display:none" onclick="spCalNav('anniv',this)">
+                <span class="spcal-nav-ico">🎂</span>
+                <span>Anniversaires</span>
             </button>
         </nav>
 
@@ -1091,6 +1105,24 @@ function init() {
         return;
     }
 
+    // Entraîneur par son lien personnel de dispos (?entraineur=, redirigé depuis la page
+    // des dispos par class-trainer-app.php). Clé distincte de spcal_token (élève).
+    var trainerFromUrl = urlParams.get('entraineur');
+    if (trainerFromUrl) {
+        STORE.set('spcal_trainer_token', trainerFromUrl);
+        urlParams.delete('entraineur');
+        history.replaceState(null, '', location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
+    }
+    var trainerTok = trainerFromUrl || (!urlParams.get('token') && STORE.get('spcal_trainer_token'));
+    if (trainerTok) {
+        initEntraineurToken(trainerTok);
+        return;
+    }
+
+    initEleve();
+}
+
+function initEleve() {
     var token = getToken();
     if (!token) {
         showError('Aucun lien d\'accès trouvé.<br>Utilisez le lien reçu par email.');
@@ -1131,7 +1163,23 @@ function init() {
 
 /* ── Render ──────────────────────────────────────────────────── */
 /* ── Mode entraîneur ────────────────────────────────────────────── */
-function initEntraineur(pin) {
+/* Lien personnel : jeton entraîneur → nom + PIN du pointage + adresse de ses dispos. */
+function initEntraineurToken(tt) {
+    fetch(API + '/entraineur/session', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({token: tt})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(r) {
+        if (!r || !r.success) { STORE.del('spcal_trainer_token'); initEleve(); return; }
+        initEntraineur(r.pin, {nom: r.nom, dispos_url: r.dispos_url});
+    })
+    .catch(function() { showError('Erreur de connexion. Réessayez.'); });
+}
+
+var gEntr = null; // {nom, dispos_url} en mode lien personnel
+function initEntraineur(pin, opts) {
     var today = new Date().toISOString().slice(0,10);
     fetch(CFG.apiBase + '/pointage/cours', {
         method: 'POST',
@@ -1157,8 +1205,19 @@ function initEntraineur(pin) {
         document.querySelectorAll('.spcal-nav-btn').forEach(function(b){
             if (b.id !== 'spcal-nav-carte' && b.id !== 'spcal-nav-evenements') b.style.display = 'flex';
         });
+        // Lien personnel : « Calendrier » devient « Mes dispos », pas de déconnexion (lien permanent)
+        if (opts && opts.dispos_url) {
+            gEntr = opts;
+            var navCal = document.getElementById('spcal-nav-calendrier');
+            if (navCal) {
+                navCal.setAttribute('onclick', "spCalNav('dispos',this)");
+                navCal.querySelector('.spcal-nav-ico').textContent = '🗓️';
+                navCal.querySelectorAll('span')[1].textContent = 'Mes dispos';
+            }
+            hide('spcal-ptg-logout');
+        }
         // Header entraineur
-        document.getElementById('spcal-header-name').textContent = 'Espace entraîneur';
+        document.getElementById('spcal-header-name').textContent = gEntr && gEntr.nom ? gEntr.nom : 'Espace entraîneur';
         document.getElementById('spcal-header-club').textContent = CFG.clubNom || '';
         if (CFG.logoUrl) {
             var img = document.getElementById('spcal-header-logo');
@@ -1168,9 +1227,10 @@ function initEntraineur(pin) {
             document.getElementById('spcal-header-logo-placeholder').textContent = '📡';
             document.getElementById('spcal-header-logo-placeholder').style.display = 'flex';
         }
-        // Aller directement sur l'onglet pointage
-        spCalNav('pointage', document.getElementById('spcal-nav-pointage'));
         spCalShowPointageDashboard(r.data, today);
+        // Lien PIN : directement sur le pointage ; lien personnel : accueil
+        if (gEntr) spCalNav('accueil', document.querySelector('.spcal-nav-btn'));
+        else spCalNav('pointage', document.getElementById('spcal-nav-pointage'));
         spCalLoadCalendrierClub(pin);
     })
     .catch(function() { showError('Erreur de connexion. Réessayez.'); });
@@ -2014,7 +2074,8 @@ function spCalLoadCalendrierClub(pin) {
             gCours = r.cours;
             var greet = document.getElementById('spcal-greeting');
             var sub   = document.getElementById('spcal-greeting-sub');
-            if (greet) greet.textContent = 'Prochains cours';
+            var h = new Date().getHours();
+            if (greet) greet.textContent = gEntr && gEntr.nom ? (h < 12 ? 'Bonjour ' : (h < 18 ? 'Bon après-midi ' : 'Bonsoir ')) + gEntr.nom.split(' ')[0] + ' 👋' : 'Prochains cours';
             if (sub)   sub.textContent   = 'Calendrier du club';
             var adh = document.getElementById('spcal-adhesion-wrap');
             var ass = document.getElementById('spcal-assiduite-wrap');
@@ -2054,6 +2115,10 @@ window.spCalNav = function(screen, btn) {
     // scan du dernier cours ouvert (caméra coupée en quittant l'onglet → image noire, et
     // impression qu'il n'y a qu'un seul cours). Retour terrain du 01/10/2026.
     else if (gPtgCours) spCalBackToCours();
+    if (screen === 'dispos' && gEntr) {
+        var fr = document.getElementById('spcal-dispos-frame');
+        if (fr && !fr.getAttribute('src')) fr.setAttribute('src', gEntr.dispos_url);
+    }
     _origSpCalNav(screen, btn);
 };
 
