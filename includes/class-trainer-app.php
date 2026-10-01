@@ -311,7 +311,8 @@ class SP_Cal_Trainer_App {
 			.sda-cell.sda-selected { border-color: #f59e0b; }
 			.sda-cell-count { font-size: 8px; font-weight: 400; color: #64748b; margin-top: 1px; }
 			.sda-panel { background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 16px; }
-			.sda-panel-date { font-size: 14px; font-weight: 700; margin-bottom: 10px; text-transform: capitalize; }
+			.sda-panel-date { font-size: 14px; font-weight: 700; margin-bottom: 10px; text-transform: capitalize; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+			.sda-close { background: none; border: none; font-size: 12px; font-weight: 600; color: #6b7280; cursor: pointer; padding: 4px 0; text-transform: none; }
 			.sda-team-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
 			.sda-team-avatar { width: 22px; height: 22px; border-radius: 50%; background: #e5e7eb; color: #374151; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 			.sda-team-status { margin-left: auto; font-size: 12px; }
@@ -345,7 +346,7 @@ class SP_Cal_Trainer_App {
 			.sda-sombre .sda-btn { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-note { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-note::placeholder { color: rgba(255,255,255,.35); }
-			.sda-sombre .sda-clear, .sda-sombre .sda-hint { color: rgba(255,255,255,.4); }
+			.sda-sombre .sda-clear, .sda-sombre .sda-hint, .sda-sombre .sda-close { color: rgba(255,255,255,.4); }
 			</style>
 
 			<div class="sda-header">
@@ -466,7 +467,7 @@ class SP_Cal_Trainer_App {
 				var dObj = new Date(ds + 'T00:00:00');
 				var dateLabel = dObj.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-				var html = '<div class="sda-panel-date">' + dateLabel + '</div>';
+				var html = '<div class="sda-panel-date"><span>' + dateLabel + '</span><button type="button" class="sda-close" id="sda-close">✕ Fermer</button></div>';
 
 				state.trainers.forEach(function(t){
 					var d = dayDispos[t.id];
@@ -508,6 +509,13 @@ class SP_Cal_Trainer_App {
 				document.getElementById('sda-btn-ok').addEventListener('click', function(){ save(1); renderPanelKeepNote(1); });
 				document.getElementById('sda-btn-ko').addEventListener('click', function(){ save(0); renderPanelKeepNote(0); });
 				document.getElementById('sda-clear').addEventListener('click', function(){ save(null); });
+				// Refermer le jour et revenir au calendrier
+				document.getElementById('sda-close').addEventListener('click', function(){
+					state.selected = null;
+					renderGrid();
+					renderPanel();
+					if (root.scrollIntoView) root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+				});
 				document.getElementById('sda-note').addEventListener('blur', function(){
 					var mine2 = (state.dispos[ds] || {})[state.me.id];
 					if (mine2) save(mine2.disponible);

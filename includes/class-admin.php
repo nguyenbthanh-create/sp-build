@@ -668,7 +668,6 @@ window.addEventListener('error', function(e) {
 .spcal-screen.active{display:block;}
 /* Onglet « Mes dispos » (lien personnel entraîneur) : page des dispos en ambiance sombre dans un cadre */
 #spcal-dispos{padding:0;}
-#spcal-dispos-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;border:0;background:#0d0d0d;}
 
 /* ── BOTTOM NAV ──────────────────────────────────────────────── */
 #spcal-nav{flex-shrink:0;background:#1a1a1a;border-top:1px solid rgba(255,255,255,.08);display:flex;padding-bottom:max(8px,env(safe-area-inset-bottom));}
@@ -978,7 +977,7 @@ window.addEventListener('error', function(e) {
 
             <!-- Mes dispos (mode entraîneur par lien personnel) — chargé à la première ouverture -->
             <section id="spcal-dispos" class="spcal-screen">
-                <iframe id="spcal-dispos-frame" title="Mes disponibilités"></iframe>
+                <div id="spcal-dispos-box"><div class="spcal-empty">Chargement…</div></div>
             </section>
 
         </main>
@@ -2115,12 +2114,40 @@ window.spCalNav = function(screen, btn) {
     // scan du dernier cours ouvert (caméra coupée en quittant l'onglet → image noire, et
     // impression qu'il n'y a qu'un seul cours). Retour terrain du 01/10/2026.
     else if (gPtgCours) spCalBackToCours();
-    if (screen === 'dispos' && gEntr) {
-        var fr = document.getElementById('spcal-dispos-frame');
-        if (fr && !fr.getAttribute('src')) fr.setAttribute('src', gEntr.dispos_url);
-    }
+    if (screen === 'dispos' && gEntr) spCalLoadDispos();
     _origSpCalNav(screen, btn);
 };
+
+/* Page des dispos insérée directement dans l'onglet (pas de cadre iframe) : sur téléphone, un
+   doigt posé dans un cadre ne fait pas défiler l'application — une fois le panneau du jour ouvert,
+   le cadre couvrait l'écran et tout restait bloqué. Retours terrain du 01/10/2026. */
+var gDisposCharge = false;
+function spCalLoadDispos() {
+    var box = document.getElementById('spcal-dispos-box');
+    if (!box || gDisposCharge) return;
+    gDisposCharge = true;
+    fetch(gEntr.dispos_url, { credentials: 'same-origin' })
+        .then(function(r){ if (!r.ok) throw new Error(); return r.text(); })
+        .then(function(html) {
+            var doc  = new DOMParser().parseFromString(html, 'text/html');
+            var app  = doc.getElementById('sp-dispo-app');
+            if (!app) throw new Error();
+            var scripts = [].slice.call(doc.body.querySelectorAll('script'));
+            scripts.forEach(function(s){ s.parentNode.removeChild(s); });
+            box.innerHTML = '';
+            box.appendChild(document.importNode(app, true));
+            // Les scripts insérés par innerHTML ne s'exécutent pas : on les recrée.
+            scripts.forEach(function(s) {
+                var n = document.createElement('script');
+                n.textContent = s.textContent;
+                box.appendChild(n);
+            });
+        })
+        .catch(function() {
+            gDisposCharge = false;
+            box.innerHTML = '<div class="spcal-empty">Impossible de charger vos disponibilités. Réessayez.</div>';
+        });
+}
 
 
 /* ── Push subscription ───────────────────────────────────────── */
