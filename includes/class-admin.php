@@ -759,6 +759,15 @@ window.addEventListener('error', function(e) {
 
 /* ── POINTAGE ────────────────────────────────────────────────── */
 .spcal-ptg-cours-btn{width:100%;background:#1a1a1a;border:none;border-radius:12px;padding:14px 16px;margin-bottom:10px;color:#fff;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;border-left:3px solid #0f70b7;}
+/* Cadre de scan des présences : ligne de balayage (lecture active) + éclair vert / orange / rouge au résultat */
+.spcal-scan-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;border:2px solid rgba(15,112,183,.8);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);overflow:hidden;transition:border-color .2s,box-shadow .2s;}
+.spcal-scan-line{position:absolute;left:8%;right:8%;top:8%;height:2px;border-radius:2px;background:#38bdf8;box-shadow:0 0 10px 2px rgba(56,189,248,.7);animation:spcal-scanline 2.2s ease-in-out infinite;}
+@keyframes spcal-scanline{0%,100%{top:8%}50%{top:92%}}
+.spcal-scan-frame.flash-ok{border-color:#22c55e;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(34,197,94,.9);}
+.spcal-scan-frame.flash-already{border-color:#f59e0b;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(245,158,11,.9);}
+.spcal-scan-frame.flash-err{border-color:#ef4444;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(239,68,68,.9);}
+.spcal-scan-frame.flash-ok .spcal-scan-line,.spcal-scan-frame.flash-already .spcal-scan-line,.spcal-scan-frame.flash-err .spcal-scan-line{opacity:0;}
+@media (prefers-reduced-motion:reduce){.spcal-scan-line{animation:none;top:50%;}}
 /* Anniversaires du mois (onglet Pointage) */
 .spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:16px 0 4px;border-left:3px solid #D4000F;}
 .spcal-anniv-titre{font-size:13px;font-weight:700;margin-bottom:8px;}
@@ -904,7 +913,7 @@ window.addEventListener('error', function(e) {
                             <video id="spcal-qr-video" style="width:100%;display:block;" playsinline autoplay muted></video>
                             <canvas id="spcal-qr-canvas" style="display:none;"></canvas>
                             <div style="position:absolute;inset:0;pointer-events:none;">
-                                <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;border:2px solid rgba(15,112,183,.8);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);"></div>
+                                <div id="spcal-scan-frame" class="spcal-scan-frame"><div class="spcal-scan-line"></div></div>
                             </div>
                         </div>
                         <p style="text-align:center;font-size:13px;color:rgba(255,255,255,.4);margin-bottom:16px;">Scannez la carte QR de l'élève</p>
@@ -1722,6 +1731,8 @@ window.spCalPinLogout = function() {
 function spCalLoadJsQR(cb) {
     if (typeof jsQR !== 'undefined') { cb(); return; }
     var cdns = [
+        // Copie locale du plugin d'abord (si présente), puis CDN de repli.
+        '<?php echo esc_js( SP_CAL_PRO_URL . 'assets/js/jsQR.min.js' ); ?>',
         'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
         'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js'
     ];
@@ -1763,12 +1774,21 @@ function spCalStartScan() {
             gScanStream = stream;
             video.srcObject = stream;
             video.play();
-            // BarcodeDetector désactivé temporairement (doléances 10/09/2026) : présent mais
-            // potentiellement peu fiable selon la version WebKit -- jsQR est la méthode déjà
-            // éprouvée en production sur le scanner /pointage/?pin= (class-token.php) depuis
-            // avril 2026. À réactiver (remettre la condition BarcodeDetector) une fois confirmé
-            // que ce n'était pas la cause.
-            spCalLoadJsQR(function(){ spCalScanWithJsQR(video); });
+            // 01/10/2026 — même ordre que le scanner d'identification (class-token.php), qui
+            // fonctionne sur les téléphones du club : lecteur intégré du navigateur
+            // (BarcodeDetector) d'abord, jsQR seulement s'il est absent. Le forçage de jsQR
+            // seul (10/09/2026) laissait la caméra « muette » (cadre vert, aucune réaction).
+            if (typeof BarcodeDetector !== 'undefined') {
+                spCalScanWithBarcodeDetector(video);
+            } else {
+                spCalLoadJsQR(function(){
+                    if (typeof jsQR === 'undefined') {
+                        spCalScanShowError('📷 Lecteur QR non chargé', 'Ni le lecteur intégré du navigateur ni jsQR ne sont disponibles. Vérifiez la connexion puis rechargez la page.');
+                        return;
+                    }
+                    spCalScanWithJsQR(video);
+                });
+            }
         })
         .catch(function(e) {
             spCalScanShowError('📷 Caméra inaccessible', (e && (e.name + ' : ' + e.message)) || 'Autorisez l\'accès à la caméra.');
@@ -1805,20 +1825,22 @@ function spCalScanWithBarcodeDetector(video) {
 
 function spCalScanWithJsQR(video) {
     var canvas = document.getElementById('spcal-qr-canvas');
-    var ctx = canvas.getContext('2d');
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
     function tick() {
         if (!gScanActive) return;
-        // typeof jsQR !== 'undefined' : si les deux CDN de repli ont aussi échoué,
-        // on évite une ReferenceError silencieuse qui arrêterait la boucle sans erreur visible
         if (video.readyState >= 2 && video.videoWidth > 0 && typeof jsQR !== 'undefined') {
-            canvas.height = video.videoHeight;
-            canvas.width  = video.videoWidth;
+            // Image réduite (800 px max) : analyser la vidéo en pleine résolution à chaque
+            // image saturait le téléphone, sans détection. Même réglage d'inversion que le
+            // scanner d'identification (par défaut : codes clairs sur fond sombre aussi).
+            var echelle = Math.min(1, 800 / video.videoWidth);
+            canvas.width  = Math.round(video.videoWidth * echelle);
+            canvas.height = Math.round(video.videoHeight * echelle);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-            if (code) spCalHandleScanResult(code.data);
+            var code = jsQR(img.data, img.width, img.height);
+            if (code && code.data) spCalHandleScanResult(code.data);
         }
-        requestAnimationFrame(tick);
+        setTimeout(tick, 150);
     }
     tick();
 }
@@ -1843,9 +1865,9 @@ function spCalHandleScanResult(raw) {
             token = u.searchParams.get('token') || '';
         } catch(e) { token = ''; }
     }
-    if (!token) return;
-
-    if (!gPtgCours || !gPin) return;
+    // Ne plus jamais rester muet : un QR lu mais inattendu le dit à l'écran.
+    if (!token) { spCalShowFeedback('QR code non reconnu', 'Ce n\'est pas une carte de membre du club.', 'err'); return; }
+    if (!gPtgCours || !gPin) { spCalShowFeedback('Aucun cours choisi', 'Revenez à la liste et sélectionnez le cours.', 'err'); return; }
 
     fetch(CFG.apiBase + '/pointage/scan', {
         method: 'POST',
@@ -1878,6 +1900,21 @@ function spCalShowFeedback(nom, msg, status) {
     // Effacer après 3s
     clearTimeout(fb._timer);
     fb._timer = setTimeout(function(){ fb.style.display = 'none'; }, 3000);
+    spCalScanFlash(status);
+}
+
+/* Éclair sur le cadre + courte vibration (si le téléphone le permet) à chaque résultat. */
+function spCalScanFlash(status) {
+    var frame = document.getElementById('spcal-scan-frame');
+    var cls = status === 'ok' ? 'flash-ok' : (status === 'already' ? 'flash-already' : 'flash-err');
+    if (frame) {
+        frame.classList.remove('flash-ok', 'flash-already', 'flash-err');
+        void frame.offsetWidth; // relance l'effet même si le résultat précédent était identique
+        frame.classList.add(cls);
+        clearTimeout(frame._timer);
+        frame._timer = setTimeout(function(){ frame.classList.remove(cls); }, 900);
+    }
+    try { if (navigator.vibrate) navigator.vibrate(status === 'ok' ? 80 : [60, 60, 60]); } catch (e) {}
 }
 
 function spCalAddLog(nom, status) {

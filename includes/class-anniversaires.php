@@ -514,6 +514,8 @@ endif; ?>
 			       . "Au plaisir de vous retrouver sur les tatamis.\n\n"
 			       . "Sportivement,\n— L'équipe {$club}";
 		}
+		// Possibilité de refuser les vœux : le bureau l'applique avec « Ne pas envoyer » sur la page Anniversaires.
+		$corps .= "\n\n—\nVous préférez ne plus recevoir ce message ? Répondez simplement à cet email et nous ne vous l'enverrons plus.";
 		return [ $sujet, $corps ];
 	}
 
