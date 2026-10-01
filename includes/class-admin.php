@@ -10,6 +10,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -79,6 +80,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         SP_Cal_Roles::get_instance();
         SP_Cal_Trainer_App::get_instance( $this->db );
         SP_Cal_Dobok::get_instance( $this->db );
+        SP_Cal_Anniversaires::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -757,6 +759,15 @@ window.addEventListener('error', function(e) {
 
 /* ── POINTAGE ────────────────────────────────────────────────── */
 .spcal-ptg-cours-btn{width:100%;background:#1a1a1a;border:none;border-radius:12px;padding:14px 16px;margin-bottom:10px;color:#fff;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;border-left:3px solid #0f70b7;}
+/* Anniversaires du mois (onglet Pointage) */
+.spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:16px 0 4px;border-left:3px solid #D4000F;}
+.spcal-anniv-titre{font-size:13px;font-weight:700;margin-bottom:8px;}
+.spcal-anniv-cat{font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 4px;}
+.spcal-anniv-ligne{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:14px;}
+.spcal-anniv-jour{flex-shrink:0;width:28px;height:28px;border-radius:50%;background:#D4000F;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.spcal-anniv-ligne.aujourdhui .spcal-anniv-nom{font-weight:700;}
+.spcal-anniv-age{margin-left:auto;font-size:12px;color:rgba(255,255,255,.5);}
+.spcal-anniv-vide{font-size:13px;color:rgba(255,255,255,.4);}
 .spcal-ptg-cours-btn:active{opacity:.7;}
 .spcal-ptg-cours-left{flex:1;min-width:0;}
 .spcal-ptg-cours-btn-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -877,6 +888,8 @@ window.addEventListener('error', function(e) {
                     <div id="spcal-cours-list-wrap">
                         <p style="font-size:13px;color:rgba(255,255,255,.5);">Sélectionnez un cours :</p>
                         <div id="spcal-ptg-cours-list"></div>
+                        <!-- Anniversaires du mois (class-anniversaires.php, route /anniversaires) -->
+                        <div id="spcal-ptg-anniv"></div>
                     </div>
                     <!-- Zone scan (affichée après sélection cours) -->
                     <div id="spcal-scan-wrap" style="display:none;">
@@ -884,6 +897,8 @@ window.addEventListener('error', function(e) {
                             <button onclick="spCalBackToCours()" style="background:#1a1a1a;border:none;border-radius:8px;padding:8px 12px;color:rgba(255,255,255,.6);font-size:13px;cursor:pointer;">← Cours</button>
                             <div id="spcal-ptg-cours-title" style="font-size:14px;font-weight:600;"></div>
                         </div>
+                        <!-- Anniversaires du mois dans la catégorie du cours choisi -->
+                        <div id="spcal-ptg-anniv-cours"></div>
                         <!-- Caméra QR -->
                         <div style="position:relative;width:100%;max-width:320px;margin:0 auto 16px;border-radius:12px;overflow:hidden;background:#000;">
                             <video id="spcal-qr-video" style="width:100%;display:block;" playsinline autoplay muted></video>
@@ -1601,6 +1616,70 @@ function spCalShowPointageDashboard(cours, date) {
         });
     }
     document.getElementById('spcal-ptg-cours-list').innerHTML = html;
+    spCalLoadAnniv(date);
+}
+
+/* ── Anniversaires du mois (class-anniversaires.php) ─────────────
+   Pour que l'entraîneur sache QUI on fête à la fin du cours. Liste complète sous les
+   cours (par catégorie), et rappel limité à la catégorie du cours une fois choisi. */
+var gAnniv = null;
+function spCalAnnivNorm(s) {
+    return (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+}
+function spCalAnnivMemeCategorie(catEleve, catCours) {
+    var a = spCalAnnivNorm(catEleve), b = spCalAnnivNorm(catCours);
+    if (!a || !b) return false;
+    if (a.indexOf(b) !== -1 || b.indexOf(a) !== -1) return true;
+    var adulte = /ado|adulte/;
+    return adulte.test(a) && adulte.test(b);
+}
+function spCalAnnivHtml(liste, titre) {
+    var h = '<div class="spcal-anniv"><div class="spcal-anniv-titre">' + titre + '</div>';
+    var cat = null;
+    liste.forEach(function(a) {
+        if (titre.indexOf('du mois') !== -1 && a.categorie !== cat) {
+            cat = a.categorie;
+            h += '<div class="spcal-anniv-cat">' + esc(cat || 'Sans catégorie') + '</div>';
+        }
+        h += '<div class="spcal-anniv-ligne' + (a.passe ? ' passe' : '') + (a.aujourdhui ? ' aujourdhui' : '') + '">' +
+             '<span class="spcal-anniv-jour">' + a.jour + '</span>' +
+             '<span class="spcal-anniv-nom">' + esc(a.nom) + (a.aujourdhui ? ' — aujourd&#39;hui !' : '') + '</span>' +
+             (a.age ? '<span class="spcal-anniv-age">' + a.age + ' ans</span>' : '') +
+             '</div>';
+    });
+    return h + '</div>';
+}
+function spCalLoadAnniv(date) {
+    var box = document.getElementById('spcal-ptg-anniv');
+    if (!box || !gPin) return;
+    fetch(CFG.apiBase + '/anniversaires', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({pin: gPin, date: date})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(r) {
+        if (!r || !r.success) { box.innerHTML = ''; return; }
+        gAnniv = r;
+        if (!r.data.length) {
+            box.innerHTML = '<div class="spcal-anniv"><div class="spcal-anniv-titre">🎂 Anniversaires du mois</div><div class="spcal-anniv-vide">Aucun anniversaire en ' + esc(r.mois) + '.</div></div>';
+            return;
+        }
+        var parCat = r.data.slice().sort(function(a, b) {
+            return (a.categorie || '').localeCompare(b.categorie || '') || a.jour - b.jour;
+        });
+        box.innerHTML = spCalAnnivHtml(parCat, '🎂 Anniversaires du mois (' + esc(r.mois) + ')');
+    })
+    .catch(function(){ box.innerHTML = ''; });
+}
+function spCalShowAnnivCours(cours) {
+    var box = document.getElementById('spcal-ptg-anniv-cours');
+    if (!box) return;
+    if (!gAnniv || !gAnniv.data || !cours || !cours.categorie) { box.innerHTML = ''; return; }
+    var liste = gAnniv.data.filter(function(a) { return spCalAnnivMemeCategorie(a.categorie, cours.categorie); });
+    box.innerHTML = liste.length
+        ? spCalAnnivHtml(liste, '🎂 À fêter dans ce cours (' + esc(gAnniv.mois) + ')')
+        : '';
 }
 
 window.spCalSelectCours = function(cours) {
@@ -1610,6 +1689,7 @@ window.spCalSelectCours = function(cours) {
     document.getElementById('spcal-scan-wrap').style.display = 'block';
     document.getElementById('spcal-ptg-cours-title').textContent =
         cours.titre + (cours.heure_debut ? ' · ' + fmtHeure(cours.heure_debut) : '');
+    spCalShowAnnivCours(cours);
     document.getElementById('spcal-ptg-log').innerHTML = '';
     document.getElementById('spcal-scan-feedback').style.display = 'none';
     spCalStartScan();
