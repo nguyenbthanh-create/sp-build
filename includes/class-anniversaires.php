@@ -66,7 +66,7 @@ class SP_Cal_Anniversaires {
 	}
 
 	/**
-	 * Adhérents actifs nés le mois donné (et, si $jour > 0, ce jour-là), triés par jour.
+	 * Adhérents actifs et à jour pour la saison en cours (renouvellements non faits exclus) nés le mois donné (et, si $jour > 0, ce jour-là), triés par jour.
 	 * date_naissance est stockée « JJ/MM » (année à part, annee_naissance) — même filtre que le
 	 * calendrier admin (SpCalPro_DB::get_birthdays_for_month).
 	 *
@@ -84,6 +84,9 @@ class SP_Cal_Anniversaires {
 			$j     = intval( $parts[0] ?? 0 );
 			if ( $j < 1 || $j > 31 || intval( $parts[1] ?? 0 ) !== $mois ) continue;
 			if ( $jour > 0 && $j !== $jour ) continue;
+			// « actif = 1 » ne suffit pas : une fiche de la saison passée reste cochée tant que le
+			// renouvellement n'est pas fait. Même règle que la liste des adhérents (retour du 01/10/2026).
+			if ( class_exists( 'SpCalPro_DB' ) && SpCalPro_DB::statut_saison_eleve( $el )['code'] === 'a_renouveler' ) continue;
 			$el->jour = $j;
 			$el->age  = ! empty( $el->annee_naissance ) ? $annee - intval( $el->annee_naissance ) : null;
 			$out[]    = $el;
@@ -92,6 +95,69 @@ class SP_Cal_Anniversaires {
 			return $a->jour <=> $b->jour ?: strcasecmp( $a->prenom, $b->prenom );
 		} );
 		return $out;
+	}
+
+	/**
+	 * Décor de fond de l'affiche : gâteaux, bougies, paquets cadeaux et confettis dessinés en SVG
+	 * (net à l'impression A4 comme A3, aucune image externe). Grands motifs dans les marges
+	 * (bas de page, côtés) et motifs très pâles ailleurs, pour ne pas gêner la lecture des pastilles.
+	 */
+	private static function decor_festif(): string {
+		$defs = '<svg width="0" height="0" style="position:absolute"><defs>'
+			// Gâteau à deux étages, glaçage coulant, trois bougies allumées
+			. '<symbol id="d-gateau" viewBox="0 0 100 100">'
+			. '<ellipse cx="50" cy="92" rx="46" ry="6" fill="#d9d4cf"/>'
+			. '<rect x="12" y="58" width="76" height="32" rx="5" fill="#f4a6b8"/>'
+			. '<path d="M12 64 q0-6 6-6 h64 q6 0 6 6 v4 q-5 6-10 0 q-5 6-10 0 q-5 6-10 0 q-5 6-10 0 q-5 6-10 0 q-5 6-10 0 q-5 6-10 0 z" fill="#fff"/>'
+			. '<rect x="24" y="36" width="52" height="24" rx="4" fill="#fbd38d"/>'
+			. '<path d="M24 41 q0-5 5-5 h42 q5 0 5 5 v3 q-5 5-9 0 q-4 5-9 0 q-4 5-9 0 q-4 5-9 0 q-4 5-9 0 q-4 5-6 0 z" fill="#fff"/>'
+			. '<circle cx="30" cy="76" r="3" fill="#D4000F"/><circle cx="50" cy="79" r="3" fill="#2980b9"/><circle cx="70" cy="76" r="3" fill="#27ae60"/>'
+			. '<rect x="36" y="20" width="4" height="16" fill="#2980b9"/><rect x="48" y="16" width="4" height="20" fill="#D4000F"/><rect x="60" y="20" width="4" height="16" fill="#27ae60"/>'
+			. '<path d="M38 19 q-4-5 0-11 q4 6 0 11z M50 15 q-4-5 0-11 q4 6 0 11z M62 19 q-4-5 0-11 q4 6 0 11z" fill="#f6ad55"/>'
+			. '</symbol>'
+			// Bougie torsadée allumée
+			. '<symbol id="d-bougie" viewBox="0 0 30 100">'
+			. '<rect x="9" y="30" width="12" height="66" rx="2" fill="#90cdf4"/>'
+			. '<path d="M9 40 l12-8 M9 52 l12-8 M9 64 l12-8 M9 76 l12-8 M9 88 l12-8" stroke="#fff" stroke-width="3"/>'
+			. '<path d="M15 28 q-8-10 0-24 q8 14 0 24z" fill="#f6ad55"/><path d="M15 25 q-4-6 0-13 q4 7 0 13z" fill="#FFD700"/>'
+			. '</symbol>'
+			// Paquet cadeau avec ruban et nœud
+			. '<symbol id="d-cadeau" viewBox="0 0 100 100">'
+			. '<rect x="14" y="40" width="72" height="54" rx="3" fill="#8e44ad"/>'
+			. '<rect x="8" y="28" width="84" height="16" rx="3" fill="#9b59b6"/>'
+			. '<rect x="44" y="28" width="12" height="66" fill="#FFD700"/>'
+			. '<path d="M50 28 q-26-26-30-6 q-2 10 30 6z M50 28 q26-26 30-6 q2 10-30 6z" fill="#FFD700"/>'
+			. '</symbol>'
+			// Confetti / serpentin
+			. '<symbol id="d-serpentin" viewBox="0 0 60 30"><path d="M2 15 q7-12 14 0 t14 0 t14 0 t14 0" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></symbol>'
+			. '</defs></svg>';
+
+		// [symbole, gauche %, haut %, largeur mm, rotation, classe, couleur (serpentins)]
+		$motifs = [
+			[ 'gateau', 3, 80, 46, -6, 'moyen' ], [ 'cadeau', 79, 82, 38, 8, 'moyen' ],
+			[ 'bougie', 22, 85, 10, -12, 'moyen' ], [ 'cadeau', 66, 88, 22, -10, 'moyen' ],
+			[ 'bougie', 2, 30, 9, 10, 'doux' ], [ 'cadeau', 88, 30, 20, 12, 'doux' ],
+			[ 'gateau', 86, 54, 24, 6, 'doux' ], [ 'bougie', 4, 56, 8, -8, 'doux' ],
+			[ 'serpentin', 2, 17, 14, -20, 'doux', '#D4000F' ], [ 'serpentin', 89, 17, 14, 25, 'doux', '#2980b9' ],
+			[ 'serpentin', 40, 92, 16, 10, 'doux', '#27ae60' ], [ 'serpentin', 3, 70, 14, 35, 'doux', '#e67e22' ],
+			[ 'serpentin', 85, 70, 14, -30, 'doux', '#8e44ad' ],
+		];
+		$html = '';
+		foreach ( $motifs as $m ) {
+			$ratio = $m[0] === 'bougie' ? 100 / 30 : ( $m[0] === 'serpentin' ? 0.5 : 1 );
+			$html .= sprintf(
+				'<svg class="%s" style="left:%s%%;top:%s%%;width:%smm;height:%smm;transform:rotate(%sdeg);%s"><use href="#d-%s"/></svg>',
+				$m[5], $m[1], $m[2], $m[3], round( $m[3] * $ratio, 1 ), $m[4],
+				isset( $m[6] ) ? 'color:' . $m[6] . ';' : '', $m[0]
+			);
+		}
+		// Confettis ronds éparpillés
+		$couleurs = [ '#FFD700', '#D4000F', '#27ae60', '#2980b9', '#8e44ad', '#e67e22' ];
+		$points   = [ [ 12, 38 ], [ 91, 44 ], [ 6, 47 ], [ 94, 62 ], [ 15, 74 ], [ 83, 78 ], [ 30, 95 ], [ 58, 96 ], [ 9, 12 ], [ 90, 12 ] ];
+		foreach ( $points as $i => $p ) {
+			$html .= sprintf( '<svg class="moyen" style="left:%s%%;top:%s%%;width:3mm;height:3mm"><circle cx="50%%" cy="50%%" r="45%%" fill="%s"/></svg>', $p[0], $p[1], $couleurs[ $i % 6 ] );
+		}
+		return '<div class="decor" aria-hidden="true">' . $defs . $html . '</div>';
 	}
 
 	/** « Léa M. » — prénom + initiale du nom, pour tout ce qui est affiché au club. */
@@ -376,6 +442,14 @@ class SP_Cal_Anniversaires {
 	.planche { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 66mm; --rond: 34mm; --nom: 17pt; --date: 11pt; }
 	.vignette { border: 1px dashed #bbb; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4mm; }
 
+	/* Décor festif en fond de l'affiche (gâteaux, bougies, cadeaux, confettis) — derrière le contenu */
+	.decor { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+	.decor svg { position: absolute; overflow: visible; }
+	.decor .doux { opacity: .22; }
+	.decor .moyen { opacity: .5; }
+	.page > :not(.decor) { position: relative; z-index: 1; }
+	.page > .pied { position: absolute; }
+
 	@page { size: A4 portrait; margin: 0; }
 	@media print {
 		body { background: #fff; }
@@ -406,6 +480,7 @@ $pastille = static function ( object $el, string $classe ) use ( $titre_mois ) {
 
 if ( $type === 'affiche' ) : ?>
 	<div class="page<?php echo in_array( $taille, [ 'm', 's' ], true ) ? ' dense' : ''; ?>">
+		<?php echo self::decor_festif(); // phpcs:ignore WordPress.Security.EscapeOutput -- SVG statique ?>
 		<div class="fanions" aria-hidden="true"><?php echo str_repeat( '<span></span>', 14 ); ?></div>
 		<?php if ( $logo ) : ?><img class="logo" src="<?php echo esc_url( $logo ); ?>" alt=""><?php endif; ?>
 		<h1 class="titre">Joyeux anniversaire !</h1>

@@ -312,17 +312,20 @@ class SP_Cal_Trainer_App {
 			.sda-cell-count { font-size: 8px; font-weight: 400; color: #64748b; margin-top: 1px; }
 			.sda-panel { background: #fff; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 16px; }
 			.sda-panel-date { font-size: 14px; font-weight: 700; margin-bottom: 10px; text-transform: capitalize; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-			.sda-close { background: none; border: none; font-size: 12px; font-weight: 600; color: #6b7280; cursor: pointer; padding: 4px 0; text-transform: none; }
+			.sda-close { flex-shrink: 0; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 20px; font-size: 14px; font-weight: 700; color: #111827; cursor: pointer; padding: 7px 14px; text-transform: none; font-family: inherit; }
 			.sda-team-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
 			.sda-team-avatar { width: 22px; height: 22px; border-radius: 50%; background: #e5e7eb; color: #374151; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 			.sda-team-status { margin-left: auto; font-size: 12px; }
 			.sda-me-label { font-size: 12px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 8px; }
 			.sda-btns { display: flex; gap: 8px; }
-			.sda-btn { flex: 1; padding: 14px 8px; border-radius: 10px; border: 2px solid #e5e7eb; background: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+			.sda-btn { flex: 1; padding: 10px 4px; border-radius: 10px; border: 2px solid #e5e7eb; background: #fff; font-size: 18px; font-weight: 700; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: inherit; color: inherit; }
+			.sda-btn span { font-size: 12px; }
 			.sda-btn.sda-btn-ok.sda-active   { background: #16a34a; border-color: #16a34a; color: #fff; }
 			.sda-btn.sda-btn-ko.sda-active   { background: #dc2626; border-color: #dc2626; color: #fff; }
+			.sda-btn.sda-btn-nr.sda-active   { background: #64748b; border-color: #64748b; color: #fff; }
+			.sda-nr-hint { font-size: 12px; color: #6b7280; text-align: center; margin: 8px 0 0; min-height: 0; }
+			.sda-nr-hint:empty { display: none; }
 			.sda-note { width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; }
-			.sda-clear { display: block; text-align: center; margin-top: 10px; font-size: 12px; color: #9ca3af; cursor: pointer; }
 			.sda-saved { text-align: center; font-size: 11px; color: #16a34a; height: 16px; margin-top: 6px; }
 			.sda-hint { text-align: center; font-size: 12px; color: #9ca3af; padding: 14px; }
 
@@ -346,7 +349,8 @@ class SP_Cal_Trainer_App {
 			.sda-sombre .sda-btn { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-note { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-note::placeholder { color: rgba(255,255,255,.35); }
-			.sda-sombre .sda-clear, .sda-sombre .sda-hint, .sda-sombre .sda-close { color: rgba(255,255,255,.4); }
+			.sda-sombre .sda-hint, .sda-sombre .sda-nr-hint { color: rgba(255,255,255,.45); }
+			.sda-sombre .sda-close { background: #333; border-color: #4b4b4b; color: #fff; }
 			</style>
 
 			<div class="sda-header">
@@ -478,37 +482,40 @@ class SP_Cal_Trainer_App {
 				});
 
 				var mine = dayDispos[state.me.id] || null;
+				var val  = mine ? mine.disponible : null; // 1 / 0 / null (neutre = non renseigné, comme ⬜ dans l'admin)
 				html += '<div class="sda-me-label">Votre disponibilité</div>'
 					+ '<div class="sda-btns">'
-					+ '<button type="button" class="sda-btn sda-btn-ok' + (mine && mine.disponible === 1 ? ' sda-active' : '') + '" id="sda-btn-ok">✅ Disponible</button>'
-					+ '<button type="button" class="sda-btn sda-btn-ko' + (mine && mine.disponible === 0 ? ' sda-active' : '') + '" id="sda-btn-ko">❌ Indisponible</button>'
+					+ '<button type="button" class="sda-btn sda-btn-ok' + (val === 1 ? ' sda-active' : '') + '" data-val="1">✅<span>Disponible</span></button>'
+					+ '<button type="button" class="sda-btn sda-btn-nr' + (val === null ? ' sda-active' : '') + '" data-val="">⬜<span>Neutre</span></button>'
+					+ '<button type="button" class="sda-btn sda-btn-ko' + (val === 0 ? ' sda-active' : '') + '" data-val="0">❌<span>Indisponible</span></button>'
 					+ '</div>'
-					+ '<textarea class="sda-note" id="sda-note" rows="2" placeholder="Note (facultatif)">' + (mine && mine.note ? mine.note : '') + '</textarea>'
-					+ '<span class="sda-clear" id="sda-clear">🗑️ Effacer ma réponse</span>'
+					+ '<p class="sda-nr-hint">' + (val === null ? 'Neutre : pas de réponse, mais vous pouvez être sollicité si besoin.' : '') + '</p>'
+					+ (val === null ? '' : '<textarea class="sda-note" id="sda-note" rows="2" placeholder="Note (facultatif)">' + (mine && mine.note ? mine.note : '') + '</textarea>')
 					+ '<div class="sda-saved" id="sda-saved"></div>';
 
 				panel.innerHTML = html;
 
-				function save(disponible) {
-					var note = document.getElementById('sda-note').value;
-					post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note }, function(res){
-						var saved = document.getElementById('sda-saved');
-						if (res.success) {
-							saved.textContent = '✓ Enregistré';
-							if (!state.dispos[ds]) state.dispos[ds] = {};
-							if (disponible === null) { delete state.dispos[ds][state.me.id]; }
-							else { state.dispos[ds][state.me.id] = { disponible: disponible, note: note }; }
-							renderGrid();
-						} else {
-							saved.textContent = '⚠️ Erreur — réessayez';
-						}
-						setTimeout(function(){ if (saved) saved.textContent = ''; }, 2000);
-					});
+				// Enregistrement : l'écran est mis à jour tout de suite, et les envois partent l'un
+				// après l'autre dans l'ordre des gestes. Avant, quitter la note (enregistrement de
+				// l'ancien état) et toucher « Indisponible » partaient en même temps : l'ancien état
+				// pouvait arriver en dernier et l'emporter (retour terrain du 01/10/2026).
+				function save(disponible, rerender) {
+					var noteEl = document.getElementById('sda-note');
+					var note   = disponible === null ? '' : (noteEl ? noteEl.value : ((state.dispos[ds] || {})[state.me.id] || {}).note || '');
+					if (!state.dispos[ds]) state.dispos[ds] = {};
+					if (disponible === null) delete state.dispos[ds][state.me.id];
+					else state.dispos[ds][state.me.id] = { disponible: disponible, note: note };
+					renderGrid();
+					if (rerender) renderPanel();
+					queue(ds, disponible, note);
 				}
 
-				document.getElementById('sda-btn-ok').addEventListener('click', function(){ save(1); renderPanelKeepNote(1); });
-				document.getElementById('sda-btn-ko').addEventListener('click', function(){ save(0); renderPanelKeepNote(0); });
-				document.getElementById('sda-clear').addEventListener('click', function(){ save(null); });
+				[].forEach.call(panel.querySelectorAll('.sda-btn'), function(b){
+					b.addEventListener('click', function(){
+						var v = this.getAttribute('data-val');
+						save(v === '' ? null : parseInt(v, 10), true);
+					});
+				});
 				// Refermer le jour et revenir au calendrier
 				document.getElementById('sda-close').addEventListener('click', function(){
 					state.selected = null;
@@ -516,15 +523,30 @@ class SP_Cal_Trainer_App {
 					renderPanel();
 					if (root.scrollIntoView) root.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				});
-				document.getElementById('sda-note').addEventListener('blur', function(){
+				var noteEl = document.getElementById('sda-note');
+				if (noteEl) noteEl.addEventListener('blur', function(){
 					var mine2 = (state.dispos[ds] || {})[state.me.id];
-					if (mine2) save(mine2.disponible);
+					if (mine2 && this.value !== (mine2.note || '')) save(mine2.disponible, false);
 				});
+			}
 
-				function renderPanelKeepNote(val) {
-					document.getElementById('sda-btn-ok').classList.toggle('sda-active', val === 1);
-					document.getElementById('sda-btn-ko').classList.toggle('sda-active', val === 0);
-				}
+			// File d'envoi : une requête à la fois, dans l'ordre.
+			var file = Promise.resolve();
+			function queue(ds, disponible, note) {
+				file = file.then(function(){
+					return new Promise(function(fin){
+						post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note }, function(res){
+							var saved = document.getElementById('sda-saved');
+							if (saved) {
+								saved.textContent = res.success ? '✓ Enregistré' : '⚠️ Erreur — réessayez';
+								saved.style.color = res.success ? '' : '#dc2626';
+								setTimeout(function(){ if (saved) saved.textContent = ''; }, 2000);
+							}
+							if (!res.success) loadMonth(); // revenir à l'état réellement enregistré
+							fin();
+						});
+					});
+				});
 			}
 
 			document.getElementById('sda-prev').addEventListener('click', function(){
