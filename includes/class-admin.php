@@ -11,6 +11,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -81,6 +82,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         SP_Cal_Trainer_App::get_instance( $this->db );
         SP_Cal_Dobok::get_instance( $this->db );
         SP_Cal_Anniversaires::get_instance( $this->db );
+        SP_Cal_Passages::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════

@@ -10,6 +10,7 @@ class SpCalPro_DB {
 
     /** Référentiel TKD Parcours, lu une fois par requête (cf. get_grades_claira()). */
     private $grades_claira_cache = null;
+    private $parcours_claira_cache = null;
 
     public function table( $name ) { global $wpdb; return $wpdb->prefix . self::PREFIX . $name; }
     public function table_trainer_dispos()         { return $this->table( 'trainer_dispos' ); }
@@ -3075,7 +3076,23 @@ if ( empty($notes_eleve) ) {
      */
     public function get_grades_claira() {
         if ( $this->grades_claira_cache !== null ) return $this->grades_claira_cache;
-        if ( ! $this->claira_grades_actif() ) return array();
+        $result = array();
+        foreach ( $this->get_parcours_claira() as $cat => $grades ) {
+            $result[ $cat ] = array_column( $grades, 'grade' );
+        }
+        return $this->grades_claira_cache = $result;
+    }
+
+    /**
+     * Même chaîne que get_grades_claira(), avec le programme de chaque grade lu dans TKD Parcours
+     * (module Passages de grade : le programme du grade visé est la grille d'examen).
+     *
+     * @return array  [ 'Baby' => [ [ 'grade', 'post_id', 'min_age' (int|null), 'poomsae',
+     *                'tech_bras', 'tech_jambes', 'video_url' ], … ], 'Enfant' => …, 'Ado/adulte' => … ]
+     */
+    public function get_parcours_claira() {
+        if ( $this->parcours_claira_cache !== null ) return $this->parcours_claira_cache;
+        if ( ! $this->claira_grades_actif() ) return $this->parcours_claira_cache = array();
 
         $groupes = array(
             'Baby'       => array( 'termes' => array( 'Baby' ),               'ordre' => 'Baby' ),
@@ -3102,13 +3119,26 @@ if ( empty($notes_eleve) ) {
                 ) ),
             ) );
             $chain = array();
+            $vus   = array();
             foreach ( claira_tkd_sort_grades_by_keup( $posts, $groupe['ordre'] ) as $p ) {
                 $g = self::format_grade_claira( get_post_meta( $p->ID, '_claira_tkd_keup_rank', true ), $p->post_title );
-                if ( $g !== '' && ! in_array( $g, $chain, true ) ) $chain[] = $g;
+                if ( $g === '' || in_array( $g, $vus, true ) ) continue;
+                $vus[] = $g;
+                // Âge minimum conseillé : « 14+ » → 14 ; vide → pas d'âge minimum.
+                $min_age = preg_match( '/\d+/', (string) get_post_meta( $p->ID, '_claira_tkd_min_age', true ), $m ) ? intval( $m[0] ) : null;
+                $chain[] = array(
+                    'grade'       => $g,
+                    'post_id'     => (int) $p->ID,
+                    'min_age'     => $min_age,
+                    'poomsae'     => trim( (string) get_post_meta( $p->ID, '_claira_tkd_poomsae', true ) ),
+                    'tech_bras'   => trim( (string) get_post_meta( $p->ID, '_claira_tkd_tech_bras', true ) ),
+                    'tech_jambes' => trim( (string) get_post_meta( $p->ID, '_claira_tkd_tech_jambes', true ) ),
+                    'video_url'   => trim( (string) get_post_meta( $p->ID, '_claira_tkd_video_url', true ) ),
+                );
             }
             if ( $chain ) $result[ $cat ] = $chain;
         }
-        return $this->grades_claira_cache = $result;
+        return $this->parcours_claira_cache = $result;
     }
 
     /** Ceinture d'un grade sans son rang, pour rapprocher deux numérotations : « 12e jaune* » → « jaune* ». */

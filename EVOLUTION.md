@@ -169,7 +169,9 @@ Constat (retour de test de l'utilisateur) : l'adhérent reçoit aujourd'hui deux
 
 **Étape 1 réalisée dans le legacy le 26/09/2026** (sans fusion, trop lourde dans le code actuel) : mail d'accès avec **un seul lien** (l'application si la page existe, sinon la fiche), bouton « Ouvrir l'application » sur la fiche, bouton « Ma fiche complète » dans l'application, onglet « Événements » de l'application renommé « Inscriptions ».
 
-## 03/10/2026 — Passages de grade : nouveau module de notation (spécification validée, non implémentée)
+## 03/10/2026 — Passages de grade : nouveau module de notation (spécification validée, phase 1 implémentée)
+
+> **Avancement** : phase 1 faite le 03/10/2026 (`includes/class-passages.php` — Préparer, Noter, Valider, épreuves transverses ; voir `REALISATION.md`), PHP à tester sur le site de test. **Reste** : phase 2 — carte « Mon prochain grade » et retour d'examen (résultat, points « À revoir », remarques) dans l'application adhérent ; phase 3 — suppression de l'ancien module Jury (voir « Ancien module » ci-dessous).
 
 Constat : le module Jury actuel (`class-admin-jury.php`, `class-jury.php`, `class-jury-mobile.php`, templates `jury-*.php`) n'a **jamais été utilisé** en vrai. Trop de manipulations d'onglet en onglet : 7 étapes (Paramètres → Juges → Candidats → Lancer → Suivi live → Transcription → Grades), plus trois écrans à préparer ailleurs (événement « examen » du calendrier, référentiel `exam_epreuves`, table `exam_grade_progression` à libellés exacts). Trois sources de vérité qui ne se parlent pas : le programme des grades vit dans TKD Parcours, les épreuves sont par catégorie d'âge, le grade suivant est saisi à la main. Notation +1/−1 sur 5–10 additionnée sur tous les juges et toutes les épreuves puis comparée à un seuil : opaque pour le jury, sans retour utile pour l'élève. Grade jamais écrit sur la fiche (étape « Transcription » manuelle). Calcul des scores en plusieurs exemplaires (cf. pistes techniques ci-dessus).
 
