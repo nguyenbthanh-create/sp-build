@@ -169,6 +169,71 @@ Constat (retour de test de l'utilisateur) : l'adhérent reçoit aujourd'hui deux
 
 **Étape 1 réalisée dans le legacy le 26/09/2026** (sans fusion, trop lourde dans le code actuel) : mail d'accès avec **un seul lien** (l'application si la page existe, sinon la fiche), bouton « Ouvrir l'application » sur la fiche, bouton « Ma fiche complète » dans l'application, onglet « Événements » de l'application renommé « Inscriptions ».
 
+## 03/10/2026 — Passages de grade : nouveau module de notation (spécification validée, non implémentée)
+
+Constat : le module Jury actuel (`class-admin-jury.php`, `class-jury.php`, `class-jury-mobile.php`, templates `jury-*.php`) n'a **jamais été utilisé** en vrai. Trop de manipulations d'onglet en onglet : 7 étapes (Paramètres → Juges → Candidats → Lancer → Suivi live → Transcription → Grades), plus trois écrans à préparer ailleurs (événement « examen » du calendrier, référentiel `exam_epreuves`, table `exam_grade_progression` à libellés exacts). Trois sources de vérité qui ne se parlent pas : le programme des grades vit dans TKD Parcours, les épreuves sont par catégorie d'âge, le grade suivant est saisi à la main. Notation +1/−1 sur 5–10 additionnée sur tous les juges et toutes les épreuves puis comparée à un seuil : opaque pour le jury, sans retour utile pour l'élève. Grade jamais écrit sur la fiche (étape « Transcription » manuelle). Calcul des scores en plusieurs exemplaires (cf. pistes techniques ci-dessus).
+
+Inspirations (tour du web du 03/10/2026) : boucle complète candidats → notes → promotion depuis la même page (Kicksite) ; notation technique par technique sur mobile avec remarques et résultat envoyé à l'élève (Martialytics) ; interface juge linéaire sans aucune fonction d'admin, grosses zones tactiles, précédent / actuel / suivant, juge-président qui tranche (logiciels de jury de gymnastique : Turnfix, Acro-Companion) ; critères nommés plutôt qu'une note globale (grilles poomsae ABFT).
+
+### Principe directeur
+
+**Le programme du grade visé dans TKD Parcours est la grille d'examen.** Un candidat est évalué sur le poomsae, la technique de bras et la technique de jambes de la fiche du grade visé (`_claira_tkd_poomsae`, `_claira_tkd_tech_bras`, `_claira_tkd_tech_jambes`), sans saisie. Grade visé = grade suivant dans la chaîne du Parcours (`get_grades_claira()`), sans table de progression ; un saut exceptionnel reste saisissable à la main. À ces critères s'ajoutent des **épreuves transverses libres** (voir plus bas).
+
+### Moment 1 — Préparer (un seul écran)
+
+- Le passage se crée depuis une date ; il crée lui-même son événement d'examen au calendrier (plus de prérequis).
+- **Candidats** : tous les élèves actifs sont sélectionnables. L'âge minimum du grade visé (`_claira_tkd_min_age`) n'est **jamais bloquant** : simple **alerte** quand l'élève est trop jeune, avec l'écart en années (« ⚠️ Trop jeune de 2 ans pour la 10e jaune (âge conseillé : 9 ans) »). L'alerte reste visible jusqu'à l'écran de validation.
+- **Les Dan sont hors périmètre** : l'examen Dan ne se déroule pas au club, un Dan ne peut pas être choisi comme grade visé.
+- **Juges** : proposés parmi les entraîneurs (ceux qui ont mis ✅ sur la date dans *Mes dispos* en tête) **et** les adhérents de grade Poom ou Dan (repérés depuis leur fiche). C'est l'entraîneur qui choisit, personne n'est ajouté d'office. Un juge est désigné **président de jury**. Accès juge par lien ou QR code, sans compte WordPress.
+- Aires facultatives (une seule par défaut).
+- Bouton unique « Ouvrir le passage ».
+
+### Moment 2 — Noter (téléphone du juge)
+
+- **Chaque juge peut noter n'importe quel candidat** : pas d'affectation candidat → aire obligatoire, le juge fait défiler la liste (précédent / suivant).
+- Un écran par candidat : ceinture actuelle → ceinture visée, puis un bloc par critère (programme du Parcours + épreuves transverses applicables), remarque facultative, verdict proposé.
+- **Grade visé keup** : trois niveaux par critère — **Acquis / À revoir / Non acquis**.
+- **Grade visé Poom** : **note sur 10** par épreuve.
+- Aucune fonction d'admin visible pour le juge.
+- Enregistrement immédiat, file d'envois ordonnée (même principe que *Mes dispos*), **fonctionnement hors ligne** : les saisies restent sur le téléphone et repartent d'elles-mêmes.
+
+### Épreuves transverses libres
+
+Un écran unique pour créer des épreuves en plus du programme du Parcours :
+- nom ;
+- portée : tous les candidats, une catégorie (Baby / Enfant / Ado-adulte) ou une tranche de grades ;
+- type : **3 niveaux**, **note**, ou **mesure** (chiffre relevé, ex. nombre de coups, converti par des seuils — généralisation du ZEMITA actuel).
+
+Elles comblent aussi les grades sans programme technique dans le Parcours (Baby, Il Poom ado/adulte).
+
+### Règles de décision
+
+- **Plusieurs juges, keup** : pour chaque critère, l'avis **majoritaire** des juges ; en cas d'**égalité**, la ligne est surlignée et le **président tranche**. Les remarques de tous les juges sont conservées pour le retour à l'élève.
+- **Admission keup** : admis s'il n'y a **aucun « Non acquis »** et **au plus un « À revoir »**.
+- **Admission Poom** : **moyenne des juges** par épreuve ; admis si la **moyenne générale est d'au moins 5/10** et qu'**aucune épreuve n'est sous le plancher** (4/10 par défaut). Seuil et plancher réglables.
+- Le verdict calculé est une **proposition** : le président décide (Admis / Ajourné).
+- Calcul du verdict dans **une seule fonction**, seule source de vérité.
+
+### Moment 3 — Valider (président, un seul écran)
+
+- Une ligne par candidat : verdict proposé, désaccords entre juges surlignés, alerte d'âge éventuelle, choix final Admis / Ajourné.
+- Bouton unique **« Valider les grades »** : écrit le nouveau grade sur la fiche avec l'historique, déclenche la demande de changement de col du dobok (Poom), publie le résultat et le retour dans l'application de l'adhérent.
+- Passage **verrouillé** après validation, réouverture par l'admin uniquement.
+
+### Côté adhérent (PWA)
+
+Carte **« Mon prochain grade »** : programme à préparer avec les vidéos du Parcours ; après le passage, résultat et points « À revoir » reliés à leur vidéo.
+
+### Stabilité
+
+- États simples : Préparation → Ouvert → Validé ; rien n'est écrit sur les fiches avant la validation.
+- Une ligne par candidat × critère × juge, mise à jour sur place (renvoyer deux fois la même saisie ne casse rien).
+- Pas d'actualisation automatique qui se met en pause ou écrase une saisie en cours.
+
+### Ancien module
+
+Jamais utilisé : **supprimé** au moment du développement (7 étapes, `exam_epreuves`, `exam_grade_progression`, Transcription, doublon `class-jury-mobile.php` à la racine). Seule l'idée des seuils ZEMITA est reprise, sous la forme du type d'épreuve « mesure ». **À vérifier avant suppression** (relevé le 03/10/2026) : `class-pdf.php` lit `get_exam_epreuves()` (3 endroits, impressions d'examen) et `sp-pointage.php` lit la table `exam_grade_contenu` (ressources par grade) ; la progression des examens est aussi recalculée par l'harmonisation des grades de `class-admin-members.php` (commit e367ea6).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
