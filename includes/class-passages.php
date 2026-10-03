@@ -665,6 +665,7 @@ class SP_Cal_Passages {
 			'ep_ok'     => [ 'success', 'Épreuve enregistrée. Elle s\'applique aux candidats ajoutés ensuite et à l\'ouverture des passages.' ],
 			'ep_suppr'  => [ 'success', 'Épreuve supprimée.' ],
 			'incomplet' => [ 'error', 'Pour ouvrir la notation, il faut au moins un candidat, un juge et un président de jury.' ],
+			'enreg_incomplet' => [ 'warning', 'Préparation enregistrée, mais la notation n\'est pas ouverte : il faut au moins un candidat, un juge et un président de jury.' ],
 			'valide'    => [ 'error', 'Ce passage est validé : rouvrez-le d\'abord pour le modifier.' ],
 		];
 		$k = sanitize_key( $_GET['msg'] ?? '' );
@@ -790,7 +791,15 @@ class SP_Cal_Passages {
 				<label>Seuil <input type="number" name="poom_seuil" min="0" max="10" step="0.5" value="<?php echo esc_attr( self::nb( $p->poom_seuil ) ); ?>" style="width:80px"> /10</label>
 				&nbsp; <label>Plancher <input type="number" name="poom_plancher" min="0" max="10" step="0.5" value="<?php echo esc_attr( self::nb( $p->poom_plancher ) ); ?>" style="width:80px"> /10</label>
 			</div>
-			<p><button class="button button-primary button-hero">Enregistrer la préparation</button></p>
+			<p class="sp-pg-actions">
+				<?php if ( $p->statut === 'preparation' ) : ?>
+					<?php // « Enregistrer seulement » en premier : c'est le bouton déclenché par la touche Entrée. ?>
+					<button class="button button-hero">Enregistrer seulement</button>
+					<button class="button button-primary button-hero" name="ouvrir" value="1">🟢 Enregistrer et ouvrir la notation</button>
+				<?php else : ?>
+					<button class="button button-primary button-hero">Enregistrer la préparation</button>
+				<?php endif; ?>
+			</p>
 			</fieldset>
 		</form>
 
@@ -818,7 +827,7 @@ class SP_Cal_Passages {
 		$pid = intval( $p->id );
 		echo '<div class="sp-pg-box">';
 		if ( $p->statut === 'preparation' ) {
-			echo '<h2>Ouvrir la notation</h2><p class="description">Choisissez les candidats et les juges ci-dessous, enregistrez, puis ouvrez la notation : chaque juge reçoit un lien et un QR code. La grille de chaque candidat est figée à l\'ouverture (programme du grade visé + épreuves transverses).</p>';
+			echo '<h2>Ouvrir la notation</h2><p class="description">Choisissez les candidats et les juges ci-dessous, puis cliquez sur « Enregistrer et ouvrir la notation » en bas de page (ou sur ce bouton si tout est déjà enregistré) : chaque juge reçoit un lien et un QR code. La grille de chaque candidat est figée à l\'ouverture (programme du grade visé + épreuves transverses).</p>';
 			echo '<div class="sp-pg-actions">' . $this->form_statut( $pid, 'ouvert', '🟢 Ouvrir la notation', 'button button-primary' ) . '</div>'; // phpcs:ignore
 		} elseif ( $p->statut === 'ouvert' ) {
 			echo '<h2>Notation ouverte</h2><p class="description">Chaque juge note avec son lien personnel (pas de compte nécessaire, fonctionne hors connexion). Le président voit en plus l\'onglet Résultats pour trancher et valider.</p>';
@@ -1225,6 +1234,11 @@ class SP_Cal_Passages {
 				] );
 			}
 		}
+		// « Enregistrer et ouvrir la notation » : enchaîne l'ouverture sans remonter en haut de page.
+		if ( ! empty( $_POST['ouvrir'] ) && $p->statut === 'preparation' ) {
+			$res = $this->ouvrir_notation( $pid );
+			self::retour( [ 'passage' => $pid, 'msg' => $res === 'ouvert' ? 'ouvert' : 'enreg_incomplet' ] );
+		}
 		self::retour( [ 'passage' => $pid, 'msg' => 'enreg' ] );
 	}
 
@@ -1238,6 +1252,24 @@ class SP_Cal_Passages {
 		return $el ? trim( $el->prenom . ' ' . $el->nom ) : '';
 	}
 
+	/**
+	 * Ouvre la notation d'un passage en préparation : il faut au moins un candidat, un juge et
+	 * un président. La grille de chaque candidat est figée à ce moment (programme du Parcours +
+	 * épreuves transverses actives). Utilisé par « 🟢 Ouvrir la notation » et par « Enregistrer
+	 * et ouvrir la notation ».
+	 *
+	 * @return string code du message affiché : 'ouvert' ou 'incomplet'
+	 */
+	private function ouvrir_notation( int $pid ): string {
+		global $wpdb;
+		$juges = $this->get_juges( $pid );
+		$cands = $this->get_candidats( $pid );
+		if ( ! $juges || ! $cands || ! array_filter( $juges, static fn( $j ) => (int) $j->president === 1 ) ) return 'incomplet';
+		foreach ( $cands as $c ) $this->maj_grille_candidat( $c );
+		$wpdb->update( self::t( 'passages' ), [ 'statut' => 'ouvert' ], [ 'id' => $pid ] );
+		return 'ouvert';
+	}
+
 	public function handle_statut(): void {
 		$pid = intval( $_POST['passage_id'] ?? 0 );
 		$this->exiger( 'sp_passage_statut_' . $pid );
@@ -1247,14 +1279,7 @@ class SP_Cal_Passages {
 		global $wpdb;
 
 		if ( $vers === 'ouvert' && $p->statut === 'preparation' ) {
-			$juges = $this->get_juges( $pid );
-			$cands = $this->get_candidats( $pid );
-			if ( ! $juges || ! $cands || ! array_filter( $juges, static fn( $j ) => (int) $j->president === 1 ) ) {
-				self::retour( [ 'passage' => $pid, 'msg' => 'incomplet' ] );
-			}
-			// Grille figée à l'ouverture (programme + épreuves transverses du moment).
-			foreach ( $cands as $c ) $this->maj_grille_candidat( $c );
-			$msg = 'ouvert';
+			self::retour( [ 'passage' => $pid, 'msg' => $this->ouvrir_notation( $pid ) ] );
 		} elseif ( $vers === 'ouvert' && $p->statut === 'valide' ) {
 			$msg = 'rouvert';
 		} elseif ( $vers === 'preparation' && $p->statut === 'ouvert' ) {
