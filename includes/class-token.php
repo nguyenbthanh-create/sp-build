@@ -1193,16 +1193,18 @@ class SpCalPro_Token {
         .spt-crosshair{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
         .spt-crosshair-box{width:200px;height:200px;border:3px solid #ffdd0e;border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);}
         .spt-scanner-foot{padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        /* Résultat affiché dans l'image (04/10/2026) */
+        .spt-overlay{position:absolute;inset:0;z-index:2;display:none;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px;text-align:center;color:#fff;cursor:pointer;background:rgba(15,23,42,.85);}
+        .spt-ov-titre{font-size:22px;font-weight:800;line-height:1.2;word-break:break-word;}
+        .spt-ov-sub{font-size:15px;font-weight:600;}
+        .spt-ov-time{font-size:12px;opacity:.8;}
+        .spt-ov-hint{font-size:11px;opacity:.75;margin-top:8px;}
         /* Boutons */
         .spt-btn{border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;width:100%;display:block;text-align:center;}
         .spt-btn-blue{background:#0f70b7;color:#fff;}
         .spt-btn-blue:disabled{background:#93c5fd;cursor:not-allowed;}
         .spt-btn-ghost{background:rgba(255,255,255,.1);color:#fff;font-size:13px;padding:7px 14px;width:auto;}
         .spt-btn-sm{background:#f1f5f9;color:#374151;font-size:13px;padding:8px 14px;width:auto;border-radius:8px;}
-        /* Résultat scan */
-        .spt-result{border-radius:12px;padding:16px;text-align:center;font-size:18px;font-weight:700;margin-bottom:14px;display:none;}
-        .spt-result-sub{font-size:13px;font-weight:400;margin-top:4px;}
-        .spt-result-time{font-size:11px;font-weight:400;opacity:.7;margin-top:2px;}
         /* Historique */
         .spt-hist-title{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
         .spt-hist-row{display:flex;justify-content:space-between;align-items:center;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:8px 12px;font-size:14px;margin-bottom:6px;}
@@ -1259,15 +1261,15 @@ class SpCalPro_Token {
                     <video id="spt-video" playsinline autoplay></video>
                     <canvas id="spt-canvas" style="display:none;"></canvas>
                     <div class="spt-crosshair"><div class="spt-crosshair-box"></div></div>
+                    <!-- Résultat dans l'image : lecture en pause pendant l'affichage, reprise automatique ;
+                         toucher le bandeau reprend tout de suite. -->
+                    <div class="spt-overlay" id="spt-overlay" onclick="sptReprendre()"></div>
                 </div>
                 <div class="spt-scanner-foot">
                     <span style="color:rgba(255,255,255,.4);font-size:12px;" id="spt-scan-count">0 pointé(s)</span>
                     <button class="spt-btn spt-btn-ghost" onclick="sptStop()">⏹ Arrêter</button>
                 </div>
             </div>
-
-            <!-- Résultat scan -->
-            <div class="spt-result" id="spt-result"></div>
 
             <!-- Historique -->
             <div id="spt-hist" style="display:none;">
@@ -1321,7 +1323,9 @@ class SpCalPro_Token {
             isLive:     false,   // cours en cours à l'heure actuelle
             scanning:   false,
             stream:     null,
-            scanned:    {},      // token → nom (anti-doublon session)
+            scanned:    {},      // cartes déjà traitées pour le cours choisi (anti-doublon)
+            reprise:    null,    // reprise de la lecture programmée (résultat affiché)
+            essai:      0,       // numéro de la lecture en cours (ignore une réponse arrivée trop tard)
             scanCount:  0,
             timer:      null,
             retroToken: null,    // token en attente de saisie rétroactive
@@ -1416,6 +1420,12 @@ class SpCalPro_Token {
         function sptSelectCours(el) {
             document.querySelectorAll('.spt-cours-item').forEach(function(i){ i.classList.remove('active'); });
             el.classList.add('active');
+            // Autre cours : les cartes déjà traitées pour le précédent peuvent être pointées ici.
+            if (parseInt(el.dataset.slotId) !== SPT.slotId || el.dataset.date !== SPT.slotDate) {
+                SPT.scanned   = {};
+                SPT.scanCount = 0;
+                document.getElementById('spt-scan-count').textContent = '0 pointé(s)';
+            }
             SPT.slotId     = parseInt(el.dataset.slotId);
             SPT.slotDate   = el.dataset.date;
             SPT.eventLabel = el.dataset.label;
@@ -1442,6 +1452,10 @@ class SpCalPro_Token {
 
         function sptStop() {
             SPT.scanning = false;
+            clearTimeout(SPT.reprise);
+            SPT.reprise = null;
+            SPT.essai++;
+            document.getElementById('spt-overlay').style.display = 'none';
             if (SPT.stream) SPT.stream.getTracks().forEach(function(t){t.stop();});
             document.getElementById('spt-scanner').style.display = 'none';
             document.getElementById('spt-start-btn').style.display = SPT.slotId ? 'block' : 'none';
@@ -1484,19 +1498,45 @@ class SpCalPro_Token {
         }
 
         /* ── Traitement QR ────────────────────────── */
+        /* 04/10/2026 (retour terrain) : le résultat s'affiche dans l'image de la caméra ; la lecture
+           reste en pause pendant l'affichage puis reprend seule (ou en touchant le bandeau) ; une carte
+           déjà traitée pour ce cours est ignorée sans message, au lieu de répéter « déjà scanné ».
+           La caméra n'est jamais coupée pour cette pause : seule la boucle de lecture attend. */
+        function sptPlanifierReprise(ms) {
+            clearTimeout(SPT.reprise);
+            SPT.reprise = setTimeout(sptReprendre, ms);
+        }
+        function sptReprendre() {
+            if (!SPT.reprise) return; // aucune reprise en attente (carte en cours de vérification…)
+            clearTimeout(SPT.reprise);
+            SPT.reprise = null;
+            document.getElementById('spt-overlay').style.display = 'none';
+            if (SPT.scanning && !SPT.retroToken) sptTick();
+        }
+
         function sptHandleQR(url) {
             var m = url.match(/[?&]token=([^&]+)/);
             if (!m) {
-                sptShowResult('❓ QR Code non reconnu', '#f59e0b', '', '');
-                setTimeout(sptTick, 2000); return;
+                // Même QR inconnu laissé devant la caméra : on ne le signale qu'une fois.
+                if (SPT.scanned['?' + url]) { requestAnimationFrame(sptTick); return; }
+                SPT.scanned['?' + url] = true;
+                sptShowResult('❓ QR Code non reconnu', '#d97706', 'Ce n\'est pas une carte de membre du club.', '');
+                sptPlanifierReprise(2000); return;
             }
             var token = decodeURIComponent(m[1]);
 
-            // Anti-doublon session
-            if (SPT.scanned[token]) {
-                sptShowResult('⚠️ ' + SPT.scanned[token], '#f59e0b', 'Déjà scanné cette session', '');
-                setTimeout(sptTick, 1500); return;
-            }
+            // Carte déjà traitée pour ce cours : ignorée sans message, la lecture continue.
+            if (SPT.scanned[token]) { requestAnimationFrame(sptTick); return; }
+
+            sptShowResult('⏳ Lecture de la carte…', '#0f172a', '', '', true);
+            var essai = ++SPT.essai;
+            // Réseau très lent : ne jamais laisser le scanner bloqué sur « Lecture… ».
+            var attente = setTimeout(function() {
+                if (essai !== SPT.essai) return;
+                SPT.essai++; // une réponse arrivant après ce délai sera ignorée
+                sptShowResult('❌ Pas de réponse du serveur', '#dc2626', 'Rescannez la carte.', '');
+                sptPlanifierReprise(2000);
+            }, 8000);
 
             var fd = new FormData();
             fd.append('action',   'sp_pointage_scan');
@@ -1508,17 +1548,20 @@ class SpCalPro_Token {
             fetch(SPT.ajaxurl, {method:'POST', body:fd})
             .then(function(r){return r.json();})
             .then(function(r){
+                if (essai !== SPT.essai) return; // réponse arrivée trop tard ou scanner arrêté
+                clearTimeout(attente);
                 if (!r.success) {
+                    SPT.scanned[token] = true; // carte inconnue : signalée une seule fois
                     sptShowResult('❌ Élève non trouvé', '#dc2626', '', '');
-                    setTimeout(sptTick, 2000); return;
+                    sptPlanifierReprise(2000); return;
                 }
                 var nom    = r.data.nom;
                 var status = r.data.status;
                 SPT.scanned[token] = nom;
 
                 if (status === 'already') {
-                    sptShowResult('⚠️ ' + nom, '#f59e0b', 'Déjà pointé pour ce cours', sptTimeNow());
-                    setTimeout(sptTick, 2000); return;
+                    sptShowResult('⚠️ ' + nom, '#d97706', 'Déjà pointé pour ce cours', sptTimeNow());
+                    sptPlanifierReprise(2000); return;
                 }
 
                 // Présence enregistrée
@@ -1537,26 +1580,31 @@ class SpCalPro_Token {
                     sptOpenRetro(token, nom);
                     return; // ne pas relancer le ticker, le modal prend le relais
                 }
-                setTimeout(sptTick, 2000);
+                sptPlanifierReprise(2000);
             })
             .catch(function(){
-                sptShowResult('❌ Erreur réseau', '#dc2626', '', '');
-                setTimeout(sptTick, 2000);
+                if (essai !== SPT.essai) return;
+                clearTimeout(attente);
+                // Erreur réseau : la carte n'est pas marquée, on pourra la rescanner.
+                sptShowResult('❌ Erreur réseau', '#dc2626', 'Rescannez la carte.', '');
+                sptPlanifierReprise(2000);
             });
         }
 
-        /* ── Affichage résultat ───────────────────── */
-        function sptShowResult(titre, color, sub, heure) {
-            var el = document.getElementById('spt-result');
-            el.style.display      = 'block';
-            el.style.background   = color + '18';
-            el.style.border       = '2px solid ' + color;
-            el.style.color        = color;
-            el.innerHTML = titre
-                + (sub   ? '<div class="spt-result-sub">'  + sub   + '</div>' : '')
-                + (heure ? '<div class="spt-result-time">' + heure + '</div>' : '');
-            clearTimeout(SPT.timer);
-            SPT.timer = setTimeout(function(){ el.style.display = 'none'; }, 3500);
+        /* ── Affichage résultat (dans l'image de la caméra) ── */
+        function sptEsc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+                return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+            });
+        }
+        function sptShowResult(titre, color, sub, heure, attente) {
+            var ov = document.getElementById('spt-overlay');
+            ov.style.background = color + 'eb'; // couleur presque opaque
+            ov.innerHTML = '<div class="spt-ov-titre">' + sptEsc(titre) + '</div>'
+                + (sub   ? '<div class="spt-ov-sub">'  + sptEsc(sub)   + '</div>' : '')
+                + (heure ? '<div class="spt-ov-time">' + sptEsc(heure) + '</div>' : '')
+                + (attente ? '' : '<div class="spt-ov-hint">Toucher pour scanner l\'élève suivant</div>');
+            ov.style.display = 'flex';
         }
 
         function sptAddHistory(nom, icon) {
@@ -1615,7 +1663,7 @@ class SpCalPro_Token {
             document.getElementById('spt-modal').style.display = 'none';
             SPT.retroToken = null;
             // Reprendre le scanner
-            setTimeout(sptTick, 500);
+            sptPlanifierReprise(500); // reprise de la lecture (et masque le bandeau)
         }
 
         function sptModalClose(e) {

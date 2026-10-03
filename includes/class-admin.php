@@ -821,6 +821,14 @@ window.addEventListener('error', function(e) {
 .spcal-scan-frame.flash-err{border-color:#ef4444;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(239,68,68,.9);}
 .spcal-scan-frame.flash-ok .spcal-scan-line,.spcal-scan-frame.flash-already .spcal-scan-line,.spcal-scan-frame.flash-err .spcal-scan-line{opacity:0;}
 @media (prefers-reduced-motion:reduce){.spcal-scan-line{animation:none;top:50%;}}
+.spcal-scan-overlay{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px;text-align:center;color:#fff;cursor:pointer;background:rgba(15,23,42,.85);}
+.spcal-scan-overlay.ok{background:rgba(22,163,74,.92);}
+.spcal-scan-overlay.already{background:rgba(217,119,6,.92);}
+.spcal-scan-overlay.err{background:rgba(220,38,38,.92);}
+.spcal-scan-ov-nom{font-size:22px;font-weight:800;line-height:1.2;word-break:break-word;}
+.spcal-scan-ov-msg{font-size:15px;font-weight:600;opacity:.95;}
+.spcal-scan-ov-hint{font-size:11px;opacity:.75;margin-top:8px;}
+.spcal-scan-overlay.wait .spcal-scan-ov-hint{display:none;}
 /* Anniversaires du mois (onglet Pointage) */
 .spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:0 0 4px;border-left:3px solid #D4000F;}
 .spcal-anniv-titre{font-size:13px;font-weight:700;margin-bottom:8px;}
@@ -965,6 +973,13 @@ window.addEventListener('error', function(e) {
                             <canvas id="spcal-qr-canvas" style="display:none;"></canvas>
                             <div style="position:absolute;inset:0;pointer-events:none;">
                                 <div id="spcal-scan-frame" class="spcal-scan-frame"><div class="spcal-scan-line"></div></div>
+                            </div>
+                            <!-- Résultat affiché dans l'image (04/10/2026) : la lecture est en pause pendant
+                                 l'affichage puis reprend seule ; toucher le bandeau reprend tout de suite. -->
+                            <div id="spcal-scan-overlay" class="spcal-scan-overlay" onclick="spCalScanReprendre()" style="display:none;">
+                                <div id="spcal-scan-ov-nom" class="spcal-scan-ov-nom"></div>
+                                <div id="spcal-scan-ov-msg" class="spcal-scan-ov-msg"></div>
+                                <div class="spcal-scan-ov-hint">Toucher pour scanner l'élève suivant</div>
                             </div>
                         </div>
                         <p style="text-align:center;font-size:13px;color:rgba(255,255,255,.4);margin-bottom:4px;">Scannez la carte QR de l'élève</p>
@@ -1908,6 +1923,14 @@ window.spCalSelectCours = function(cours) {
     spCalShowAnnivCours(cours);
     document.getElementById('spcal-ptg-log').innerHTML = '';
     document.getElementById('spcal-scan-feedback').style.display = 'none';
+    // Nouveau cours : aucune carte encore traitée, pas de pause en cours.
+    gScanVus = {};
+    gLastScan = '';
+    gScanEssai++; // une vérification encore en route pour l'ancien cours sera ignorée
+    clearTimeout(gScanRepriseTimer);
+    gScanPause = false;
+    var ov = document.getElementById('spcal-scan-overlay');
+    if (ov) ov.style.display = 'none';
     spCalStartScan();
 };
 
@@ -2076,8 +2099,19 @@ function spCalScanWithJsQR(video) {
 
 var gLastScan = '';
 var gLastScanTime = 0;
+/* 04/10/2026 (retour terrain : le nom s'affichait sous la caméra, hors écran, et une carte laissée
+   devant l'objectif répétait « déjà relevé »). Le résultat s'affiche désormais DANS l'image, la
+   lecture est en pause pendant l'affichage puis reprend seule, et une carte déjà traitée pour ce
+   cours est ignorée sans message. La caméra et les deux lecteurs ne sont jamais arrêtés pour
+   cette pause (leur démarrage est la partie fragile) : seules les lectures sont ignorées. */
+var gScanPause = false;        // résultat affiché : lectures ignorées jusqu'à la reprise
+var gScanVus = {};             // cartes déjà traitées pour le cours en cours (jeton ou contenu lu)
+var gScanRepriseTimer = null;
+var gScanEssai = 0;            // numéro de la carte en cours de vérification (réponses tardives ignorées)
+var SPCAL_SCAN_REPRISE_MS = 2000;
 
 function spCalHandleScanResult(raw) {
+    if (gScanPause) return;
     // Dédupliquer : ignorer si même token dans les 3 dernières secondes
     var now = Date.now();
     if (raw === gLastScan && now - gLastScanTime < 3000) return;
@@ -2094,10 +2128,23 @@ function spCalHandleScanResult(raw) {
             token = u.searchParams.get('token') || '';
         } catch(e) { token = ''; }
     }
+    // Carte déjà traitée pour ce cours : ignorée sans message (plus de « déjà relevé » en boucle).
+    var cle = token || raw;
+    if (gScanVus[cle]) return;
     // Ne plus jamais rester muet : un QR lu mais inattendu le dit à l'écran.
-    if (!token) { spCalShowFeedback('QR code non reconnu', 'Ce n\'est pas une carte de membre du club.', 'err'); return; }
+    if (!token) { gScanVus[cle] = true; spCalShowFeedback('QR code non reconnu', 'Ce n\'est pas une carte de membre du club.', 'err'); return; }
     if (!gPtgCours || !gPin) { spCalShowFeedback('Aucun cours choisi', 'Revenez à la liste et sélectionnez le cours.', 'err'); return; }
 
+    gScanPause = true;
+    spCalScanOverlay('⏳ Lecture de la carte…', '', 'wait');
+    // Réseau très lent : ne jamais laisser le scanner bloqué sur « Lecture… ». Une réponse
+    // arrivée après ce délai est ignorée (sinon elle remettrait en pause le scan de l'élève
+    // suivant) : la carte rescannée affichera « déjà relevé » si la présence est passée.
+    var essai = ++gScanEssai;
+    var attente = setTimeout(function() {
+        gScanEssai++;
+        spCalShowFeedback('Pas de réponse du serveur', 'Rescannez la carte.', 'err');
+    }, 8000);
     fetch(CFG.apiBase + '/pointage/scan', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2113,24 +2160,48 @@ function spCalHandleScanResult(raw) {
         var nom = (r.data && r.data.nom) ? r.data.nom : '?';
         var status = (r.data && r.data.status) ? r.data.status : (r.success ? 'ok' : 'err');
         var msg  = (r.data && r.data.msg)  ? r.data.msg  : (r.success ? 'Présent' : (r.data || 'Erreur'));
+        if (essai !== gScanEssai) return; // réponse trop tardive ou cours quitté
+        clearTimeout(attente);
+        gScanVus[token] = true; // le serveur a répondu : cette carte est traitée pour ce cours
         spCalShowFeedback(nom, msg, status);
         if (r.success) spCalAddLog(nom, status);
     })
-    .catch(function() { spCalShowFeedback('?', 'Erreur réseau', 'err'); });
+    // Erreur réseau : la carte n'est pas marquée, on pourra la rescanner.
+    .catch(function() {
+        if (essai !== gScanEssai) return;
+        clearTimeout(attente);
+        spCalShowFeedback('Erreur réseau', 'Rescannez la carte.', 'err');
+    });
 }
 
+/* Résultat affiché dans l'image de la caméra, lecture en pause, reprise automatique. */
 function spCalShowFeedback(nom, msg, status) {
-    var fb = document.getElementById('spcal-scan-feedback');
-    fb.className = 'spcal-scan-' + (status === 'ok' ? 'ok' : (status === 'already' ? 'already' : 'err'));
-    fb.style.display = 'block';
-    document.getElementById('spcal-scan-nom').textContent =
-        (status === 'ok' ? '✅ ' : (status === 'already' ? '⚠️ ' : '❌ ')) + nom;
-    document.getElementById('spcal-scan-msg').textContent = msg;
-    // Effacer après 3s
-    clearTimeout(fb._timer);
-    fb._timer = setTimeout(function(){ fb.style.display = 'none'; }, 3000);
+    var st = status === 'ok' ? 'ok' : (status === 'already' ? 'already' : 'err');
+    spCalScanOverlay((st === 'ok' ? '✅ ' : (st === 'already' ? '⚠️ ' : '❌ ')) + nom, msg, st);
     spCalScanFlash(status);
+    gScanPause = true;
+    clearTimeout(gScanRepriseTimer);
+    gScanRepriseTimer = setTimeout(spCalScanReprendre, SPCAL_SCAN_REPRISE_MS);
 }
+
+function spCalScanOverlay(nom, msg, cls) {
+    var ov = document.getElementById('spcal-scan-overlay');
+    if (!ov) return;
+    ov.className = 'spcal-scan-overlay ' + cls;
+    document.getElementById('spcal-scan-ov-nom').textContent = nom;
+    document.getElementById('spcal-scan-ov-msg').textContent = msg;
+    ov.style.display = 'flex';
+}
+
+/* Fin de la pause (automatique, ou en touchant le bandeau) : les lectures sont de nouveau prises en compte. */
+window.spCalScanReprendre = function() {
+    // Pendant la vérification d'une carte (bandeau « Lecture… »), on attend la réponse.
+    var ov = document.getElementById('spcal-scan-overlay');
+    if (ov && ov.className.indexOf('wait') !== -1 && gScanPause) return;
+    clearTimeout(gScanRepriseTimer);
+    gScanPause = false;
+    if (ov) ov.style.display = 'none';
+};
 
 /* Éclair sur le cadre + courte vibration (si le téléphone le permet) à chaque résultat. */
 function spCalScanFlash(status) {
