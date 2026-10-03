@@ -12,9 +12,9 @@ D'après `CLAUDE.md`, ce plugin est actuellement le **legacy** (l'existant), pat
 
 ## Pistes techniques ouvertes (relevées dans le code / CLAUDE.md)
 
-- **Doublons d'implémentation** à consolider un jour : le scan QR et le calcul des scores de jury existent chacun en plusieurs implémentations indépendantes dans le code — source d'incohérences à surveiller, cible naturelle pour la refonte plutôt qu'un correctif ponctuel.
+- **Doublons d'implémentation** à consolider un jour : le scan QR existe en plusieurs implémentations indépendantes dans le code — source d'incohérences à surveiller, cible naturelle pour la refonte plutôt qu'un correctif ponctuel.
 - **API REST dupliquée** : des routes `spcal/v1` sont enregistrées à la fois dans `class-admin.php` et `class-ajax.php` (chevauchement documenté dans `02-etat-des-lieux.md`, non récupéré ici) — à nettoyer.
-- **`class-jury-mobile.php` en double** (racine + `includes/`) — la copie à la racine est morte, à supprimer un jour pour éviter toute confusion future.
+- ~~**`class-jury-mobile.php` en double**~~ — réglé le 03/10/2026 : tout l'ancien module Jury a été supprimé (voir la section Passages de grade).
 - **Scan QR (10/09/2026)** : la bascule sur `jsQR` (au lieu de `BarcodeDetector` natif, bloqué par le CDN OVH) est qualifiée de « piste pragmatique » dans le commit du 10/09/2026 — solution de contournement, pas une solution définitive. À revisiter (par ex. héberger la librairie en local plutôt que sur un CDN externe).
 
 ## 24/09/2026
@@ -169,9 +169,9 @@ Constat (retour de test de l'utilisateur) : l'adhérent reçoit aujourd'hui deux
 
 **Étape 1 réalisée dans le legacy le 26/09/2026** (sans fusion, trop lourde dans le code actuel) : mail d'accès avec **un seul lien** (l'application si la page existe, sinon la fiche), bouton « Ouvrir l'application » sur la fiche, bouton « Ma fiche complète » dans l'application, onglet « Événements » de l'application renommé « Inscriptions ».
 
-## 03/10/2026 — Passages de grade : nouveau module de notation (spécification validée, phases 1 et 2 implémentées)
+## 03/10/2026 — Passages de grade : nouveau module de notation (spécification validée, terminée : phases 1, 2 et 3)
 
-> **Avancement** : phase 1 faite le 03/10/2026 (`includes/class-passages.php` — Préparer, Noter, Valider, épreuves transverses) et phase 2 le même jour (carte « Mon prochain grade » et retour d'examen dans l'application adhérent) ; voir `REALISATION.md`. PHP à tester sur le site de test. **Reste** : phase 3 — suppression de l'ancien module Jury (voir « Ancien module » ci-dessous).
+> **Avancement** : les trois phases sont faites le 03/10/2026 — phase 1 (`includes/class-passages.php` : Préparer, Noter, Valider, épreuves transverses), phase 2 (carte « Mon prochain grade » et retour d'examen dans l'application adhérent), phase 3 (suppression de l'ancien module Jury, voir « Ancien module » ci-dessous) ; détail dans `REALISATION.md`. PHP à tester sur le site de test. **Reste en option** : supprimer en base les anciennes tables du jury devenues inutiles (`sp_cal_exam_sessions`, `_tables`, `_juges`, `_affectations`, `_epreuves`, `_grade_contenu`, `_zemita_*`, `sp_jury_notes`) et leurs migrations dans `maybe_upgrade()` — à faire de préférence dans la refonte, après sauvegarde.
 
 Constat : le module Jury actuel (`class-admin-jury.php`, `class-jury.php`, `class-jury-mobile.php`, templates `jury-*.php`) n'a **jamais été utilisé** en vrai. Trop de manipulations d'onglet en onglet : 7 étapes (Paramètres → Juges → Candidats → Lancer → Suivi live → Transcription → Grades), plus trois écrans à préparer ailleurs (événement « examen » du calendrier, référentiel `exam_epreuves`, table `exam_grade_progression` à libellés exacts). Trois sources de vérité qui ne se parlent pas : le programme des grades vit dans TKD Parcours, les épreuves sont par catégorie d'âge, le grade suivant est saisi à la main. Notation +1/−1 sur 5–10 additionnée sur tous les juges et toutes les épreuves puis comparée à un seuil : opaque pour le jury, sans retour utile pour l'élève. Grade jamais écrit sur la fiche (étape « Transcription » manuelle). Calcul des scores en plusieurs exemplaires (cf. pistes techniques ci-dessus).
 

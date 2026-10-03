@@ -35,9 +35,6 @@ require_once SP_CAL_PRO_PATH . 'includes/class-updater.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-eleves-front.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-palmares-front.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-bureau-front.php';
-require_once SP_CAL_PRO_PATH . 'includes/class-jury.php';
-require_once SP_CAL_PRO_PATH . 'includes/class-admin-jury.php';
-require_once SP_CAL_PRO_PATH . 'includes/class-jury-mobile.php';
 require_once SP_CAL_PRO_PATH . 'includes/class-top5-front.php';
 
 if ( ! class_exists( 'SpCalPro' ) ) {
@@ -62,14 +59,12 @@ if ( ! class_exists( 'SpCalPro' ) ) {
             new SpCalPro_ElevesFront( $db, $token );
             new SpCalPro_PalmaresFront( $db );
             new SpCalPro_BureauFront( $db );
-            new SpCalPro_Jury( $db );
             new SpCalPro_Updater( SP_CAL_PRO_VERSION );
 			new SpCalPro_Top5Front( $db );
 
 
             register_activation_hook( __FILE__, function() use ( $db ) {
                 $db->activate();
-                $db->create_jury_tables();
                 if ( ! get_option( 'sp_cal_api_key' ) ) {
                     update_option( 'sp_cal_api_key', wp_generate_password( 32, false ) );
                 }

@@ -235,10 +235,7 @@ class SP_Cal_Passages {
 
 	/** Clé de comparaison d'un grade : minuscules, sans espaces, « 1er » = « 1e », « ° » = « e ». */
 	private static function cle_grade( string $g ): string {
-		$g = mb_strtolower( trim( $g ) );
-		$g = str_replace( '°', 'e', $g );
-		$g = preg_replace( '/^(\d+)\s*(er|ère|ème|eme)\b/u', '$1e', $g );
-		return preg_replace( '/\s+/u', '', $g );
+		return SpCalPro_DB::cle_grade( $g );
 	}
 
 	public static function est_dan( string $g ): bool  { return (bool) preg_match( '/\bdan\b/iu', $g ); }

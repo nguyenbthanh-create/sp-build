@@ -296,7 +296,7 @@ class SP_Cal_Members {
                     if ( ! $eid ) continue;
                     $el = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE id=%d", $eid ) );
                     if ( ! $el ) continue;
-                    // Grade suivant calculé automatiquement depuis le référentiel (Jury → Grades) ;
+                    // Grade suivant calculé automatiquement depuis TKD Parcours (get_grade_vise_eleve()) ;
                     // si l'élève n'a pas de correspondance dans le référentiel, on garde son grade actuel.
                     $nouveau_grade = $recu ? ( $this->db->get_grade_vise_eleve( $el ) ?: $el->grade ) : '';
                     $this->db->save_exam_passage( $event_id, $eid, $recu, $nouveau_grade );
@@ -529,12 +529,13 @@ class SP_Cal_Members {
         // La liste « Grade actuel » suit TKD Parcours (schéma des grades du site) : les fiches
         // encore écrites avec l'ancienne numérotation Baby / Enfant sont proposées à la conversion.
         if ( isset( $_GET['grades_harmo_done'] ) ) {
-            echo '<div class="notice notice-success is-dismissible"><p>✅ Grades harmonisés — <strong>' . intval( $_GET['nb'] ) . '</strong> élève(s) mis à jour. La progression des examens (Jury → Grades) suit maintenant TKD Parcours.</p></div>';
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Grades harmonisés — <strong>' . intval( $_GET['nb'] ) . '</strong> élève(s) mis à jour.</p></div>';
         }
         if ( $this->db->claira_grades_actif() && $grades_ref ) :
             $harmo          = $this->db->preview_harmonisation_grades();
-            $progression_ok = $this->db->progression_a_jour_claira();
-            if ( $harmo || ! $progression_ok ) :
+            // Le grade suivant vient de TKD Parcours (get_grade_vise_eleve(), 03/10/2026) : l'ancienne
+            // table de progression ne sert plus que de secours si le Parcours est désactivé.
+            if ( $harmo ) :
                 $voir_harmo = isset( $_GET['sp_grades_harmo'] );
                 $nb_auto    = count( array_filter( $harmo, function( $h ) { return $h['propose'] !== ''; } ) );
         ?>
@@ -545,9 +546,6 @@ class SP_Cal_Members {
                 <?php if ( $harmo ) : ?>
                 <strong><?php echo count( $harmo ); ?></strong> élève(s) ont un grade écrit avec l'ancienne numérotation
                 (<?php echo $nb_auto; ?> correspondance(s) trouvée(s) automatiquement, <?php echo count( $harmo ) - $nb_auto; ?> à choisir).
-                <?php endif; ?>
-                <?php if ( ! $progression_ok ) : ?>
-                La progression des examens (Jury → Grades) utilise encore l'ancienne liste.
                 <?php endif; ?>
             </p>
             <?php if ( ! $voir_harmo ) : ?>
@@ -592,9 +590,8 @@ class SP_Cal_Members {
                 </p>
                 <?php endif; ?>
                 <p style="margin:0 0 10px;color:#64748b;font-size:12px;">
-                    En validant, la progression des examens (Jury → Grades) est aussi recalculée depuis TKD Parcours
-                    pour Baby, Enfant, Ado/adulte et Adulte (chaque grade → le suivant du schéma).
-                    À faire de préférence en dehors d'une session d'examen en préparation.
+                    Le grade visé aux passages de grade est ensuite le suivant dans TKD Parcours.
+                    À faire de préférence en dehors d'un passage de grade en préparation.
                 </p>
                 <input type="submit" class="button button-primary" value="✅ Appliquer">
                 <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-eleves' ) ); ?>" class="button" style="margin-left:8px;">Annuler</a>
@@ -788,7 +785,7 @@ class SP_Cal_Members {
                 $f( 'Prénom',                  'eleve_prenom',       $edit->prenom          ?? '' );
                 ?>
                 <!-- Grade actuel — liste déroulante groupée par catégorie d'âge (référentiel
-                     Jury → Grades), pour harmoniser la saisie. "Autre" en secours si le grade
+                     TKD Parcours, ou ancienne table de secours), pour harmoniser la saisie. "Autre" en secours si le grade
                      ne figure pas dans le référentiel (cf. doleances.md). -->
                 <div style="margin-bottom:12px;">
                     <?php $grade_edit = $edit->grade ?? ''; $grade_in_ref = false; ?>
@@ -921,7 +918,7 @@ class SP_Cal_Members {
                     <!-- Catégorie d'âge — liste déroulante sourcée sur les 5 catégories officielles
                          (toujours proposées, même si aucun élève n'en a encore une en base — sinon
                          "Tout âge" n'apparaîtrait qu'une fois qu'un premier élève l'aurait déjà,
-                         problème de l'oeuf et la poule) + le référentiel Jury → Grades + les
+                         problème de l'oeuf et la poule) + le référentiel des grades + les
                          valeurs déjà utilisées sur d'autres fiches, pour couvrir tout cas hérité. -->
                     <div style="margin-bottom:12px;">
                         <?php

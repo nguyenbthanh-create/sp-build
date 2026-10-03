@@ -3,7 +3,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-inscriptions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-exam.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-members.php';
-require_once plugin_dir_path( __FILE__ ) . 'class-admin-jury.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-front-adhesion.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-adhesions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-renouvellement.php';
@@ -28,7 +27,6 @@ class SpCalPro_Admin {
     private $db;
     private $exam;
     private $members;
-    private $jury;
     private $inscriptions;
     private $token;
 
@@ -61,20 +59,16 @@ class SpCalPro_Admin {
         // Envoi lien app entraîneur
         // Inscriptions événements
         // Catégories saisie pour la modale
-        // Chantier 5 — Saisie notes jury via QR mobile
 
         // Module inscriptions
         $this->inscriptions = new SP_Cal_Inscriptions( $this->db );
 
-        // Module examens / pédagogie / dates grades
+        // Module dates des grades (import CSV) + synchronisation des vacances scolaires
         $this->exam = new SP_Cal_Exam( $this->db );
 
         // Module membres (élèves, palmares, cartes, fiche, licences, stats)
         $this->members = new SP_Cal_Members( $this->db, $this->token );
 
-        // Module jury d'examen
-        // Module jury d'examen
-$this->jury = new SP_Cal_Jury( $this->db );
 		SP_Front_Adhesion::get_instance();
         SP_Admin_Adhesions::get_instance();
         SP_Cal_Renouvellement::get_instance( $this->db );
@@ -102,11 +96,7 @@ $this->jury = new SP_Cal_Jury( $this->db );
         add_submenu_page( 'sp-cal-pro', '🖨️ Cartes membres','🖨️ Cartes membres','manage_options', 'sp-cal-print-cartes', array( $this, 'page_print_cartes' ) );
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );
         add_submenu_page( 'sp-cal-pro', 'Palmarès',       '🏆 Palmarès',    'manage_options', 'sp-cal-palmares',    array( $this, 'page_palmares' ) );
-        add_submenu_page( 'sp-cal-pro', 'Examens',    '🎓 Examens',     'manage_options', 'sp-cal-examens',     array( $this, 'page_examens' ) );
-        add_submenu_page( 'sp-cal-pro', 'Jury examen','⚖️ Jury',        'manage_options', 'sp-cal-jury',        array( $this, 'page_jury' ) );
-        add_submenu_page( 'sp-cal-pro', 'Guide jury',  '📖 Guide jury',  'manage_options', 'sp-cal-jury-guide',  array( $this, 'page_jury_guide' ) );
         add_submenu_page( 'sp-cal-pro', 'Paramètres',     'Paramètres',     'manage_options', 'sp-cal-settings',    array( $this, 'page_settings' ) );
-        add_submenu_page( 'sp-cal-pro', '📚 Pédagogie',   '📚 Pédagogie',   'manage_options', 'sp-cal-pedagogie',   array( $this, 'page_pedagogie' ) );
         add_submenu_page( 'sp-cal-pro', '📅 Dates grades','📅 Dates grades','manage_options', 'sp-cal-dates-grades',array( $this, 'page_dates_grades' ) );
         add_submenu_page( 'sp-cal-pro', '📡 Pointage QR','📡 Pointage QR', 'manage_options', 'sp-cal-pointage',    array( $this, 'page_pointage' ) );
         // Fiche élève : sous-page masquée (pas dans le menu, accessible via URL)
@@ -132,9 +122,6 @@ public function enqueue( $hook ) {
     ) );
     if ( strpos( $hook, 'sp-cal-trainers' ) !== false || strpos( $hook, 'sp-cal-eleves' ) !== false || strpos( $hook, 'sp-cal-fiche-eleve' ) !== false ) {
         wp_enqueue_media();
-    }
-    if ( strpos( $hook, 'sp-cal-jury' ) !== false ) {
-        $this->jury->enqueue_scripts( $hook );
     }
 }
 
@@ -2678,9 +2665,6 @@ function spCalBufToB64u(buf) {
         // capacité (cf. SP_Cal_Members::__construct(), doleances.md 09/09/2026) : ce
         // dispatcher-ci reste manage_options uniquement, mais la Secrétaire doit pouvoir
         // sauvegarder une fiche élève sans avoir cette capacité globale.
-
-        // Module exam — dispatch form submissions
-        $this->exam->handle_request();
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -3322,19 +3306,11 @@ function spCalBufToB64u(buf) {
 
     public function page_palmares() { $this->members->page_palmares(); }
 
-    public function page_examens() { $this->exam->page_examens(); }
-
     /* ══════════════════════════════════════════════════════════
        AJAX — Synchronisation vacances scolaires Zone C
     ══════════════════════════════════════════════════════════ */
 
     public function ajax_sync_vacances() { $this->exam->ajax_sync_vacances(); }
-
-    /* ══════════════════════════════════════════════════════════
-       PAGE PÉDAGOGIE — Contenu par grade
-    ══════════════════════════════════════════════════════════ */
-
-    public function page_pedagogie() { $this->exam->page_pedagogie(); }
 
     
     public function handle_dates_grades_actions() { $this->exam->handle_dates_grades_actions(); }
@@ -4560,27 +4536,6 @@ function spCalBufToB64u(buf) {
         }
         return $html;
     }
-
-    /* ══════════════════════════════════════════════════════════
-       PAGE JURY D'EXAMEN
-    ══════════════════════════════════════════════════════════ */
-
-    /* ══════════════════════════════════════════════════════════
-       PAGE JURY D'EXAMEN — Passe 1.5 (stepper)
-    ══════════════════════════════════════════════════════════ */
-
-    public function page_jury() { $this->jury->page_jury(); }
-
-    /* ══════════════════════════════════════════════════════════
-       CHANTIER 5 — Formulaire mobile saisie jury (via QR code)
-       Accès : admin.php?page=sp-cal-jury&jury_saisie=1&event_id=X&eleve_id=Y&nonce=Z
-    ══════════════════════════════════════════════════════════ */
-
-
-
-    public function ajax_jury_save_notes_mobile(): void { $this->jury->ajax_jury_save_notes_mobile(); }
-
-    public function page_jury_guide() { $this->jury->page_jury_guide(); }
 
     /* ══════════════════════════════════════════════════════════
        PAGE INSCRIPTIONS AUX ÉVÉNEMENTS
