@@ -322,6 +322,8 @@ public function enqueue( $hook ) {
             'adhesion'   => array( 'statut' => $adhesion, 'jours' => $jours, 'fin' => $fin_saison ),
             'assiduite'  => array( 'present' => $nb_present, 'total' => $nb_total, 'taux' => $taux ),
             'grade_vise' => $grade_vise ?: '',
+            // Carte « Mon prochain grade » : programme du Parcours + retour du dernier passage (class-passages.php).
+            'parcours'   => SP_Cal_Passages::get_instance()->donnees_eleve( $el ),
             // Passerelle vers la fiche complète (grades, présences, doboks) — unification fiche / PWA, étape 1.
             'fiche_url'  => ( $this->token && ! empty( $el->token ) ) ? $this->token->get_fiche_url( $el->token ) : '',
             'carte' => array(
@@ -752,6 +754,25 @@ window.addEventListener('error', function(e) {
 .spcal-grade-section-title{font-size:12px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;}
 .spcal-grade-next{font-size:13px;color:rgba(255,255,255,.7);}
 .spcal-grade-next strong{color:#0f70b7;}
+.spcal-pg-card{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:20px;border-left:3px solid #0f70b7;}
+.spcal-pg-card.admis{border-left-color:#22c55e;}
+.spcal-pg-card.ajourne{border-left-color:#f59e0b;}
+.spcal-pg-res{font-size:16px;font-weight:700;margin-bottom:4px;}
+.spcal-pg-sub{font-size:12px;color:rgba(255,255,255,.55);margin:6px 0;}
+.spcal-pg-belt{display:inline-flex;align-items:center;gap:7px;}
+.spcal-pg-belt i{display:inline-block;width:24px;height:10px;border-radius:3px;border:1px solid rgba(255,255,255,.35);}
+.spcal-pg-crits{list-style:none;margin:8px 0 0;padding:0;}
+.spcal-pg-crits li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px;}
+.spcal-pg-crits small{display:block;color:rgba(255,255,255,.55);font-size:12px;margin-top:2px;}
+.spcal-pg-badge{flex-shrink:0;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.75);}
+.spcal-pg-badge.ok{background:rgba(34,197,94,.15);color:#4ade80;}
+.spcal-pg-badge.rev{background:rgba(245,158,11,.15);color:#fbbf24;}
+.spcal-pg-badge.non{background:rgba(239,68,68,.15);color:#f87171;}
+.spcal-pg-revoir{margin-top:10px;font-size:13px;color:#fcd34d;line-height:1.45;}
+.spcal-pg-rem{margin-top:8px;font-size:13px;font-style:italic;color:rgba(255,255,255,.7);}
+.spcal-pg-prevu{font-size:13px;color:#7cc0f5;margin:6px 0;}
+.spcal-pg-video{display:inline-block;margin-top:10px;background:#0f70b7;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:20px;}
+.spcal-pg-rappel{width:100%;border:0;font:inherit;text-align:left;cursor:pointer;}
 
 /* ── CARTE ───────────────────────────────────────────────────── */
 #spcal-carte{padding:20px 16px;}
@@ -882,6 +903,8 @@ window.addEventListener('error', function(e) {
                 <div id="spcal-greeting-sub"></div>
                 <div id="spcal-adhesion-wrap"></div>
                 <div id="spcal-assiduite-wrap"></div>
+                <!-- Rappel « passage de grade à venir » — renderGradeRappel() -->
+                <div id="spcal-grade-rappel"></div>
                 <div id="spcal-fiche-wrap"></div>
                 <div class="spcal-section-title">Prochains cours</div>
                 <div id="spcal-prochains-cours"><div class="spcal-empty">Chargement…</div></div>
@@ -1489,14 +1512,98 @@ function renderCalendrier() {
     document.getElementById('spcal-cal-list').innerHTML = html;
 }
 
-/* ── Prochain grade (onglet Carte) ───────────────────────────── */
+/* ── Mon prochain grade (onglet Carte) ───────────────────────────
+   Données : gEleve.parcours (SP_Cal_Passages::donnees_eleve()) — programme du grade suivant
+   dans TKD Parcours, passage à venir, retour du dernier passage validé. Sans TKD Parcours,
+   repli sur l'ancien affichage (grade_vise de la table de progression). */
+var SPCAL_NIV = { 2: ['Acquis', 'ok'], 1: ['À revoir', 'rev'], 0: ['Non acquis', 'non'] };
+var SPCAL_COUL = { blanche:'#f8fafc', jaune:'#facc15', orange:'#fb923c', verte:'#22c55e', violette:'#8b5cf6', bleue:'#3b82f6', rouge:'#ef4444', noire:'#111' };
+
+function spCalCeinture(grade) {
+    var g = String(grade || '').toLowerCase(), cols = [];
+    if (/poom/.test(g)) cols = [SPCAL_COUL.rouge, SPCAL_COUL.noire];
+    else if (/\bdan\b/.test(g)) cols = [SPCAL_COUL.noire];
+    else g.replace(/\*/g, '').split(/[\s\/]+/).forEach(function(m){ if (SPCAL_COUL[m]) cols.push(SPCAL_COUL[m]); });
+    if (!cols.length) cols = ['#475569'];
+    var fond = cols.length > 1 ? 'linear-gradient(90deg,' + cols[0] + ' 50%,' + cols[1] + ' 50%)' : cols[0];
+    return '<span class="spcal-pg-belt"><i style="background:' + fond + '"></i>' + esc(grade) + '</span>';
+}
+function spCalNote(n) { return (Math.round(n * 100) / 100).toString().replace('.', ','); }
+function spCalLienVideo(url, txt) {
+    return /^https?:\/\//.test(url || '') ? '<a class="spcal-pg-video" href="' + esc(url) + '" target="_blank" rel="noopener">▶ ' + esc(txt) + '</a>' : '';
+}
+
 function renderGradeProgression() {
     var el   = gEleve;
     var wrap = document.getElementById('spcal-grade-progression');
     if (!wrap) return;
-    if (!el.grade_vise) { wrap.innerHTML = ''; return; }
-    wrap.innerHTML = '<div class="spcal-grade-section-title">Prochain grade</div>' +
-        '<div class="spcal-grade-next"><strong>' + esc(el.grade_vise) + '</strong></div>';
+    renderGradeRappel();
+    var pc = el.parcours;
+    if (!pc) {
+        wrap.innerHTML = el.grade_vise ? '<div class="spcal-grade-section-title">Prochain grade</div>' +
+            '<div class="spcal-grade-next"><strong>' + esc(el.grade_vise) + '</strong></div>' : '';
+        return;
+    }
+    var h = '', r = pc.retour, p = pc.prochain;
+
+    // Retour du dernier passage
+    if (r) {
+        var admis = r.decision === 'admis';
+        h += '<div class="spcal-grade-section-title">Dernier passage de grade</div>'
+           + '<div class="spcal-pg-card ' + (admis ? 'admis' : 'ajourne') + '">'
+           + '<div class="spcal-pg-res">' + (admis ? '🎉 Admis(e) : ' + spCalCeinture(r.grade_obtenu) : 'Pas encore validé : ' + spCalCeinture(r.grade_vise)) + '</div>'
+           + '<div class="spcal-pg-sub">' + esc(r.date_fr) + (r.moyenne != null ? ' · moyenne ' + spCalNote(r.moyenne) + '/10' : '') + '</div>'
+           + '<ul class="spcal-pg-crits">';
+        r.criteres.forEach(function(c) {
+            var badge = c.note != null ? '<span class="spcal-pg-badge">' + spCalNote(c.note) + '/10</span>'
+                      : c.niveau != null ? '<span class="spcal-pg-badge ' + SPCAL_NIV[c.niveau][1] + '">' + SPCAL_NIV[c.niveau][0] + '</span>' : '';
+            h += '<li><span><strong>' + esc(c.libelle) + '</strong>' + (c.detail ? '<small>' + esc(c.detail) + '</small>' : '') + '</span>' + badge + '</li>';
+        });
+        h += '</ul>';
+        if (r.a_revoir.length) {
+            h += '<div class="spcal-pg-revoir"><strong>À travailler :</strong> ' + r.a_revoir.map(esc).join(', ')
+               + (admis ? '' : '<br>Courage : retravaillez ces points pour le prochain passage.') + '</div>'
+               + spCalLienVideo(r.video_url, 'Revoir la vidéo du programme');
+        }
+        r.remarques.forEach(function(t) { h += '<div class="spcal-pg-rem">« ' + esc(t) + ' »</div>'; });
+        h += '</div>';
+    }
+
+    // Prochain grade et son programme
+    if (p) {
+        h += '<div class="spcal-grade-section-title">Mon prochain grade</div><div class="spcal-pg-card">'
+           + '<div class="spcal-pg-res">' + spCalCeinture(p.grade) + '</div>';
+        if (pc.prevu) h += '<div class="spcal-pg-prevu">📅 Inscrit(e) au passage de grade du ' + esc(pc.prevu.date_fr) + '</div>';
+        if (p.dan) {
+            h += '<p class="spcal-pg-sub">L\'examen de ceinture noire (Dan) se passe hors du club : parlez-en avec votre entraîneur.</p>';
+        } else {
+            if (p.programme && p.programme.length) {
+                h += '<div class="spcal-pg-sub">Programme à préparer</div><ul class="spcal-pg-crits">';
+                p.programme.forEach(function(c) {
+                    h += '<li><span><strong>' + esc(c.libelle) + '</strong><small>' + esc(c.detail) + '</small></span></li>';
+                });
+                h += '</ul>';
+            }
+            if (p.ans_avant > 0) h += '<p class="spcal-pg-sub">Âge conseillé pour ce grade : ' + esc(p.min_age) + ' ans.</p>';
+            h += spCalLienVideo(p.video_url, 'Voir la vidéo du programme');
+        }
+        h += '</div>';
+    } else if (pc.prevu) {
+        h += '<div class="spcal-grade-section-title">Mon prochain grade</div><div class="spcal-pg-card">'
+           + '<div class="spcal-pg-prevu">📅 Inscrit(e) au passage de grade du ' + esc(pc.prevu.date_fr) + (pc.prevu.grade_vise ? ' : ' + spCalCeinture(pc.prevu.grade_vise) : '') + '</div></div>';
+    }
+    wrap.innerHTML = h;
+}
+
+/* Rappel sur l'Accueil quand l'adhérent est inscrit à un passage à venir (renvoie vers l'onglet Carte). */
+function renderGradeRappel() {
+    var wrap = document.getElementById('spcal-grade-rappel');
+    if (!wrap) return;
+    var pc = gEleve && gEleve.parcours;
+    if (!pc || !pc.prevu) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = '<button class="spcal-fiche-link spcal-pg-rappel" onclick="spCalNav(\'carte\', document.getElementById(\'spcal-nav-carte\'))">'
+        + '<span class="spcal-fl-ico">🥋</span><span><strong>Passage de grade</strong><small>' + esc(pc.prevu.date_fr)
+        + (pc.prevu.grade_vise ? ' · objectif ' + esc(pc.prevu.grade_vise) : '') + ' — voir le programme</small></span><span class="spcal-fl-go">›</span></button>';
 }
 
 /* ── Événements & Inscriptions ───────────────────────────────── */

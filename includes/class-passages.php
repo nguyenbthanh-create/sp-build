@@ -311,14 +311,8 @@ class SP_Cal_Passages {
 	private function grille( string $cat, string $grade_vise ): array {
 		$out = [];
 		$g   = $this->entree_grade( $cat, $grade_vise );
-		if ( $g ) {
-			$prog = [ 'poomsae' => 'Poomsae', 'tech_bras' => 'Bras', 'tech_jambes' => 'Jambes' ];
-			foreach ( $prog as $champ => $libelle ) {
-				$txt = trim( preg_replace( '/\s*[\r\n]+\s*/', ' / ', (string) $g[ $champ ] ) );
-				if ( $txt === '' ) continue;
-				$out[] = [ 'cle' => 'p:' . $champ, 'libelle' => $libelle, 'detail' => $txt, 'type' => 'niveaux',
-				           'seuil_acquis' => null, 'seuil_revoir' => null, 'unite' => '' ];
-			}
+		foreach ( $g ? self::programme( $g ) : [] as $p ) {
+			$out[] = $p + [ 'type' => 'niveaux', 'seuil_acquis' => null, 'seuil_revoir' => null, 'unite' => '' ];
 		}
 		$cle_vise = self::cle_grade( $grade_vise );
 		foreach ( $this->get_epreuves( true ) as $ep ) {
@@ -336,6 +330,16 @@ class SP_Cal_Passages {
 				'seuil_revoir' => $ep->seuil_revoir !== null ? floatval( $ep->seuil_revoir ) : null,
 				'unite'        => $ep->unite,
 			];
+		}
+		return $out;
+	}
+
+	/** Programme d'un grade du Parcours : [ [ 'cle', 'libelle', 'detail' ], … ] (champs vides ignorés). */
+	private static function programme( array $g ): array {
+		$out = [];
+		foreach ( [ 'poomsae' => 'Poomsae', 'tech_bras' => 'Bras', 'tech_jambes' => 'Jambes' ] as $champ => $libelle ) {
+			$txt = trim( preg_replace( '/\s*[\r\n]+\s*/', ' / ', (string) $g[ $champ ] ) );
+			if ( $txt !== '' ) $out[] = [ 'cle' => 'p:' . $champ, 'libelle' => $libelle, 'detail' => $txt ];
 		}
 		return $out;
 	}
@@ -493,6 +497,110 @@ class SP_Cal_Passages {
 			] );
 		}
 		return $out;
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// APPLICATION ADHÉRENT — carte « Mon prochain grade » (phase 2)
+	// ══════════════════════════════════════════════════════════════════════
+
+	/** Durée pendant laquelle le retour du dernier passage reste affiché dans l'application. */
+	const JOURS_RETOUR = 183;
+
+	/**
+	 * Données de la carte « Mon prochain grade » (route /eleve/me de l'application) :
+	 *   prochain : grade suivant dans le Parcours, son programme et sa vidéo (dan = true si le
+	 *              suivant est un Dan : examen hors club, pas de programme affiché) ;
+	 *   prevu    : passage à venir où l'élève est déjà candidat ;
+	 *   retour   : dernier passage validé (moins de JOURS_RETOUR jours) — décision, chaque
+	 *              critère, points à revoir, remarques des juges (sans leur nom).
+	 * Le retour reprend resultat_candidat(), le même calcul que l'écran du président.
+	 *
+	 * @param object $el ligne de sp_cal_eleves
+	 * @return array|null null si rien à montrer (pas de Parcours ni de passage)
+	 */
+	public function donnees_eleve( $el ): ?array {
+		global $wpdb;
+		$eid = intval( $el->id );
+		$out = [ 'prochain' => null, 'prevu' => null, 'retour' => null ];
+
+		// ── Prochain grade
+		$ch = $this->chaine( self::cat_parcours( (string) $el->categorie_age ) );
+		if ( $ch ) {
+			$i = trim( (string) $el->grade ) === '' ? 0 : self::position( $ch, (string) $el->grade );
+			if ( $i >= 0 && isset( $ch[ $i + 1 ] ) ) {
+				$g = $ch[ $i + 1 ];
+				if ( self::est_dan( $g['grade'] ) ) {
+					$out['prochain'] = [ 'grade' => $g['grade'], 'dan' => true ];
+				} else {
+					$age = self::age_a( $el, current_time( 'Y-m-d' ) );
+					$out['prochain'] = [
+						'grade'      => $g['grade'],
+						'dan'        => false,
+						'programme'  => array_map( static fn( $p ) => [ 'libelle' => $p['libelle'], 'detail' => $p['detail'] ], self::programme( $g ) ),
+						'video_url'  => esc_url_raw( $g['video_url'] ),
+						'min_age'    => $g['min_age'],
+						// Écart d'âge positif = encore trop jeune (information, jamais bloquant).
+						'ans_avant'  => ( $g['min_age'] !== null && $age !== null ) ? max( 0, $g['min_age'] - $age ) : 0,
+					];
+				}
+			}
+		}
+
+		$tp = self::t( 'passages' );
+		$tc = self::t( 'passage_candidats' );
+
+		// ── Passage à venir
+		$prevu = $wpdb->get_row( $wpdb->prepare(
+			"SELECT p.date, c.grade_vise FROM $tc c INNER JOIN $tp p ON p.id = c.passage_id
+			 WHERE c.eleve_id = %d AND p.statut IN ('preparation','ouvert') AND p.date >= %s ORDER BY p.date ASC LIMIT 1",
+			$eid, current_time( 'Y-m-d' )
+		) );
+		if ( $prevu ) $out['prevu'] = [ 'date_fr' => self::date_fr( $prevu->date ), 'grade_vise' => $prevu->grade_vise ];
+
+		// ── Retour du dernier passage validé
+		$row = $wpdb->get_row( $wpdb->prepare(
+			"SELECT c.id AS cid FROM $tc c INNER JOIN $tp p ON p.id = c.passage_id
+			 WHERE c.eleve_id = %d AND p.statut = 'valide' AND c.decision <> '' AND p.date >= %s ORDER BY p.date DESC, p.id DESC LIMIT 1",
+			$eid, gmdate( 'Y-m-d', current_time( 'timestamp' ) - self::JOURS_RETOUR * DAY_IN_SECONDS )
+		) );
+		if ( $row ) {
+			$cand = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tc WHERE id = %d", intval( $row->cid ) ) );
+			$p    = $this->get_passage( intval( $cand->passage_id ) );
+			$cand->criteres   = json_decode( (string) $cand->criteres, true ) ?: [];
+			$cand->arbitrages = json_decode( (string) $cand->arbitrages, true ) ?: [];
+			$evals = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . self::t( 'passage_evaluations' ) . ' WHERE candidat_id = %d', intval( $cand->id ) ) );
+			foreach ( $evals as $ev ) $ev->juge_id = intval( $ev->juge_id );
+			$res   = $this->resultat_candidat( $cand, $evals, $p, [] );
+			$poom  = $cand->mode === 'poom';
+			$crits = [];
+			$revoir = [];
+			foreach ( $res['criteres'] as $l ) {
+				$c = [ 'libelle' => $l['libelle'], 'detail' => $l['detail'] ];
+				if ( $poom && isset( $l['moyenne'] ) ) {
+					$c['note'] = $l['moyenne'];
+					if ( $l['moyenne'] < floatval( $p->poom_seuil ) ) $revoir[] = $l['libelle'];
+				} elseif ( isset( $l['niveau'] ) ) {
+					$c['niveau'] = $l['niveau'];
+					if ( $l['niveau'] !== self::ACQUIS ) $revoir[] = $l['libelle'];
+				}
+				$crits[] = $c;
+			}
+			$g_vise = $this->entree_grade( (string) $cand->categorie, (string) $cand->grade_vise );
+			$out['retour'] = [
+				'date_fr'      => self::date_fr( $p->date ),
+				'grade_vise'   => $cand->grade_vise,
+				'decision'     => $cand->decision,
+				'grade_obtenu' => $cand->grade_obtenu,
+				'mode'         => $cand->mode,
+				'moyenne'      => $res['moyenne'] ?? null,
+				'criteres'     => $crits,
+				'a_revoir'     => $revoir,
+				'remarques'    => array_values( array_map( static fn( $r ) => $r['texte'], $res['remarques'] ) ),
+				'video_url'    => $g_vise ? esc_url_raw( $g_vise['video_url'] ) : '',
+			];
+		}
+
+		return ( $out['prochain'] || $out['prevu'] || $out['retour'] ) ? $out : null;
 	}
 
 	private static function candidat_public( $c ): array {
