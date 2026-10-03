@@ -709,7 +709,7 @@ window.addEventListener('error', function(e) {
 .spcal-cours-right{text-align:right;flex-shrink:0;}
 .spcal-cours-heure{font-size:14px;font-weight:600;color:#0f70b7;}
 .spcal-cours-card.today .spcal-cours-heure{color:#22c55e;}
-.spcal-cours-date{font-size:11px;color:rgba(255,255,255,.35);margin-top:2px;}
+.spcal-cours-date{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px;}
 .spcal-cours-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-top:4px;display:inline-block;}
 .spcal-badge-today{background:#22c55e;color:#fff;}
 .spcal-badge-tomorrow{background:#f59e0b;color:#111;}
@@ -1033,6 +1033,16 @@ function fmtDate(ymd) {
     var p = ymd.split('-');
     return p[2]+'/'+p[1]+'/'+p[0];
 }
+/* Date d'un cours précédée du jour de la semaine (« Lundi 05/10/2026 ») : la date seule ne
+   suffit pas à se situer dans la semaine. Date construite en local (pas new Date('Y-m-d'),
+   lue en UTC) pour ne pas décaler le jour. */
+var JOURS_SEMAINE = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+function fmtDateJour(ymd) {
+    if (!ymd) return '';
+    var p = ymd.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return JOURS_SEMAINE[d.getDay()] + ' ' + fmtDate(ymd);
+}
 function fmtHeure(h) { return h ? h.replace(':','h').substring(0,5) : ''; }
 function isToday(ymd)    { return ymd === new Date().toISOString().slice(0,10); }
 function isTomorrow(ymd) {
@@ -1332,7 +1342,7 @@ function renderAccueil() {
                 '</div>'+
                 '<div class="spcal-cours-right">'+
                 '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'+
-                '<div class="spcal-cours-date">'+esc(fmtDate(c.date))+'</div>'+
+                '<div class="spcal-cours-date">'+esc(fmtDateJour(c.date))+'</div>'+
                 badge+
                 '</div>'+
                 '</div>';
@@ -1469,7 +1479,7 @@ function renderCalendrier() {
             '</div>'+
             '<div class="spcal-cours-right">'+
             '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'+
-            '<div class="spcal-cours-date">'+esc(fmtDate(c.date))+'</div>'+
+            '<div class="spcal-cours-date">'+esc(fmtDateJour(c.date))+'</div>'+
             badge+
             '</div>'+
             '</div>';
@@ -2095,7 +2105,7 @@ function spCalLoadCalendrierClub(pin) {
                       + '</div>'
                       + '<div class="spcal-cours-right">'
                       + '<div class="spcal-cours-heure">'+esc(fmtHeure(c.heure_debut))+'</div>'
-                      + '<div class="spcal-cours-date">'+esc(fmtDate(c.date))+'</div>'
+                      + '<div class="spcal-cours-date">'+esc(fmtDateJour(c.date))+'</div>'
                       + badge
                       + '</div></div>';
             });
