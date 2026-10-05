@@ -2721,6 +2721,53 @@ $wpdb->query( "CREATE TABLE $ts (
     }
 
     /**
+     * Adhérents actifs (avec un email) concernés par la catégorie d'un créneau récurrent —
+     * champ texte libre de la page Créneaux (« TKD, Boxe, Renfo… », « Enfant », « Renfo &
+     * Ados/Adultes »…), qui n'a pas reçu la normalisation discipline × âge des événements
+     * ponctuels (18/09/2026). Chaque fragment (séparé par des virgules) est :
+     *   - comparé tel quel à la discipline de l'adhérent (categorie_saisie, sans tenir compte
+     *     des majuscules) — comportement d'origine, désormais par fragment ;
+     *   - traduit en discipline / tranche d'âge (migrer_fragment_categorie_evenement()) puis
+     *     appliqué avec la règle des événements (evenement_concerne()).
+     * Un fragment non reconnu n'élargit pas l'envoi à tout le club (contrairement aux
+     * événements) : mieux vaut aucun mail, signalé à l'admin, qu'un mail à tout le monde.
+     * Catégorie vide = tout le club, comme avant.
+     *
+     * @return object[] lignes id, prenom, nom, email, email_parent
+     */
+    public function get_eleves_concernes_creneau( $categorie ) {
+        global $wpdb;
+        $eleves = $wpdb->get_results(
+            "SELECT * FROM {$this->table_eleves()} WHERE actif = 1 AND ( email != '' OR email_parent != '' )"
+        );
+        $fragments = array_filter( array_map( 'trim', explode( ',', (string) $categorie ) ) );
+        if ( ! $fragments ) return $eleves;
+        // « Général » est aussi le libellé affiché d'un créneau sans catégorie : tout le club.
+        foreach ( $fragments as $f ) {
+            if ( in_array( mb_strtolower( $f ), array( 'général', 'general', 'tous', 'tout le club' ), true ) ) return $eleves;
+        }
+
+        $codes = array_map( 'mb_strtoupper', $fragments );
+        $disc  = array();
+        $ages  = array();
+        foreach ( $fragments as $f ) {
+            $res = $this->migrer_fragment_categorie_evenement( $f );
+            if ( ! empty( $res['discipline'] ) && $res['discipline'] !== 'Autre' ) $disc[] = $res['discipline'];
+            if ( ! empty( $res['age'] ) ) $ages[] = $res['age'];
+        }
+        $cible = ( $disc || $ages ) ? (object) array(
+            'cours_discipline'     => implode( ',', array_unique( $disc ) ),
+            'cours_age_categories' => implode( ',', array_unique( $ages ) ),
+        ) : null;
+
+        return array_values( array_filter( $eleves, function ( $el ) use ( $codes, $cible ) {
+            $saisie = trim( (string) ( $el->categorie_saisie ?? '' ) );
+            if ( $saisie !== '' && in_array( mb_strtoupper( $saisie ), $codes, true ) ) return true;
+            return $cible && $this->evenement_concerne( $cible, $saisie, trim( (string) ( $el->categorie_age ?? '' ) ) );
+        } ) );
+    }
+
+    /**
      * L'événement vise-t-il la discipline et la tranche d'âge de l'adhérent ? Axes
      * cours_discipline (Taekwondo / Renforcement musculaire / Autre) × cours_age_categories
      * (18/09/2026). Pas de ciblage, discipline « Autre » ou « Tout âge » = tout le club.

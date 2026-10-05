@@ -520,7 +520,7 @@
                 var notifier = $('#sp-annul-notifier').is(':checked') ? 1 : 0;
                 var grouper  = (notifier && $('#sp-annul-grouper').is(':checked')) ? 1 : 0;
                 CAL.closeAnnulModal();
-                CAL.cancelSlot(d.slotId, d.date, motif, notifier, grouper);
+                CAL.cancelSlot(d.slotId, d.date, motif, notifier, grouper, d.categorie);
             });
             setTimeout(function(){ $('#sp-annul-motif').focus(); }, 80);
         },
@@ -529,7 +529,7 @@
             $('#sp-annul-modal').css('display','none');
         },
 
-        cancelSlot: function (slotId, date, motif, notifier, grouper) {
+        cancelSlot: function (slotId, date, motif, notifier, grouper, categorie) {
             motif    = motif    || '';
             notifier = notifier || 0;
             grouper  = grouper  || 0;
@@ -551,6 +551,13 @@
                     // Badge pending si groupé
                     if (grouper && notifier && res.data && res.data.pending_count > 0) {
                         CAL.updatePendingBadge(res.data.pending_count);
+                    }
+                    // Envoi immédiat : dire combien d'adhérents ont été prévenus (avant, rien
+                    // ne s'affichait et un envoi à 0 destinataire passait inaperçu).
+                    if (notifier && !grouper && res.data && typeof res.data.sent !== 'undefined') {
+                        alert(res.data.sent > 0
+                            ? '📧 Cours annulé : ' + res.data.sent + ' adhérent(s) prévenu(s) par email.'
+                            : '⚠️ Cours annulé, mais aucun adhérent n\'a été trouvé pour la catégorie de ce créneau (« ' + (categorie || '—') + ' ») : aucun email envoyé.\n\nVérifiez la catégorie du créneau (page Créneaux) : TKD, Renfo, Baby, Enfant, Ado/adulte…');
                     }
                 } else {
                     alert('Erreur : ' + res.data);

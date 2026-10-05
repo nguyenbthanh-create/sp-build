@@ -977,8 +977,6 @@ class SpCalPro_Notifications {
     public function send_annulation_cours( array $annulations ) {
         if ( empty( $annulations ) ) return 0;
 
-        global $wpdb;
-        $tel      = $this->db->table_eleves();
         $nom_club = get_option( 'blogname', 'Club' );
         $headers  = array( 'Content-Type: text/html; charset=UTF-8' );
         $sent     = 0;
@@ -987,24 +985,9 @@ class SpCalPro_Notifications {
         $map = array();
 
         foreach ( $annulations as $item ) {
-            $categorie = $item['categorie'] ?? '';
-
-            if ( $categorie ) {
-                $eleves = $wpdb->get_results( $wpdb->prepare(
-                    "SELECT id, prenom, nom, email, email_parent
-                     FROM $tel
-                     WHERE actif = 1
-                       AND categorie_saisie = %s
-                       AND ( email != '' OR email_parent != '' )",
-                    $categorie
-                ) );
-            } else {
-                $eleves = $wpdb->get_results(
-                    "SELECT id, prenom, nom, email, email_parent
-                     FROM $tel
-                     WHERE actif = 1 AND ( email != '' OR email_parent != '' )"
-                );
-            }
+            // Avant : categorie_saisie = catégorie du créneau, à l'identique — un créneau
+            // « Enfant » ou « TKD, Renfo » ne trouvait personne et aucun mail ne partait.
+            $eleves = $this->db->get_eleves_concernes_creneau( $item['categorie'] ?? '' );
 
             foreach ( $eleves as $el ) {
                 $dest = ! empty( $el->email_parent ) ? $el->email_parent : $el->email;
