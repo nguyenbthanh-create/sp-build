@@ -212,6 +212,7 @@
             $('#sp-modal-close').on('click', CAL.closeModal);
             $('#sp-event-modal').on('click', function(e){ if($(e.target).is('#sp-event-modal')) CAL.closeModal(); });
             $('#btn-new-event').on('click', function(){ CAL.openModalForm(CAL.currentDate, null); });
+            $('#btn-annul-lot').on('click', function(){ CAL.openLotModal(); });
             $('#btn-quick-presence').on('click', function(){
                 var dayEvs = CAL.events.filter(function(ev){
                     return ev.date === CAL.currentDate && (ev.type==='cours_recurrent' || ev.type==='cours');
@@ -567,6 +568,154 @@
         restoreSlot: function (annulId) {
             $.post(SpCal.ajaxurl,{action:'sp_cal_delete_event',nonce:SpCal.nonce,event_id:annulId},function(res){
                 if(res.success){CAL.closeModal();CAL.loadMonth();} else alert('Erreur.');
+            });
+        },
+
+        /* ═══════════════════════════════ ANNULATION PAR LOT (05/10/2026)
+           Vacances scolaires : le club maintient environ la moitié des cours (1 semaine sur 2
+           ou 1 cours sur 2). On choisit une période, on coche les cours à annuler, un seul
+           motif, un seul mail par adhérent (cours annulés + cours maintenus). */
+        lotCours: [],
+
+        initLotModal: function () {
+            if ($('#sp-lot-modal').length) return;
+            var opts = '<option value="">— Choisir des dates —</option>';
+            (CAL.vacances || []).forEach(function (v, i) {
+                if (v.end < CAL.todayStr) return; // périodes passées inutiles
+                opts += '<option value="' + i + '">' + CAL.esc((v.label || 'Vacances') + ' (' + v.start.split('-').reverse().join('/') + ' → ' + v.end.split('-').reverse().join('/') + ')') + '</option>';
+            });
+            $('body').append(
+                '<div id="sp-lot-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">'
+                + '<div style="background:#fff;border-radius:14px;padding:22px 26px;width:760px;max-width:94vw;max-height:92vh;overflow:auto;box-sizing:border-box;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.22);">'
+                + '<h3 style="margin:0 0 4px;font-size:17px;">🗓️ Annuler des cours par lot</h3>'
+                + '<p style="margin:0 0 12px;font-size:13px;color:#6b7280;">Cochez les cours à annuler sur la période (ex. vacances : 1 semaine sur 2, ou 1 cours sur 2). Les cours non cochés sont maintenus.</p>'
+                + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">'
+                + '<select id="sp-lot-vac" style="max-width:100%;">' + opts + '</select>'
+                + '<input type="date" id="sp-lot-debut"> → <input type="date" id="sp-lot-fin">'
+                + '<button type="button" id="sp-lot-charger" class="button">Afficher les cours</button></div>'
+                + '<div id="sp-lot-raccourcis" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>'
+                + '<div id="sp-lot-liste" style="flex:1;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;min-height:120px;max-height:46vh;flex-shrink:0;padding:4px 10px;font-size:13px;"><p style="color:#94a3b8;">Choisissez une période.</p></div>'
+                + '<label style="display:block;font-size:13px;font-weight:600;margin:12px 0 4px;">Motif (repris dans le mail)</label>'
+                + '<textarea id="sp-lot-motif" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;">Pendant les vacances scolaires, une partie des cours est maintenue. Voici le détail de vos cours sur la période.</textarea>'
+                + '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;"><input type="checkbox" id="sp-lot-notifier" checked> 📧 Prévenir les adhérents : un seul email chacun, avec ses cours annulés et ses cours maintenus</label>'
+                + '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:16px;flex-wrap:wrap;">'
+                + '<button type="button" id="sp-lot-fermer" style="background:#f1f5f9;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;">Fermer</button>'
+                + '<span style="display:flex;gap:8px;flex-wrap:wrap;">'
+                + '<button type="button" id="sp-lot-retablir" style="display:none;background:#fff;border:1px solid #15803d;color:#15803d;border-radius:8px;padding:9px 16px;cursor:pointer;"></button>'
+                + '<button type="button" id="sp-lot-annuler" disabled style="background:#ef4444;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-weight:600;cursor:pointer;">🚫 Annuler 0 cours</button>'
+                + '</span></div></div></div>'
+            );
+            $(document).on('change', '#sp-lot-vac', function () {
+                var v = (CAL.vacances || [])[this.value];
+                if (v) { $('#sp-lot-debut').val(v.start); $('#sp-lot-fin').val(v.end); CAL.loadLot(); }
+            });
+            $(document).on('click', '#sp-lot-charger', CAL.loadLot);
+            $(document).on('click', '#sp-lot-fermer', function () { $('#sp-lot-modal').hide(); });
+            $(document).on('click', '#sp-lot-modal', function (e) { if ($(e.target).is('#sp-lot-modal')) $('#sp-lot-modal').hide(); });
+            $(document).on('change', '#sp-lot-liste input', function () {
+                var $c = $(this);
+                if ($c.hasClass('sp-lot-jour')) {
+                    $('#sp-lot-liste input.sp-lot-cours[data-date="' + $c.data('date') + '"]:not(.sp-lot-deja)').prop('checked', this.checked);
+                }
+                CAL.majLotBoutons();
+            });
+            $(document).on('click', '.sp-lot-semaine', function () {
+                var sem = $(this).data('sem'), $c = $('#sp-lot-liste input.sp-lot-cours[data-sem="' + sem + '"]:not(.sp-lot-deja)');
+                var tout = $c.length && $c.filter(':checked').length === $c.length;
+                $c.prop('checked', !tout);
+                CAL.majLotBoutons();
+            });
+            $(document).on('click', '#sp-lot-annuler', function () { CAL.envoyerLot('annuler'); });
+            $(document).on('click', '#sp-lot-retablir', function () { CAL.envoyerLot('retablir'); });
+        },
+
+        openLotModal: function () {
+            CAL.initLotModal();
+            $('#sp-lot-modal').css('display', 'flex');
+        },
+
+        /** Lundi de la semaine d'une date AAAA-MM-JJ (clé des raccourcis « semaine »). */
+        lundiDe: function (ds) {
+            var d = new Date(ds + 'T12:00:00'); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+            return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+        },
+
+        loadLot: function () {
+            var debut = $('#sp-lot-debut').val(), fin = $('#sp-lot-fin').val();
+            if (!debut || !fin || fin < debut) { alert('Choisissez une date de début et une date de fin.'); return; }
+            $('#sp-lot-liste').html('<p style="color:#94a3b8;">Chargement…</p>');
+            $.post(SpCal.ajaxurl, { action: 'sp_cal_lot_occurrences', nonce: SpCal.nonce, debut: debut, fin: fin }, function (res) {
+                if (!res.success) { $('#sp-lot-liste').html('<p style="color:#b91c1c;">' + CAL.esc(res.data || 'Erreur') + '</p>'); return; }
+                CAL.lotCours = res.data.cours;
+                CAL.renderLot();
+            });
+        },
+
+        renderLot: function () {
+            var cours = CAL.lotCours, html = '', jourCourant = '', semaines = [];
+            if (!cours.length) {
+                $('#sp-lot-liste').html('<p style="color:#94a3b8;">Aucun cours récurrent sur cette période.</p>');
+                $('#sp-lot-raccourcis').hide(); CAL.majLotBoutons(); return;
+            }
+            cours.forEach(function (c) {
+                var sem = CAL.lundiDe(c.date);
+                if (semaines.indexOf(sem) === -1) semaines.push(sem);
+                if (c.date !== jourCourant) {
+                    jourCourant = c.date;
+                    var lib = new Date(c.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+                    html += '<div style="margin:10px 0 4px;padding-top:6px;border-top:1px solid #f1f5f9;font-weight:700;">'
+                        + '<label><input type="checkbox" class="sp-lot-jour" data-date="' + c.date + '"> ' + CAL.esc(lib.charAt(0).toUpperCase() + lib.slice(1)) + '</label></div>';
+                }
+                var h = (c.heure_debut || '') + (c.heure_fin ? ' – ' + c.heure_fin : '');
+                html += '<label style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 18px;' + (c.annule ? 'color:#94a3b8;' : '') + '">'
+                    + '<input type="checkbox" class="sp-lot-cours' + (c.annule ? ' sp-lot-deja' : '') + '" data-date="' + c.date + '" data-slot="' + c.slot_id + '" data-sem="' + sem + '">'
+                    + '<span style="min-width:96px;">' + CAL.esc(h) + '</span><span' + (c.annule ? ' style="text-decoration:line-through;"' : '') + '>' + CAL.esc(c.titre) + '</span>'
+                    + (c.libelle ? '<span style="font-size:11px;color:#64748b;">' + CAL.esc(c.libelle) + '</span>' : '')
+                    + (c.annule ? '<span style="font-size:11px;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 6px;">déjà annulé — cocher pour rétablir</span>' : '')
+                    + '</label>';
+            });
+            $('#sp-lot-liste').html(html);
+            var r = '';
+            semaines.forEach(function (s) {
+                r += '<button type="button" class="button button-small sp-lot-semaine" data-sem="' + s + '">Semaine du ' + s.split('-').reverse().slice(0, 2).join('/') + '</button>';
+            });
+            $('#sp-lot-raccourcis').html(r + '<span style="font-size:12px;color:#64748b;align-self:center;">(cocher / décocher toute la semaine)</span>').css('display', 'flex');
+            CAL.majLotBoutons();
+        },
+
+        lotSelection: function (deja) {
+            var out = [];
+            $('#sp-lot-liste input.sp-lot-cours:checked').each(function () {
+                if ($(this).hasClass('sp-lot-deja') === deja) out.push({ slot_id: $(this).data('slot'), date: $(this).data('date') });
+            });
+            return out;
+        },
+
+        majLotBoutons: function () {
+            var a = CAL.lotSelection(false).length, r = CAL.lotSelection(true).length;
+            $('#sp-lot-annuler').prop('disabled', !a).css('opacity', a ? 1 : .5).text('🚫 Annuler ' + a + ' cours');
+            $('#sp-lot-retablir').toggle(r > 0).text('↩️ Rétablir ' + r + ' cours');
+        },
+
+        envoyerLot: function (quoi) {
+            var sel = CAL.lotSelection(quoi === 'retablir'), notifier = $('#sp-lot-notifier').is(':checked');
+            if (!sel.length) return;
+            var msg = quoi === 'retablir'
+                ? 'Rétablir ' + sel.length + ' cours ? (aucun email n\'est envoyé)'
+                : 'Annuler ' + sel.length + ' cours ?' + (notifier ? '\nChaque adhérent concerné recevra un seul email avec ses cours annulés et ses cours maintenus.' : '\nAucun email ne sera envoyé.');
+            if (!confirm(msg)) return;
+            $('#sp-lot-annuler, #sp-lot-retablir').prop('disabled', true);
+            $.post(SpCal.ajaxurl, {
+                action: quoi === 'retablir' ? 'sp_cal_lot_retablir' : 'sp_cal_lot_annuler',
+                nonce: SpCal.nonce, debut: $('#sp-lot-debut').val(), fin: $('#sp-lot-fin').val(),
+                cours: JSON.stringify(sel), motif: $('#sp-lot-motif').val(), notifier: notifier ? 1 : ''
+            }, function (res) {
+                $('#sp-lot-retablir').prop('disabled', false);
+                if (!res.success) { alert('Erreur : ' + res.data); CAL.majLotBoutons(); return; }
+                if (quoi === 'retablir') alert('↩️ ' + res.data.retablis + ' cours rétabli(s).');
+                else alert('🚫 ' + res.data.annules + ' cours annulé(s).' + (notifier ? '\n📧 ' + res.data.sent + ' adhérent(s) prévenu(s) par email.' : ''));
+                CAL.loadMonth();
+                CAL.loadLot();
             });
         },
 

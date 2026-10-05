@@ -1061,6 +1061,82 @@ class SpCalPro_Notifications {
         return $sent;
     }
 
+    /* ══════════════════════════════════════════════════════════════════════
+       NOTIFICATION ANNULATION PAR LOT (vacances scolaires, 05/10/2026)
+       Un seul email par adhérent : ses cours annulés sur la période, puis ses
+       cours maintenus (le club en garde environ la moitié pendant les vacances).
+       Même ciblage que l'annulation unitaire (SpCalPro_DB::creneau_concerne()).
+    ══════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * @param array  $annules   occurrences annulées (get_slot_occurrences())
+     * @param array  $maintenus occurrences de la période restées actives
+     * @return int nombre d'emails envoyés
+     */
+    public function send_annulation_lot( array $annules, array $maintenus, $debut, $fin, $motif = '' ) {
+        if ( empty( $annules ) ) return 0;
+        global $wpdb;
+        $nom_club = get_option( 'blogname', 'Club' );
+        $headers  = array( 'Content-Type: text/html; charset=UTF-8' );
+        $eleves   = $wpdb->get_results(
+            "SELECT * FROM {$this->db->table_eleves()} WHERE actif = 1 AND ( email != '' OR email_parent != '' )"
+        );
+        $jours    = array( 1 => 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche' );
+        $fmt_date = static function ( $ymd ) use ( $jours ) {
+            $ts = strtotime( $ymd . ' 12:00:00 UTC' );
+            return ucfirst( $jours[ intval( gmdate( 'N', $ts ) ) ] ) . ' ' . gmdate( 'd/m', $ts );
+        };
+        $ligne = static function ( $o, $style ) use ( $fmt_date ) {
+            $h = substr( (string) $o['heure_debut'], 0, 5 ) . ( $o['heure_fin'] ? ' – ' . substr( (string) $o['heure_fin'], 0, 5 ) : '' );
+            return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] ) . '</li>';
+        };
+        $periode = 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
+        $sent    = 0;
+
+        foreach ( $eleves as $el ) {
+            $saisie = trim( (string) ( $el->categorie_saisie ?? '' ) );
+            $age    = trim( (string) ( $el->categorie_age ?? '' ) );
+            $siens  = array_values( array_filter( $annules,   fn( $o ) => $this->db->creneau_concerne( $o, $saisie, $age ) ) );
+            if ( ! $siens ) continue;
+            $gardes = array_values( array_filter( $maintenus, fn( $o ) => $this->db->creneau_concerne( $o, $saisie, $age ) ) );
+            $dest   = ! empty( $el->email_parent ) ? $el->email_parent : $el->email;
+            if ( ! $dest || ! is_email( $dest ) ) continue;
+
+            $body  = '<!DOCTYPE html><html><body style="font-family:sans-serif;background:#f8fafc;margin:0;padding:20px;">';
+            $body .= '<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;margin:0 auto;box-shadow:0 2px 8px rgba(0,0,0,.08);">';
+            $body .= '<tr><td style="background:#111;padding:24px 32px;"><h1 style="margin:0;font-size:20px;color:#fff;">' . esc_html( $nom_club ) . '</h1>'
+                . '<p style="margin:4px 0 0;font-size:13px;color:rgba(255,255,255,.5);">Information — Cours ' . esc_html( $periode ) . '</p></td></tr>';
+            $body .= '<tr><td style="padding:28px 32px;">';
+            $body .= '<p style="font-size:16px;margin:0 0 12px;">Bonjour <strong>' . esc_html( $el->prenom ) . '</strong>,</p>';
+            if ( $motif !== '' ) $body .= '<p style="color:#374151;margin:0 0 18px;line-height:1.6;">' . nl2br( esc_html( $motif ) ) . '</p>';
+
+            $body .= '<div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
+                . '<div style="font-weight:600;color:#111;margin-bottom:6px;">🚫 Cours annulés ' . esc_html( $periode ) . '</div><ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
+            foreach ( $siens as $o ) $body .= $ligne( $o, 'text-decoration:line-through;' );
+            $body .= '</ul></div>';
+
+            $body .= '<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
+                . '<div style="font-weight:600;color:#111;margin-bottom:6px;">✅ Vos cours maintenus sur cette période</div>';
+            if ( $gardes ) {
+                $body .= '<ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
+                foreach ( $gardes as $o ) $body .= $ligne( $o, '' );
+                $body .= '</ul>';
+            } else {
+                $body .= '<p style="margin:0;color:#374151;font-size:14px;">Aucun cours maintenu pour vous sur cette période : reprise après le ' . esc_html( gmdate( 'd/m', strtotime( $fin . ' 12:00:00 UTC' ) ) ) . '.</p>';
+            }
+            $body .= '</div>';
+
+            $body .= '<p style="color:#6b7280;font-size:13px;margin-top:20px;">À bientôt sur le tatami&nbsp;! 🥋</p></td></tr>';
+            $body .= '<tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;">'
+                . esc_html( $nom_club ) . ' · Gestion des cours</p></td></tr></table></body></html>';
+
+            $subject = '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
+                . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
+            if ( wp_mail( $dest, $subject, $body, $headers ) ) $sent++;
+        }
+        return $sent;
+    }
+
 }
 
 endif; // class_exists SpCalPro_Notifications

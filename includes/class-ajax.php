@@ -37,6 +37,10 @@ class SpCalPro_Ajax {
         add_action( 'wp_ajax_sp_cal_link_comp',               array( $this, 'link_comp' ) );
         add_action( 'wp_ajax_sp_cal_unlink_comp',             array( $this, 'unlink_comp' ) );
         add_action( 'wp_ajax_sp_cal_send_annul_groupee',     array( $this, 'send_annul_groupee' ) );
+        // Annulation par lot (vacances : 1 cours sur 2, 1 semaine sur 2…) — 05/10/2026
+        add_action( 'wp_ajax_sp_cal_lot_occurrences',        array( $this, 'lot_occurrences' ) );
+        add_action( 'wp_ajax_sp_cal_lot_annuler',            array( $this, 'lot_annuler' ) );
+        add_action( 'wp_ajax_sp_cal_lot_retablir',           array( $this, 'lot_retablir' ) );
         add_action( 'wp_ajax_sp_cal_get_eleves_pour_ciblage', array( $this, 'get_eleves_pour_ciblage' ) );
         add_action( 'wp_ajax_sp_cal_ping',                    array( $this, 'ping' ) );
         add_action( 'wp_ajax_sp_cal_upload_event_doc',        array( $this, 'upload_event_doc' ) );
@@ -1923,6 +1927,108 @@ class SpCalPro_Ajax {
         delete_option( 'sp_cal_annul_pending' );
 
         wp_send_json_success( array( 'sent' => $sent ) );
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       ANNULATION PAR LOT (05/10/2026)
+       Vacances scolaires : le club maintient environ la moitié des cours (1 semaine sur 2
+       ou 1 cours sur 2) ; l'admin coche les cours à annuler sur une période au lieu de les
+       annuler un par un. Même enregistrement qu'une annulation unitaire (événement de type
+       « annulation » rattaché au créneau) : planning, application, IK et rétablissement
+       fonctionnent à l'identique. Un seul mail par adhérent pour tout le lot.
+    ══════════════════════════════════════════════════════════ */
+
+    /** Période (AAAA-MM-JJ) lue dans la requête, 62 jours maximum. @return string[] [ début, fin ] */
+    private function lot_periode() {
+        $debut = sanitize_text_field( wp_unslash( $_POST['debut'] ?? '' ) );
+        $fin   = sanitize_text_field( wp_unslash( $_POST['fin']   ?? '' ) );
+        if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $debut ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $fin ) || $fin < $debut ) {
+            wp_send_json_error( 'Période invalide.' );
+        }
+        if ( ( strtotime( $fin ) - strtotime( $debut ) ) / DAY_IN_SECONDS > 62 ) wp_send_json_error( 'Période trop longue (2 mois maximum).' );
+        return array( $debut, $fin );
+    }
+
+    /** Cours récurrents de la période, avec leur état (annulé ou non). */
+    public function lot_occurrences() {
+        $this->nonce();
+        $this->require_admin();
+        list( $debut, $fin ) = $this->lot_periode();
+        $out = array();
+        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+            $out[] = array(
+                'slot_id'     => intval( $o['slot_id'] ),
+                'date'        => $o['date'],
+                'heure_debut' => $o['heure_debut'],
+                'heure_fin'   => $o['heure_fin'],
+                'titre'       => $o['titre'],
+                'libelle'     => $this->db->libelle_creneau( $o ),
+                'annule'      => ! empty( $o['annul_id'] ),
+            );
+        }
+        usort( $out, static fn( $a, $b ) => strcmp( $a['date'] . $a['heure_debut'], $b['date'] . $b['heure_debut'] ) );
+        wp_send_json_success( array( 'cours' => $out ) );
+    }
+
+    /** Cours cochés (JSON [ {slot_id, date}, … ]) qui existent bien dans la période. @return array clé "date_slot" => occurrence */
+    private function lot_selection( $debut, $fin ) {
+        $demandes = json_decode( wp_unslash( (string) ( $_POST['cours'] ?? '[]' ) ), true );
+        if ( ! is_array( $demandes ) || ! $demandes ) wp_send_json_error( 'Aucun cours coché.' );
+        $voulus = array();
+        foreach ( $demandes as $d ) $voulus[ sanitize_text_field( (string) ( $d['date'] ?? '' ) ) . '_' . intval( $d['slot_id'] ?? 0 ) ] = true;
+        $sel = array();
+        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+            $k = $o['date'] . '_' . intval( $o['slot_id'] );
+            if ( isset( $voulus[ $k ] ) ) $sel[ $k ] = $o;
+        }
+        return $sel;
+    }
+
+    public function lot_annuler() {
+        $this->nonce();
+        $this->require_admin();
+        global $wpdb;
+        list( $debut, $fin ) = $this->lot_periode();
+        $sel      = $this->lot_selection( $debut, $fin );
+        $motif    = sanitize_textarea_field( wp_unslash( $_POST['motif'] ?? '' ) );
+        $notifier = ! empty( $_POST['notifier'] );
+        $te       = $this->db->table_events();
+
+        $annules = array();
+        foreach ( $sel as $o ) {
+            if ( ! empty( $o['annul_id'] ) ) continue; // déjà annulé
+            $wpdb->insert( $te, array(
+                'date'        => $o['date'],
+                'titre'       => 'Annulation',
+                'type'        => 'annulation',
+                'description' => $motif,
+                'categorie'   => '', // comme une annulation unitaire (save_event)
+                'slot_id'     => intval( $o['slot_id'] ),
+            ) );
+            if ( $wpdb->insert_id ) $annules[] = $o;
+        }
+
+        $sent = 0;
+        if ( $notifier && $annules ) {
+            // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés.
+            $maintenus = array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) );
+            $sent = ( new SpCalPro_Notifications( $this->db ) )->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif );
+        }
+        wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent ) );
+    }
+
+    /** Rétablit les cours cochés (supprime leur annulation). Aucun mail n'est envoyé. */
+    public function lot_retablir() {
+        $this->nonce();
+        $this->require_admin();
+        global $wpdb;
+        list( $debut, $fin ) = $this->lot_periode();
+        $n = 0;
+        foreach ( $this->lot_selection( $debut, $fin ) as $o ) {
+            if ( empty( $o['annul_id'] ) ) continue;
+            $n += (int) $wpdb->delete( $this->db->table_events(), array( 'id' => intval( $o['annul_id'] ), 'type' => 'annulation' ) );
+        }
+        wp_send_json_success( array( 'retablis' => $n ) );
     }
 
     /**

@@ -19,6 +19,7 @@ $public_link = get_option( 'sp_cal_public_link', home_url('/planning/') );
         </div>
         <div style="min-width:160px;text-align:right;">
             <?php if($is_admin): ?>
+            <button id="btn-annul-lot" class="sp-cal-btn-apercu" style="background:rgba(255,255,255,0.15);" title="Annuler plusieurs cours d'une période (vacances scolaires…) en une fois">🗓️ Annuler par lot</button>
             <button id="cal-today-btn" class="sp-cal-btn-apercu" style="background:rgba(255,255,255,0.15);">Aujourd'hui</button>
             <?php endif; ?>
         </div>
