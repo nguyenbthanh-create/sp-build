@@ -987,7 +987,7 @@ class SpCalPro_Notifications {
         foreach ( $annulations as $item ) {
             // Avant : categorie_saisie = catégorie du créneau, à l'identique — un créneau
             // « Enfant » ou « TKD, Renfo » ne trouvait personne et aucun mail ne partait.
-            $eleves = $this->db->get_eleves_concernes_creneau( $item['categorie'] ?? '' );
+            $eleves = $this->db->get_eleves_concernes_creneau( $item );
 
             foreach ( $eleves as $el ) {
                 $dest = ! empty( $el->email_parent ) ? $el->email_parent : $el->email;

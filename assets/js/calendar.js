@@ -557,7 +557,7 @@
                     if (notifier && !grouper && res.data && typeof res.data.sent !== 'undefined') {
                         alert(res.data.sent > 0
                             ? '📧 Cours annulé : ' + res.data.sent + ' adhérent(s) prévenu(s) par email.'
-                            : '⚠️ Cours annulé, mais aucun adhérent n\'a été trouvé pour la catégorie de ce créneau (« ' + (categorie || '—') + ' ») : aucun email envoyé.\n\nVérifiez la catégorie du créneau (page Créneaux) : TKD, Renfo, Baby, Enfant, Ado/adulte…');
+                            : '⚠️ Cours annulé, mais aucun adhérent n\'a été trouvé pour la catégorie de ce créneau (« ' + (categorie || '—') + ' ») : aucun email envoyé.\n\nVérifiez les cases Discipline et Pour qui du créneau (page Créneaux).');
                     }
                 } else {
                     alert('Erreur : ' + res.data);

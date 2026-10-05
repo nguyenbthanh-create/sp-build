@@ -79,7 +79,7 @@ class SpCalPro_Ajax {
         if ( $ex ) return intval( $ex );
         $slot = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tsl WHERE id=%d", $slot_id ) );
         if ( ! $slot ) return 0;
-        $wpdb->insert( $te, array( 'date' => $date, 'heure_debut' => $slot->heure_debut, 'heure_fin' => $slot->heure_fin, 'titre' => $slot->label, 'categorie' => $slot->categorie ?: 'General', 'type' => 'cours', 'slot_id' => $slot_id ) );
+        $wpdb->insert( $te, array( 'date' => $date, 'heure_debut' => $slot->heure_debut, 'heure_fin' => $slot->heure_fin, 'titre' => $slot->label, 'categorie' => $slot->categorie ?: 'General', 'cours_discipline' => (string) ( $slot->cours_discipline ?? '' ), 'cours_age_categories' => (string) ( $slot->cours_age_categories ?? '' ), 'type' => 'cours', 'slot_id' => $slot_id ) );
         return intval( $wpdb->insert_id );
     }
     public function rest_pointage_cours( WP_REST_Request $req ) {
@@ -256,8 +256,9 @@ class SpCalPro_Ajax {
                 'document_nom' => $mat ? ( $mat->document_nom ?? '' ) : '',
                 'recurrent'    => true,
                 'mat_id'       => $mat_id,  // toujours présent pour que JS sache
-                'cours_discipline'     => $mat ? ( $mat->cours_discipline     ?? '' ) : '',
-                'cours_age_categories' => $mat ? ( $mat->cours_age_categories ?? '' ) : '',
+                // Axes de la matérialisation s'ils ont été saisis, sinon ceux du créneau.
+                'cours_discipline'     => ( $mat && ( $mat->cours_discipline ?? '' ) !== '' ) ? $mat->cours_discipline : ( $occ['cours_discipline'] ?? '' ),
+                'cours_age_categories' => ( $mat && ( $mat->cours_age_categories ?? '' ) !== '' ) ? $mat->cours_age_categories : ( $occ['cours_age_categories'] ?? '' ),
             );
         }
 
@@ -423,6 +424,8 @@ class SpCalPro_Ajax {
                         'heure_debut' => $slot ? $slot->heure_debut : ( $data['heure_debut'] ?? '' ),
                         'heure_fin'   => $slot ? $slot->heure_fin   : ( $data['heure_fin']   ?? '' ),
                         'categorie'   => $slot ? $slot->categorie   : ( $data['categorie']   ?? '' ),
+                        'cours_discipline'     => $slot ? (string) ( $slot->cours_discipline     ?? '' ) : '',
+                        'cours_age_categories' => $slot ? (string) ( $slot->cours_age_categories ?? '' ) : '',
                         'motif'       => $data['description'] ?? '',
                     );
 
@@ -518,6 +521,8 @@ class SpCalPro_Ajax {
                             'heure_fin'   => $slot->heure_fin,
                             'titre'       => $slot->label,
                             'categorie'   => $slot->categorie,
+                            'cours_discipline'     => (string) ( $slot->cours_discipline     ?? '' ),
+                            'cours_age_categories' => (string) ( $slot->cours_age_categories ?? '' ),
                             'couleur'     => '#3B82F6',
                             'type'        => 'cours',
                             'description' => '',

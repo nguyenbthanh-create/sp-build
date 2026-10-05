@@ -660,6 +660,16 @@ class SpCalPro_DB {
             $wpdb->query( "ALTER TABLE `$te` ADD COLUMN `cours_discipline` text DEFAULT NULL" );
         if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$te` LIKE 'cours_age_categories'" ) )
             $wpdb->query( "ALTER TABLE `$te` ADD COLUMN `cours_age_categories` text DEFAULT NULL" );
+
+        // 05/10/2026 : mêmes deux axes pour les créneaux récurrents, dont la « Catégorie » était
+        // restée un texte libre (« TKD, Boxe, Renfo… ») — le mail d'annulation ne trouvait
+        // personne quand ce texte différait de la discipline des adhérents. "categorie" reste
+        // renseigné automatiquement (= Discipline), comme pour les événements.
+        $tsl_axes = $this->table_slots();
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tsl_axes` LIKE 'cours_discipline'" ) )
+            $wpdb->query( "ALTER TABLE `$tsl_axes` ADD COLUMN `cours_discipline` text DEFAULT NULL" );
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tsl_axes` LIKE 'cours_age_categories'" ) )
+            $wpdb->query( "ALTER TABLE `$tsl_axes` ADD COLUMN `cours_age_categories` text DEFAULT NULL" );
     }
 
     /* ── Membres de bureau ───────────────────────────────── */
@@ -897,6 +907,8 @@ class SpCalPro_DB {
             'heure_fin'   => $slot->heure_fin,
             'titre'       => $slot->label,
             'categorie'   => $slot->categorie,
+            'cours_discipline'     => (string) ( $slot->cours_discipline     ?? '' ),
+            'cours_age_categories' => (string) ( $slot->cours_age_categories ?? '' ),
             'recurrence'  => $slot->recurrence ?: 'weekly',
             'annul_id'    => $annul_id,
             'mat_id'      => $mat_id,  // ID de la matérialisation en DB si elle existe
@@ -2720,51 +2732,131 @@ $wpdb->query( "CREATE TABLE $ts (
         return $disc_ok && $age_ok;
     }
 
+    /** Valeurs des deux axes d'un cours (mêmes listes que CAL.COURS_DISCIPLINES / CAL.COURS_AGES). */
+    const COURS_DISCIPLINES = array( 'Taekwondo', 'Renforcement musculaire', 'Autre' );
+    const COURS_AGES        = array( 'Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge' );
+
     /**
-     * Adhérents actifs (avec un email) concernés par la catégorie d'un créneau récurrent —
-     * champ texte libre de la page Créneaux (« TKD, Boxe, Renfo… », « Enfant », « Renfo &
-     * Ados/Adultes »…), qui n'a pas reçu la normalisation discipline × âge des événements
-     * ponctuels (18/09/2026). Chaque fragment (séparé par des virgules) est :
-     *   - comparé tel quel à la discipline de l'adhérent (categorie_saisie, sans tenir compte
-     *     des majuscules) — comportement d'origine, désormais par fragment ;
-     *   - traduit en discipline / tranche d'âge (migrer_fragment_categorie_evenement()) puis
-     *     appliqué avec la règle des événements (evenement_concerne()).
-     * Un fragment non reconnu n'élargit pas l'envoi à tout le club (contrairement aux
-     * événements) : mieux vaut aucun mail, signalé à l'admin, qu'un mail à tout le monde.
-     * Catégorie vide = tout le club, comme avant.
+     * Traduit l'ancien texte libre « Catégorie » d'un créneau (« TKD, Boxe, Renfo… »,
+     * « Enfant », « Renfo & Ados/Adultes »…) en discipline / tranche d'âge, fragment par
+     * fragment (séparés par des virgules), avec la table des événements
+     * (migrer_fragment_categorie_evenement()). Contrairement aux événements, un fragment non
+     * reconnu n'est pas rangé en « Autre » (= tout le club) : il est signalé.
      *
-     * @return object[] lignes id, prenom, nom, email, email_parent
+     * @return array{discipline:string[],age:string[],non_reconnus:string[],tout:bool}
+     *         tout = vide ou « Général » / « Tous » : le créneau vise tout le club
      */
-    public function get_eleves_concernes_creneau( $categorie ) {
+    public function axes_depuis_texte_creneau( $categorie ) {
+        $out = array( 'discipline' => array(), 'age' => array(), 'non_reconnus' => array(), 'tout' => false );
+        $fragments = array_filter( array_map( 'trim', explode( ',', (string) $categorie ) ) );
+        if ( ! $fragments ) { $out['tout'] = true; return $out; }
+        foreach ( $fragments as $f ) {
+            // « Général » est aussi le libellé affiché d'un créneau sans catégorie : tout le club.
+            if ( in_array( mb_strtolower( $f ), array( 'général', 'general', 'tous', 'tout le club' ), true ) ) { $out['tout'] = true; continue; }
+            $res = $this->migrer_fragment_categorie_evenement( $f );
+            $ok  = false;
+            if ( ! empty( $res['discipline'] ) && $res['discipline'] !== 'Autre' ) { $out['discipline'][] = $res['discipline']; $ok = true; }
+            if ( ! empty( $res['age'] ) ) { $out['age'][] = $res['age']; $ok = true; }
+            if ( ! $ok ) $out['non_reconnus'][] = $f;
+        }
+        $out['discipline'] = array_values( array_unique( $out['discipline'] ) );
+        $out['age']        = array_values( array_unique( $out['age'] ) );
+        return $out;
+    }
+
+    /**
+     * Un créneau (ligne de sp_cal_slots, occurrence de get_slot_occurrences() ou élément
+     * d'annulation : clés categorie, cours_discipline, cours_age_categories) vise-t-il cet
+     * adhérent ? Axes discipline × âge renseignés → règle des événements (evenement_concerne()) ;
+     * créneau pas encore reclassé (axes vides) → lecture de l'ancien texte libre, et
+     * comparaison directe de chaque fragment avec la discipline de l'adhérent (TKD, RENFO…).
+     * Partagé par l'application adhérent (liste des cours) et le mail d'annulation.
+     */
+    public function creneau_concerne( $creneau, $cat_saisie, $cat_age ) {
+        $c = (object) $creneau;
+        if ( trim( (string) ( $c->cours_discipline ?? '' ) ) !== '' || trim( (string) ( $c->cours_age_categories ?? '' ) ) !== '' ) {
+            return $this->evenement_concerne( $c, (string) $cat_saisie, (string) $cat_age );
+        }
+        $axes = $this->axes_depuis_texte_creneau( $c->categorie ?? '' );
+        if ( $axes['tout'] ) return true;
+        $codes = array_map( 'mb_strtoupper', array_filter( array_map( 'trim', explode( ',', (string) ( $c->categorie ?? '' ) ) ) ) );
+        if ( $cat_saisie !== '' && in_array( mb_strtoupper( $cat_saisie ), $codes, true ) ) return true;
+        if ( ! $axes['discipline'] && ! $axes['age'] ) return false; // texte non reconnu : personne plutôt que tout le club
+        return $this->evenement_concerne( (object) array(
+            'cours_discipline'     => implode( ',', $axes['discipline'] ),
+            'cours_age_categories' => implode( ',', $axes['age'] ),
+        ), (string) $cat_saisie, (string) $cat_age );
+    }
+
+    /**
+     * Adhérents actifs (avec un email) concernés par un créneau — mail d'annulation de cours.
+     * @param array|object|string $creneau  voir creneau_concerne() ; une chaîne = ancien texte libre
+     * @return object[]
+     */
+    public function get_eleves_concernes_creneau( $creneau ) {
         global $wpdb;
+        if ( is_string( $creneau ) ) $creneau = array( 'categorie' => $creneau );
         $eleves = $wpdb->get_results(
             "SELECT * FROM {$this->table_eleves()} WHERE actif = 1 AND ( email != '' OR email_parent != '' )"
         );
-        $fragments = array_filter( array_map( 'trim', explode( ',', (string) $categorie ) ) );
-        if ( ! $fragments ) return $eleves;
-        // « Général » est aussi le libellé affiché d'un créneau sans catégorie : tout le club.
-        foreach ( $fragments as $f ) {
-            if ( in_array( mb_strtolower( $f ), array( 'général', 'general', 'tous', 'tout le club' ), true ) ) return $eleves;
-        }
-
-        $codes = array_map( 'mb_strtoupper', $fragments );
-        $disc  = array();
-        $ages  = array();
-        foreach ( $fragments as $f ) {
-            $res = $this->migrer_fragment_categorie_evenement( $f );
-            if ( ! empty( $res['discipline'] ) && $res['discipline'] !== 'Autre' ) $disc[] = $res['discipline'];
-            if ( ! empty( $res['age'] ) ) $ages[] = $res['age'];
-        }
-        $cible = ( $disc || $ages ) ? (object) array(
-            'cours_discipline'     => implode( ',', array_unique( $disc ) ),
-            'cours_age_categories' => implode( ',', array_unique( $ages ) ),
-        ) : null;
-
-        return array_values( array_filter( $eleves, function ( $el ) use ( $codes, $cible ) {
-            $saisie = trim( (string) ( $el->categorie_saisie ?? '' ) );
-            if ( $saisie !== '' && in_array( mb_strtoupper( $saisie ), $codes, true ) ) return true;
-            return $cible && $this->evenement_concerne( $cible, $saisie, trim( (string) ( $el->categorie_age ?? '' ) ) );
+        return array_values( array_filter( $eleves, function ( $el ) use ( $creneau ) {
+            return $this->creneau_concerne( $creneau, trim( (string) ( $el->categorie_saisie ?? '' ) ), trim( (string) ( $el->categorie_age ?? '' ) ) );
         } ) );
+    }
+
+    /** Libellé lisible d'un créneau : « Taekwondo · Enfant, Ado/adulte » (ancien texte si pas encore reclassé). */
+    public function libelle_creneau( $creneau ) {
+        $c    = (object) $creneau;
+        $disc = trim( (string) ( $c->cours_discipline ?? '' ) );
+        $age  = trim( (string) ( $c->cours_age_categories ?? '' ) );
+        if ( $disc === '' && $age === '' ) return (string) ( $c->categorie ?? '' );
+        return implode( ' · ', array_filter( array( str_replace( ',', ', ', $disc ), str_replace( ',', ', ', $age ) ) ) );
+    }
+
+    /**
+     * Reclassement des créneaux existants (ancien texte libre → discipline × âge), sur le
+     * modèle de preview_migration_cours_categories(). Ne considère que les créneaux pas encore
+     * reclassés (axes vides) qui ont un texte : rejouable sans écraser un choix fait à la main.
+     * Un créneau dont aucun fragment n'est reconnu n'est pas modifié (« à classer à la main »).
+     */
+    public function preview_migration_creneaux_categories() {
+        $out = array();
+        foreach ( $this->get_slots() as $s ) {
+            if ( trim( (string) ( $s->cours_discipline ?? '' ) ) !== '' || trim( (string) ( $s->cours_age_categories ?? '' ) ) !== '' ) continue;
+            if ( trim( (string) $s->categorie ) === '' ) continue;
+            $axes  = $this->axes_depuis_texte_creneau( $s->categorie );
+            $out[] = array(
+                'id'           => intval( $s->id ),
+                'label'        => $s->label,
+                'jour'         => intval( $s->jour ),
+                'heure_debut'  => $s->heure_debut,
+                'ancienne'     => $s->categorie,
+                'discipline'   => implode( ',', $axes['discipline'] ),
+                'age'          => implode( ',', $axes['age'] ),
+                'non_reconnus' => $axes['non_reconnus'],
+                'tout'         => $axes['tout'],
+            );
+        }
+        return $out;
+    }
+
+    /** @return int nombre de créneaux reclassés */
+    public function appliquer_migration_creneaux_categories() {
+        global $wpdb;
+        $nb = 0;
+        foreach ( $this->preview_migration_creneaux_categories() as $l ) {
+            if ( $l['discipline'] === '' && $l['age'] === '' ) {
+                if ( ! $l['tout'] ) continue; // rien de reconnu : à classer à la main
+                $l['age'] = 'Tout âge';         // « Général » : tout le club
+            }
+            $wpdb->update( $this->table_slots(), array(
+                'cours_discipline'     => $l['discipline'],
+                'cours_age_categories' => $l['age'],
+                'categorie'            => $l['discipline'],
+            ), array( 'id' => $l['id'] ) );
+            $nb++;
+        }
+        return $nb;
     }
 
     /**

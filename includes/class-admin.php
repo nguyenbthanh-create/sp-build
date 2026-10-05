@@ -396,24 +396,23 @@ public function enqueue( $hook ) {
         if ( is_wp_error( $eid ) ) return $eid;
         global $wpdb;
         $tel = $this->db->table_eleves();
-        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT categorie_saisie FROM $tel WHERE id = %d AND actif = 1 LIMIT 1", $eid ) );
+        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT categorie_saisie, categorie_age FROM $tel WHERE id = %d AND actif = 1 LIMIT 1", $eid ) );
         if ( ! $el ) return new WP_Error( 'spcal_not_found', 'Élève introuvable.', array( 'status' => 404 ) );
         $from_raw = sanitize_text_field( wp_unslash( $req->get_param( 'from' ) ?? date( 'Y-m-d' ) ) );
         $nb       = min( 30, max( 1, intval( $req->get_param( 'nb' ) ?? 20 ) ) );
         $from     = ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $from_raw ) && strtotime( $from_raw ) ) ? $from_raw : date( 'Y-m-d' );
         $to       = date( 'Y-m-d', strtotime( $from . ' +90 days' ) );
         $occs     = $this->db->get_slot_occurrences( $from, $to );
-        $cat      = $el->categorie_saisie ?? '';
+        $cat      = trim( (string) ( $el->categorie_saisie ?? '' ) );
+        $cat_age  = trim( (string) ( $el->categorie_age ?? '' ) );
         $cours    = array();
         foreach ( $occs as $occ ) {
             if ( $occ['annul_id'] ) continue;
-            // La catégorie d'un événement peut lister plusieurs groupes séparés par des virgules
-            // (ex "Enfant, Ado/adulte, Renfo") depuis qu'elle a une vraie case à cocher multiple —
-            // comparaison insensible à la casse car ces libellés restent tapés à la main.
-            if ( $cat !== '' && ! empty( $occ['categorie'] ) ) {
-                $cat_tokens = array_map( function( $t ) { return mb_strtoupper( trim( $t ) ); }, explode( ',', $occ['categorie'] ) );
-                if ( ! in_array( mb_strtoupper( $cat ), $cat_tokens, true ) ) continue;
-            }
+            // Même règle que le mail d'annulation (SpCalPro_DB::creneau_concerne()) : discipline ×
+            // tranche d'âge du créneau, ou ancien texte libre tant qu'il n'est pas reclassé.
+            // Avant : seule la discipline de l'adhérent comparée au texte libre — un créneau
+            // « Enfant » n'apparaissait pas à un adhérent « TKD ».
+            if ( ( $cat !== '' || $cat_age !== '' ) && ! $this->db->creneau_concerne( $occ, $cat, $cat_age ) ) continue;
             $cours[] = array(
                 'slot_id' => intval( $occ['slot_id'] ), 'mat_id' => $occ['mat_id'] ? intval( $occ['mat_id'] ) : null,
                 'date' => $occ['date'], 'heure_debut' => $occ['heure_debut'] ?? '', 'heure_fin' => $occ['heure_fin'] ?? '',
@@ -2685,16 +2684,33 @@ function spCalBufToB64u(buf) {
                 'label'      => sanitize_text_field( wp_unslash( $_POST['slot_label']    ?? '' ) ),
                 'heure_debut'=> sanitize_text_field( wp_unslash( $_POST['slot_debut_h']  ?? '08' ) ) . 'h' . sanitize_text_field( wp_unslash( $_POST['slot_debut_m'] ?? '00' ) ),
                 'heure_fin'  => sanitize_text_field( wp_unslash( $_POST['slot_fin_h']    ?? '09' ) ) . 'h' . sanitize_text_field( wp_unslash( $_POST['slot_fin_m']   ?? '00' ) ),
-                'categorie'  => sanitize_text_field( wp_unslash( $_POST['slot_categorie'] ?? '' ) ),
                 'ordre'      => intval( $_POST['slot_ordre'] ?? 0 ),
                 'recurrence' => in_array( $rec, array('weekly','biweekly','3weekly','monthly_1','monthly_2','monthly_3','monthly_4','monthly_5','monthly_6','monthly_7','monthly_8','monthly_9') ) ? $rec : 'weekly',
                 'date_debut' => $dd ?: null,
                 'date_fin'   => $df ?: null,
             );
+            // Discipline × Pour qui (cases à cocher, mêmes listes que les événements) — remplace
+            // l'ancien texte libre « Catégorie » (05/10/2026). "categorie" = Discipline, comme pour
+            // les événements (couleur du calendrier, planning, pointage).
+            $axe = static function ( $cle, array $permis ) {
+                $v = array_map( 'sanitize_text_field', array_map( 'wp_unslash', (array) ( $_POST[ $cle ] ?? array() ) ) );
+                return array_values( array_intersect( $permis, $v ) );
+            };
+            $disc = $axe( 'slot_discipline', SpCalPro_DB::COURS_DISCIPLINES );
+            $ages = $axe( 'slot_ages', SpCalPro_DB::COURS_AGES );
+            $data['cours_discipline']     = implode( ',', $disc );
+            $data['cours_age_categories'] = implode( ',', $ages );
+            $data['categorie']            = implode( ',', $disc );
             $id = intval( $_POST['slot_id'] ?? 0 );
             if ( $id ) $wpdb->update( $tsl, $data, array( 'id' => $id ) );
             else        $wpdb->insert( $tsl, $data );
             wp_redirect( admin_url( 'admin.php?page=sp-cal-slots&saved=1' ) ); exit;
+        }
+
+        /* ── Slots : reclasser l'ancien texte libre « Catégorie » en Discipline × Pour qui ── */
+        if ( isset( $_POST['sp_migrer_creneaux_categories'] ) && check_admin_referer( 'sp_migrer_creneaux_categories' ) ) {
+            $nb = $this->db->appliquer_migration_creneaux_categories();
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-slots&reclasses=' . intval( $nb ) ) ); exit;
         }
 
         /* ── Slot : supprimer ── */
@@ -3198,11 +3214,20 @@ function spCalBufToB64u(buf) {
             'monthly_9' => '📅 Tous les 9 mois',
         );
 
-        $ed = array( 'jour'=>1, 'label'=>'', 'cat'=>'', 'ordre'=>0, 'dh'=>'08', 'dm'=>'00', 'fh'=>'09', 'fm'=>'00', 'rec'=>'weekly', 'dd'=>'', 'df'=>'' );
+        $ed = array( 'jour'=>1, 'label'=>'', 'cat'=>'', 'disc'=>array(), 'ages'=>array(), 'ordre'=>0, 'dh'=>'08', 'dm'=>'00', 'fh'=>'09', 'fm'=>'00', 'rec'=>'weekly', 'dd'=>'', 'df'=>'' );
         if ( $edit ) {
             $ed['jour']  = intval( $edit->jour );
             $ed['label'] = $edit->label;
             $ed['cat']   = $edit->categorie;
+            $ed['disc']  = array_filter( array_map( 'trim', explode( ',', (string) ( $edit->cours_discipline ?? '' ) ) ) );
+            $ed['ages']  = array_filter( array_map( 'trim', explode( ',', (string) ( $edit->cours_age_categories ?? '' ) ) ) );
+            // Créneau pas encore reclassé : cases pré-cochées d'après l'ancien texte libre.
+            if ( ! $ed['disc'] && ! $ed['ages'] && trim( (string) $edit->categorie ) !== '' ) {
+                $axes        = $this->db->axes_depuis_texte_creneau( $edit->categorie );
+                $ed['a_reclasser'] = true;
+                $ed['disc']  = $axes['discipline'];
+                $ed['ages']  = $axes['age'];
+            }
             $ed['ordre'] = intval( $edit->ordre );
             $ed['rec']   = $edit->recurrence ?? 'weekly';
             $ed['dd']    = $edit->date_debut ?? '';
@@ -3218,6 +3243,45 @@ function spCalBufToB64u(buf) {
         <h1>Créneaux horaires</h1>
         <?php $this->notice_flash( 'saved', 'Créneau enregistré.' ); ?>
         <?php $this->notice_flash( 'deleted', 'Créneau supprimé.' ); ?>
+        <?php if ( isset( $_GET['reclasses'] ) ) echo '<div class="notice notice-success is-dismissible"><p>' . intval( $_GET['reclasses'] ) . ' créneau(x) reclassé(s) en Discipline × Pour qui.</p></div>'; ?>
+
+        <?php
+        // Reclassement de l'existant : ancien texte libre → Discipline × Pour qui (05/10/2026).
+        $a_reclasser = $this->db->preview_migration_creneaux_categories();
+        if ( $a_reclasser ) :
+            $nb_auto = count( array_filter( $a_reclasser, static fn( $l ) => $l['discipline'] !== '' || $l['age'] !== '' || $l['tout'] ) );
+        ?>
+        <div class="sp-box" style="border-left:4px solid #f59e0b;">
+            <h2>⚠️ <?php echo count( $a_reclasser ); ?> créneau(x) avec l'ancienne catégorie en texte libre</h2>
+            <p class="description">La catégorie d'un créneau se choisit désormais avec des cases (Discipline × Pour qui), comme les événements : c'est elle qui décide quels adhérents sont prévenus d'une annulation et voient le cours dans leur application. Voici ce que donnerait la conversion automatique ; ce qui n'est pas reconnu reste à classer à la main (bouton ✏️ du créneau).</p>
+            <table class="widefat striped" style="margin:10px 0;">
+                <thead><tr><th>Créneau</th><th>Ancienne catégorie</th><th>Discipline</th><th>Pour qui</th><th>Résultat</th></tr></thead>
+                <tbody>
+                <?php foreach ( $a_reclasser as $l ) :
+                    $auto = $l['discipline'] !== '' || $l['age'] !== '' || $l['tout']; ?>
+                    <tr>
+                        <td><?php echo esc_html( $jours[ $l['jour'] ] . ' ' . $l['heure_debut'] . ' — ' . $l['label'] ); ?></td>
+                        <td><code><?php echo esc_html( $l['ancienne'] ); ?></code></td>
+                        <td><?php echo esc_html( str_replace( ',', ', ', $l['discipline'] ) ?: '—' ); ?></td>
+                        <td><?php echo esc_html( str_replace( ',', ', ', $l['age'] ) ?: ( $l['tout'] && $l['discipline'] === '' ? 'Tout âge' : '—' ) ); ?></td>
+                        <td><?php
+                            if ( ! $auto ) echo '<span style="color:#b45309">À classer à la main</span>';
+                            elseif ( $l['non_reconnus'] ) echo '✅ <span style="color:#b45309">(ignoré : ' . esc_html( implode( ', ', $l['non_reconnus'] ) ) . ')</span>';
+                            else echo '✅';
+                        ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if ( $nb_auto ) : ?>
+            <form method="post" onsubmit="return confirm('Reclasser <?php echo intval( $nb_auto ); ?> créneau(x) comme indiqué ?');">
+                <?php wp_nonce_field( 'sp_migrer_creneaux_categories' ); ?>
+                <input type="hidden" name="sp_migrer_creneaux_categories" value="1">
+                <button class="button button-primary">Reclasser <?php echo intval( $nb_auto ); ?> créneau(x)</button>
+            </form>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
 
         <div class="sp-two-col">
 
@@ -3254,8 +3318,21 @@ function spCalBufToB64u(buf) {
                         </td>
                     </tr>
                     <tr>
-                        <th>Catégorie</th>
-                        <td><input type="text" name="slot_categorie" class="regular-text" value="<?php echo esc_attr($ed['cat']); ?>" placeholder="TKD, Boxe, Renfo…"></td>
+                        <th>Discipline</th>
+                        <td>
+                            <?php foreach ( SpCalPro_DB::COURS_DISCIPLINES as $d ) : ?>
+                                <label style="display:inline-flex;align-items:center;gap:4px;margin:0 14px 4px 0;"><input type="checkbox" name="slot_discipline[]" value="<?php echo esc_attr( $d ); ?>" <?php checked( in_array( $d, $ed['disc'], true ) ); ?>> <?php echo esc_html( $d ); ?></label>
+                            <?php endforeach; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Pour qui</th>
+                        <td>
+                            <?php foreach ( SpCalPro_DB::COURS_AGES as $a ) : ?>
+                                <label style="display:inline-flex;align-items:center;gap:4px;margin:0 14px 4px 0;"><input type="checkbox" name="slot_ages[]" value="<?php echo esc_attr( $a ); ?>" <?php checked( in_array( $a, $ed['ages'], true ) ); ?>> <?php echo esc_html( $a ); ?></label>
+                            <?php endforeach; ?>
+                            <p class="description">Sert à prévenir les bons adhérents quand le cours est annulé et à afficher le cours dans leur application. Rien de coché = tout le club.<?php if ( ! empty( $ed['a_reclasser'] ) ) echo '<br><strong>⚠️ Ancienne catégorie en texte libre : « ' . esc_html( $ed['cat'] ) . ' ».</strong> Les cases ont été pré-cochées à partir de ce texte : vérifiez-les puis enregistrez.'; ?></p>
+                        </td>
                     </tr>
                     <tr>
                         <th>🔄 Récurrence</th>
@@ -3316,7 +3393,11 @@ function spCalBufToB64u(buf) {
                     <div class="sp-slot-preview">
                         <div style="font-size:11px;margin-bottom:3px;"><?php echo $icon; ?> <strong><?php echo esc_html($s->label); ?></strong></div>
                         <span class="sp-muted"><?php echo esc_html($s->heure_debut.' – '.$s->heure_fin); ?></span><br>
-                        <?php if($s->categorie) echo '<span class="sp-badge-blue">'. esc_html($s->categorie) .'</span>'; ?>
+                        <?php
+                        $lib_cr = $this->db->libelle_creneau( $s );
+                        $a_recl = trim( (string) ( $s->cours_discipline ?? '' ) ) === '' && trim( (string) ( $s->cours_age_categories ?? '' ) ) === '' && trim( (string) $s->categorie ) !== '';
+                        if ( $lib_cr !== '' ) echo '<span class="sp-badge-blue"' . ( $a_recl ? ' style="background:#fef3c7;color:#92400e" title="Ancienne catégorie en texte libre : à reclasser"' : '' ) . '>' . ( $a_recl ? '⚠️ ' : '' ) . esc_html( $lib_cr ) . '</span>';
+                        ?>
                         <div style="margin-top:4px;font-size:10px;color:#6b7280;"><?php echo esc_html($rec_label); ?></div>
                         <?php if($s->date_debut) echo '<div style="font-size:10px;color:#888;">Du '. esc_html($s->date_debut) . ($s->date_fin ? ' au '. esc_html($s->date_fin) : '') .'</div>'; ?>
                         <div style="margin-top:5px;">
