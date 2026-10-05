@@ -4124,9 +4124,9 @@ function spCalBufToB64u(buf) {
             <h2>📊 Récapitulatif mensuel entraîneurs</h2>
             <p class="description">
                 Le <strong><?php echo esc_html(ordinal_fr($recap_jour)); ?> de chaque mois</strong>,
-                un email est envoyé aux membres du bureau avec le nombre d'interventions
+                un email est envoyé aux membres du bureau avec les jours d'intervention, les allers-retours
                 et le montant calculé pour chaque entraîneur.<br>
-                <strong>Formule :</strong> tarif €/km &times; km aller-retour &times; nombre d'interventions.
+                <strong>Formule :</strong> tarif €/km &times; km aller-retour &times; nombre d'allers-retours (1 par jour d'intervention, 2 si l'entraîneur l'a déclaré).
                 Les km sont configurés sur la fiche de chaque entraîneur.
             </p>
             <?php $this->notice_flash('recap_saved', 'Paramètres du récapitulatif enregistrés.'); ?>

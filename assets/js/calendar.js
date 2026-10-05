@@ -138,10 +138,10 @@
                             if (!d || d.disponible !== 1) return;
                             var nom = (t.nom_public || t.nom);
                             var displayName = nom.length > 12 ? nom.substring(0,11)+'…' : nom;
-                            var title = nom + (d.note ? ' — ' + d.note : '');
+                            var title = nom + (d.allers_retours === 2 ? ' — 2 allers-retours' : '') + (d.note ? ' — ' + d.note : '');
                             trainerHtml += '<div class="sp-trainer-row sp-trainer-ok" title="'+CAL.esc(title)+'">'
                                 +'<span class="sp-trainer-icon">👤</span>'
-                                +'<span class="sp-trainer-name">'+CAL.esc(displayName)+'</span>'
+                                +'<span class="sp-trainer-name">'+CAL.esc(displayName)+(d.allers_retours === 2 ? ' <b title="2 allers-retours">×2</b>' : '')+'</span>'
                                 +(d.note?'<span class="sp-trainer-note-dot" title="'+CAL.esc(d.note)+'">●</span>':'')
                                 +'</div>';
                         });
@@ -335,7 +335,7 @@
                 CAL.deleteDocument(CAL.editingEvent.id);
             });
             // Dispos : délégation sur les spans role=button (évite styles WP admin sur <button>)
-            $(document).on('click', '.sp-dispo-act:not(.sp-dispo-act-note)', function(){
+            $(document).on('click', '.sp-dispo-act:not(.sp-dispo-act-note):not(.sp-dispo-act-ar)', function(){
                 var tid  = parseInt($(this).data('trainer-id'), 10);
                 var date = $(this).data('date');
                 var val  = $(this).data('val');
@@ -350,6 +350,12 @@
                 if (note === null) return;
                 var cur_dispo = CAL.getDispoVal(tid, date);
                 CAL.saveDispo(tid, date, cur_dispo !== null ? cur_dispo : 1, note);
+            });
+            $(document).on('click', '.sp-dispo-act-ar', function(){
+                var tid   = parseInt($(this).data('trainer-id'), 10);
+                var date  = $(this).data('date');
+                var entry = (CAL.disposByDate[date] || {})[tid] || {};
+                CAL.saveDispo(tid, date, 1, entry.note || '', parseInt($(this).data('ar'), 10));
             });
         },
 
@@ -1388,13 +1394,16 @@
                 var btnKo   = '<span class="sp-dispo-act'+(dispo===0?' sp-act-on-ko':'')+'" role="button" tabindex="0" data-trainer-id="'+t.id+'" data-date="'+date+'" data-val="0"   title="Indisponible">❌</span>';
                 var btnClr  = '<span class="sp-dispo-act sp-dispo-act-clr'+(dispo===null?' sp-act-on-nr':'')+'" role="button" tabindex="0" data-trainer-id="'+t.id+'" data-date="'+date+'" data-val="" title="Effacer">⬜</span>';
                 var btnNote = '<span class="sp-dispo-act sp-dispo-act-note" role="button" tabindex="0" data-trainer-id="'+t.id+'" data-date="'+date+'" data-note="'+CAL.esc(note)+'" data-name="'+nomDisplay+'" title="'+(note?'Note : '+CAL.esc(note):'Ajouter une note')+'">✏️</span>';
+                // Deux interventions trop éloignées dans la journée → 2 allers-retours (comptés en IK).
+                var ar      = entry && entry.allers_retours === 2 ? 2 : 1;
+                var btnAr   = dispo === 1 ? '<span class="sp-dispo-act sp-dispo-act-ar'+(ar===2?' sp-act-on-ar':'')+'" role="button" tabindex="0" data-trainer-id="'+t.id+'" data-date="'+date+'" data-ar="'+(ar===2?1:2)+'" title="'+(ar===2?'2 allers-retours ce jour (cliquer pour revenir à 1)':'Passer à 2 allers-retours (interventions trop éloignées)')+'">×2</span>' : '';
 
                 var rowCls = dispo===1 ? 'sp-dispo-row sp-dispo-row-ok' : dispo===0 ? 'sp-dispo-row sp-dispo-row-ko' : 'sp-dispo-row sp-dispo-row-nr';
                 html += '<div class="'+rowCls+'" id="dispo-row-'+t.id+'">'
                     +'<span class="sp-dispo-avatar">'+(t.nom_public||t.nom).charAt(0).toUpperCase()+'</span>'
                     +'<span class="sp-dispo-name">'+nomDisplay+'</span>'
                     +(note ? '<span class="sp-dispo-note-badge" title="'+CAL.esc(note)+'">'+CAL.esc(note)+'</span>' : '')
-                    +'<span class="sp-dispo-acts">'+btnOk+btnKo+btnClr+btnNote+'</span>'
+                    +'<span class="sp-dispo-acts">'+btnOk+btnAr+btnKo+btnClr+btnNote+'</span>'
                     +'</div>';
             });
 
@@ -1448,7 +1457,8 @@
             });
         },
 
-        saveDispo: function (trainer_id, date, disponible, note) {
+        // allers : 1 ou 2 allers-retours dans la journée ; non précisé = garder la valeur enregistrée.
+        saveDispo: function (trainer_id, date, disponible, note, allers) {
             var btn = $('.sp-dispo-act[data-trainer-id="'+trainer_id+'"][data-date="'+date+'"]').css('opacity','0.4').css('pointer-events','none');
             $.post(SpCal.ajaxurl, {
                 action:     'sp_cal_save_trainer_dispo',
@@ -1457,6 +1467,7 @@
                 date:       date,
                 disponible: disponible,
                 note:       note,
+                allers_retours: allers || '', // vide = garder la valeur enregistrée
             }, function(res) {
                 btn.css('opacity','').css('pointer-events','');
                 if (!res.success) { alert('Erreur : ' + res.data); return; }
@@ -1466,7 +1477,7 @@
                 if (disponible === '' || disponible === null) {
                     delete CAL.disposByDate[date][trainer_id];
                 } else {
-                    CAL.disposByDate[date][trainer_id] = { disponible: parseInt(disponible, 10), note: note };
+                    CAL.disposByDate[date][trainer_id] = { disponible: parseInt(disponible, 10), note: note, allers_retours: (res.data && res.data.allers_retours) || 1 };
                 }
 
                 // Le serveur prévient lui-même le bureau (dates de J à J+3) : simple retour ici.
@@ -1494,10 +1505,10 @@
                 if (!d || d.disponible !== 1) return;
                 var nom = (t.nom_public || t.nom);
                 var displayName = nom.length > 12 ? nom.substring(0,11)+'…' : nom;
-                var title = nom + (d.note ? ' — ' + d.note : '');
+                var title = nom + (d.allers_retours === 2 ? ' — 2 allers-retours' : '') + (d.note ? ' — ' + d.note : '');
                 trainerHtml += '<div class="sp-trainer-row sp-trainer-ok" title="'+CAL.esc(title)+'">'
                     +'<span class="sp-trainer-icon">👤</span>'
-                    +'<span class="sp-trainer-name">'+CAL.esc(displayName)+'</span>'
+                    +'<span class="sp-trainer-name">'+CAL.esc(displayName)+(d.allers_retours === 2 ? ' <b title="2 allers-retours">×2</b>' : '')+'</span>'
                     +(d.note?'<span class="sp-trainer-note-dot" title="'+CAL.esc(d.note)+'">●</span>':'')
                     +'</div>';
             });

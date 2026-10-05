@@ -265,15 +265,19 @@ class SP_Cal_Trainer_App {
 
 		$disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
+		// 1 ou 2 allers-retours ; absent = garder la valeur enregistrée (enregistrement de la note)
+		$allers_retours = isset( $_POST['allers_retours'] ) && $_POST['allers_retours'] !== '' ? intval( $_POST['allers_retours'] ) : null;
+		$avant = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['disponible'] ?? null;
+
 		// Un entraîneur ne peut jamais écrire que sur SA PROPRE ligne — le trainer_id
 		// vient du token résolu côté serveur, jamais d'un paramètre envoyé par le client.
-		$avant = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['disponible'] ?? null;
-		$this->db->save_dispo( intval( $me->id ), $date, $disponible, $note );
+		$this->db->save_dispo( intval( $me->id ), $date, $disponible, $note, null, $allers_retours );
+		$ar = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['allers_retours'] ?? 1;
 
 		// Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
-		( new SpCalPro_Notifications( $this->db ) )->notifier_bureau_dispo( intval( $me->id ), $date, $avant, $disponible, $note );
+		( new SpCalPro_Notifications( $this->db ) )->notifier_bureau_dispo( intval( $me->id ), $date, $avant, $disponible, $note, '', $ar );
 
-		wp_send_json_success( [ 'date' => $date, 'disponible' => $disponible, 'note' => $note ] );
+		wp_send_json_success( [ 'date' => $date, 'disponible' => $disponible, 'note' => $note, 'allers_retours' => $ar ] );
 	}
 
 	// ─── Rendu de l'app ──────────────────────────────────────────────────────────
@@ -329,6 +333,10 @@ class SP_Cal_Trainer_App {
 			.sda-btn.sda-btn-nr.sda-active   { background: #64748b; border-color: #64748b; color: #fff; }
 			.sda-nr-hint { font-size: 12px; color: #6b7280; text-align: center; margin: 8px 0 0; min-height: 0; }
 			.sda-nr-hint:empty { display: none; }
+			.sda-ar { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; font-weight: 600; }
+			.sda-ar span { flex: 1; }
+			.sda-ar-btn { width: 44px; height: 40px; border-radius: 10px; border: 2px solid #e5e7eb; background: #fff; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; color: inherit; }
+			.sda-ar-btn.sda-active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
 			.sda-note { width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; }
 			.sda-saved { text-align: center; font-size: 11px; color: #16a34a; height: 16px; margin-top: 6px; }
 			.sda-hint { text-align: center; font-size: 12px; color: #9ca3af; padding: 14px; }
@@ -351,6 +359,8 @@ class SP_Cal_Trainer_App {
 			.sda-sombre .sda-team-avatar { background: #333; color: #fff; }
 			.sda-sombre .sda-me-label { color: rgba(255,255,255,.45); }
 			.sda-sombre .sda-btn { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-ar-btn { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-ar-btn.sda-active { background: #0f70b7; border-color: #0f70b7; }
 			.sda-sombre .sda-note { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-note::placeholder { color: rgba(255,255,255,.35); }
 			.sda-sombre .sda-hint, .sda-sombre .sda-nr-hint { color: rgba(255,255,255,.45); }
@@ -459,7 +469,7 @@ class SP_Cal_Trainer_App {
 
 			function statusIcon(dispo) {
 				if (!dispo) return '<span style="color:#cbd5e1;">⏳</span>';
-				if (dispo.disponible === 1) return '<span style="color:#16a34a;">✅</span>';
+				if (dispo.disponible === 1) return '<span style="color:#16a34a;">✅' + (dispo.allers_retours === 2 ? ' ×2' : '') + '</span>';
 				if (dispo.disponible === 0) return '<span style="color:#dc2626;">❌</span>';
 				return '<span style="color:#cbd5e1;">⏳</span>';
 			}
@@ -487,6 +497,7 @@ class SP_Cal_Trainer_App {
 
 				var mine = dayDispos[state.me.id] || null;
 				var val  = mine ? mine.disponible : null; // 1 / 0 / null (neutre = non renseigné, comme ⬜ dans l'admin)
+				var ar   = mine && mine.allers_retours === 2 ? 2 : 1;
 				html += '<div class="sda-me-label">Votre disponibilité</div>'
 					+ '<div class="sda-btns">'
 					+ '<button type="button" class="sda-btn sda-btn-ok' + (val === 1 ? ' sda-active' : '') + '" data-val="1">✅<span>Disponible</span></button>'
@@ -494,6 +505,11 @@ class SP_Cal_Trainer_App {
 					+ '<button type="button" class="sda-btn sda-btn-ko' + (val === 0 ? ' sda-active' : '') + '" data-val="0">❌<span>Indisponible</span></button>'
 					+ '</div>'
 					+ '<p class="sda-nr-hint">' + (val === null ? 'Neutre : pas de réponse, mais vous pouvez être sollicité si besoin.' : '') + '</p>'
+					// Deux interventions trop éloignées dans la journée → deux allers-retours (comptés en IK).
+					+ (val === 1 ? '<div class="sda-ar"><span>Allers-retours dans la journée</span>'
+						+ '<button type="button" class="sda-ar-btn' + (ar === 1 ? ' sda-active' : '') + '" data-ar="1">1</button>'
+						+ '<button type="button" class="sda-ar-btn' + (ar === 2 ? ' sda-active' : '') + '" data-ar="2">2</button></div>'
+						+ '<p class="sda-nr-hint">' + (ar === 2 ? 'Deux trajets aller-retour ce jour-là (interventions trop éloignées) : comptés tous les deux en IK.' : 'Choisissez 2 si vos deux interventions sont trop éloignées pour rester sur place.') + '</p>' : '')
 					+ (val === null ? '' : '<textarea class="sda-note" id="sda-note" rows="2" placeholder="Note (facultatif)">' + (mine && mine.note ? mine.note : '') + '</textarea>')
 					+ '<div class="sda-saved" id="sda-saved"></div>';
 
@@ -503,21 +519,29 @@ class SP_Cal_Trainer_App {
 				// après l'autre dans l'ordre des gestes. Avant, quitter la note (enregistrement de
 				// l'ancien état) et toucher « Indisponible » partaient en même temps : l'ancien état
 				// pouvait arriver en dernier et l'emporter (retour terrain du 01/10/2026).
-				function save(disponible, rerender) {
+				// allers : 1 ou 2 ; non précisé = garder la valeur en cours (le serveur fait de même).
+				function save(disponible, rerender, allers) {
 					var noteEl = document.getElementById('sda-note');
-					var note   = disponible === null ? '' : (noteEl ? noteEl.value : ((state.dispos[ds] || {})[state.me.id] || {}).note || '');
+					var actuel = (state.dispos[ds] || {})[state.me.id] || {};
+					var note   = disponible === null ? '' : (noteEl ? noteEl.value : actuel.note || '');
+					var a      = disponible === 1 ? (allers || (actuel.allers_retours === 2 ? 2 : 1)) : 1;
 					if (!state.dispos[ds]) state.dispos[ds] = {};
 					if (disponible === null) delete state.dispos[ds][state.me.id];
-					else state.dispos[ds][state.me.id] = { disponible: disponible, note: note };
+					else state.dispos[ds][state.me.id] = { disponible: disponible, note: note, allers_retours: a };
 					renderGrid();
 					if (rerender) renderPanel();
-					queue(ds, disponible, note);
+					queue(ds, disponible, note, allers || '');
 				}
 
 				[].forEach.call(panel.querySelectorAll('.sda-btn'), function(b){
 					b.addEventListener('click', function(){
 						var v = this.getAttribute('data-val');
 						save(v === '' ? null : parseInt(v, 10), true);
+					});
+				});
+				[].forEach.call(panel.querySelectorAll('.sda-ar-btn'), function(b){
+					b.addEventListener('click', function(){
+						save(1, true, parseInt(this.getAttribute('data-ar'), 10));
 					});
 				});
 				// Refermer le jour et revenir au calendrier
@@ -536,10 +560,10 @@ class SP_Cal_Trainer_App {
 
 			// File d'envoi : une requête à la fois, dans l'ordre.
 			var file = Promise.resolve();
-			function queue(ds, disponible, note) {
+			function queue(ds, disponible, note, allers) {
 				file = file.then(function(){
 					return new Promise(function(fin){
-						post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note }, function(res){
+						post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note, allers_retours: allers || '' }, function(res){
 							var saved = document.getElementById('sda-saved');
 							if (saved) {
 								saved.textContent = res.success ? '✓ Enregistré' : '⚠️ Erreur — réessayez';

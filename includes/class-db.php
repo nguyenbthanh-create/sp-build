@@ -580,6 +580,9 @@ class SpCalPro_DB {
         if ( $wpdb->get_var( "SHOW TABLES LIKE '$tdispos'" ) ) {
             if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tdispos` LIKE 'remplacant_id'" ) )
                 $wpdb->query( "ALTER TABLE `$tdispos` ADD COLUMN `remplacant_id` mediumint(9) DEFAULT NULL" );
+            // 05/10/2026 : 1 ou 2 allers-retours dans la journée (deux interventions trop éloignées)
+            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tdispos` LIKE 'allers_retours'" ) )
+                $wpdb->query( "ALTER TABLE `$tdispos` ADD COLUMN `allers_retours` tinyint(1) NOT NULL DEFAULT 1" );
         }
 
         // v10.17 : prénoms + téléphone contacts sur les élèves
@@ -706,14 +709,17 @@ class SpCalPro_DB {
     }
 
     /**
-     * Compte les interventions réelles par entraîneur sur un mois donné.
+     * Compte les interventions réelles par entraîneur sur un mois donné (base des IK).
      *
-     * Une intervention est comptabilisée si :
+     * Une journée d'intervention est comptabilisée si :
      *   1. L'entraîneur a disponible=1 dans trainer_dispos pour cette date.
      *   2. Il existe au moins un créneau récurrent non annulé OU un événement ponctuel
      *      ce même jour (la date était bien un jour d'activité du club).
+     * Chaque journée compte 1 ou 2 allers-retours (colonne allers_retours, déclarée par
+     * l'entraîneur quand ses deux interventions du jour sont trop éloignées) : les IK se
+     * calculent sur les allers-retours.
      *
-     * @return array  [ trainer_id (int) => nb_interventions (int) ]
+     * @return array  [ trainer_id (int) => [ 'jours' => int, 'ar' => int ] ]
      */
     public function get_interventions_par_trainer( $year, $month ) {
         global $wpdb;
@@ -754,8 +760,11 @@ class SpCalPro_DB {
             return $wpdb->prepare( '%s', $d );
         }, array_keys( $dates_actives ) ) );
 
+        // Colonne pas encore migrée (maybe_upgrade() ne passe qu'au chargement de l'admin,
+        // le récapitulatif part par le cron) : 1 aller-retour par journée.
+        $ar_sql = $this->dispos_ont_allers_retours() ? 'SUM(GREATEST(1, LEAST(2, allers_retours)))' : 'COUNT(*)';
         $rows = $wpdb->get_results(
-            "SELECT trainer_id, COUNT(*) AS nb
+            "SELECT trainer_id, COUNT(*) AS nb, $ar_sql AS ar
              FROM $tdispos
              WHERE date IN ($dates_safe)
                AND disponible = 1
@@ -764,9 +773,19 @@ class SpCalPro_DB {
 
         $result = array();
         foreach ( $rows as $r ) {
-            $result[ intval( $r->trainer_id ) ] = intval( $r->nb );
+            $result[ intval( $r->trainer_id ) ] = array( 'jours' => intval( $r->nb ), 'ar' => intval( $r->ar ) );
         }
         return $result;
+    }
+
+    /** La colonne allers_retours existe-t-elle déjà sur ce site ? */
+    private function dispos_ont_allers_retours() {
+        static $ok = null;
+        if ( $ok === null ) {
+            global $wpdb;
+            $ok = (bool) $wpdb->get_var( "SHOW COLUMNS FROM `{$this->table_trainer_dispos()}` LIKE 'allers_retours'" );
+        }
+        return $ok;
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -1368,7 +1387,7 @@ class SpCalPro_DB {
 
     /**
      * Récupère toutes les dispos des entraîneurs pour un mois donné.
-     * Retourne un tableau indexé par "YYYY-MM-DD" => [ trainer_id => ['disponible'=>0/1,'note'=>''] ]
+     * Retourne un tableau indexé par "YYYY-MM-DD" => [ trainer_id => ['disponible'=>0/1,'note'=>'','remplacant_id','allers_retours'=>1/2] ]
      */
     public function get_dispos_for_month( $year, $month ) {
         global $wpdb;
@@ -1376,7 +1395,7 @@ class SpCalPro_DB {
         $start   = sprintf( '%04d-%02d-01', $year, $month );
         $end     = date( 'Y-m-t', strtotime( $start ) );
         $rows    = $wpdb->get_results( $wpdb->prepare(
-            "SELECT trainer_id, date, disponible, note, remplacant_id FROM $tdispos WHERE date BETWEEN %s AND %s",
+            "SELECT * FROM $tdispos WHERE date BETWEEN %s AND %s", // SELECT * : colonnes ajoutées au fil du temps
             $start, $end
         ) );
         $map = array();
@@ -1385,7 +1404,8 @@ class SpCalPro_DB {
             $map[ $r->date ][ intval( $r->trainer_id ) ] = array(
                 'disponible'    => intval( $r->disponible ),
                 'note'          => $r->note,
-                'remplacant_id' => $r->remplacant_id ? intval( $r->remplacant_id ) : null,
+                'remplacant_id' => ! empty( $r->remplacant_id ) ? intval( $r->remplacant_id ) : null,
+                'allers_retours' => intval( $r->disponible ) === 1 && intval( $r->allers_retours ?? 1 ) === 2 ? 2 : 1,
             );
         }
         return $map;
@@ -1393,20 +1413,21 @@ class SpCalPro_DB {
 
     /**
      * Récupère les dispos d'une date précise pour tous les entraîneurs.
-     * Retourne [ trainer_id => ['disponible'=>0/1,'note'=>''] ]
+     * Retourne [ trainer_id => ['disponible'=>0/1,'note'=>'','remplacant_id','allers_retours'=>1/2] ]
      */
     public function get_dispos_for_date( $date_str ) {
         global $wpdb;
         $tdispos = $this->table_trainer_dispos();
         $rows    = $wpdb->get_results( $wpdb->prepare(
-            "SELECT trainer_id, disponible, note, remplacant_id FROM $tdispos WHERE date = %s", $date_str
+            "SELECT * FROM $tdispos WHERE date = %s", $date_str // SELECT * : colonnes ajoutées au fil du temps
         ) );
         $map = array();
         foreach ( $rows as $r ) {
             $map[ intval( $r->trainer_id ) ] = array(
                 'disponible'    => intval( $r->disponible ),
                 'note'          => $r->note,
-                'remplacant_id' => $r->remplacant_id ? intval( $r->remplacant_id ) : null,
+                'remplacant_id' => ! empty( $r->remplacant_id ) ? intval( $r->remplacant_id ) : null,
+                'allers_retours' => intval( $r->disponible ) === 1 && intval( $r->allers_retours ?? 1 ) === 2 ? 2 : 1,
             );
         }
         return $map;
@@ -1449,9 +1470,11 @@ class SpCalPro_DB {
 
     /**
      * Sauvegarde (upsert) la dispo d'un entraîneur pour une date.
-     * $disponible : 1 = dispo, 0 = indisponible, null = supprimer l'entrée
+     * $disponible     : 1 = dispo, 0 = indisponible, null = supprimer l'entrée
+     * $allers_retours : 1 ou 2 (seulement quand disponible) ; null = garder la valeur déjà
+     *                   enregistrée (enregistrement d'une note, ancienne page sans le choix)
      */
-    public function save_dispo( $trainer_id, $date_str, $disponible, $note = '', $remplacant_id = null ) {
+    public function save_dispo( $trainer_id, $date_str, $disponible, $note = '', $remplacant_id = null, $allers_retours = null ) {
         global $wpdb;
         $tdispos       = $this->table_trainer_dispos();
         $trainer_id    = intval( $trainer_id );
@@ -1464,22 +1487,22 @@ class SpCalPro_DB {
             return;
         }
 
+        $row = array( 'disponible' => intval($disponible), 'note' => $note, 'remplacant_id' => $remplacant_id );
+        if ( $this->dispos_ont_allers_retours() ) {
+            if ( intval( $disponible ) !== 1 )   $row['allers_retours'] = 1;
+            elseif ( null !== $allers_retours ) $row['allers_retours'] = intval( $allers_retours ) === 2 ? 2 : 1;
+        }
+
         $exists = $wpdb->get_var( $wpdb->prepare(
             "SELECT id FROM $tdispos WHERE trainer_id=%d AND date=%s", $trainer_id, $date_str
         ) );
         if ( $exists ) {
-            $wpdb->update( $tdispos,
-                array( 'disponible' => intval($disponible), 'note' => $note, 'remplacant_id' => $remplacant_id ),
-                array( 'id' => intval($exists) )
-            );
+            $wpdb->update( $tdispos, $row, array( 'id' => intval($exists) ) );
         } else {
-            $wpdb->insert( $tdispos, array(
+            $wpdb->insert( $tdispos, array_merge( array(
                 'trainer_id'    => $trainer_id,
                 'date'          => $date_str,
-                'disponible'    => intval($disponible),
-                'note'          => $note,
-                'remplacant_id' => $remplacant_id,
-            ) );
+            ), $row ) );
         }
     }
 

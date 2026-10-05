@@ -1364,17 +1364,20 @@ class SpCalPro_Ajax {
         $dispo_raw     = $_POST['disponible'] ?? '';
         $note          = sanitize_text_field( $_POST['note'] ?? '' );
         $remplacant_id = intval( $_POST['remplacant_id'] ?? 0 ) ?: null;
+        // 1 ou 2 allers-retours ; absent = garder la valeur enregistrée (bouton ✏️ de la note)
+        $allers_retours = isset( $_POST['allers_retours'] ) && $_POST['allers_retours'] !== '' ? intval( $_POST['allers_retours'] ) : null;
 
         if ( ! $trainer_id || ! $date ) wp_send_json_error( 'Paramètres manquants.' );
 
         $disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
         $avant = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['disponible'] ?? null;
-        $this->db->save_dispo( $trainer_id, $date, $disponible, $note, $remplacant_id );
+        $this->db->save_dispo( $trainer_id, $date, $disponible, $note, $remplacant_id, $allers_retours );
+        $ar = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['allers_retours'] ?? 1;
 
         // Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
         $notif   = new SpCalPro_Notifications( $this->db );
-        $notifie = $notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, wp_get_current_user()->display_name ?: 'un administrateur' );
+        $notifie = $notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, wp_get_current_user()->display_name ?: 'un administrateur', $ar );
 
         wp_send_json_success( array(
             'trainer_id'    => $trainer_id,
@@ -1382,6 +1385,7 @@ class SpCalPro_Ajax {
             'disponible'    => $disponible,
             'note'          => $note,
             'remplacant_id' => $remplacant_id,
+            'allers_retours' => $ar,
             'bureau'        => $notifie,
         ) );
     }

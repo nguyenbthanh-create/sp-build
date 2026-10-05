@@ -52,10 +52,11 @@ class SpCalPro_Notifications {
      * @param array $default  Valeur par défaut (tableau vide) si le filtre n'est pas surchargé.
      * @param int   $year
      * @param int   $month
-     * @return array  [ trainer_id => nombre d'interventions ] pour le mois donné.
+     * @return array  [ trainer_id => nombre d'allers-retours ] pour le mois donné (base des IK :
+     *                une journée à deux allers-retours compte 2).
      */
     public function filter_interventions_par_trainer( $default, $year, $month ) {
-        return $this->db->get_interventions_par_trainer( intval( $year ), intval( $month ) );
+        return array_map( static function ( $i ) { return $i['ar']; }, $this->db->get_interventions_par_trainer( intval( $year ), intval( $month ) ) );
     }
 
     public function add_schedules( $schedules ) {
@@ -448,9 +449,10 @@ class SpCalPro_Notifications {
      * @param int|null $apres  état enregistré
      * @param string   $note
      * @param string   $par    '' = l'entraîneur lui-même, sinon nom de l'admin qui a modifié
+     * @param int      $allers_retours  1 ou 2 (journée à deux allers-retours), mentionné dans le mail
      * @return int nombre de mails envoyés
      */
-    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '' ) {
+    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '', $allers_retours = 1 ) {
         $trainer_id = intval( $trainer_id );
         $avant      = $avant === null ? null : intval( $avant );
         $apres      = $apres === null ? null : intval( $apres );
@@ -490,7 +492,9 @@ class SpCalPro_Notifications {
         $quand       = $ecart === 0 ? "aujourd'hui" : ( $ecart === 1 ? 'demain' : 'dans ' . $ecart . ' jours' );
         $encadrement = $this->db->get_encadrement_du_jour( $date );
 
-        if ( $apres === 1 )     $etat = array( '✅', 'disponible',    'est désormais disponible' );
+        if ( $apres === 1 )     $etat = intval( $allers_retours ) === 2
+            ? array( '✅', 'disponible (2 allers-retours)', 'est désormais disponible, avec 2 allers-retours dans la journée (interventions trop éloignées)' )
+            : array( '✅', 'disponible',    'est désormais disponible' );
         elseif ( $apres === 0 ) $etat = array( '❌', 'indisponible',  'est désormais indisponible' );
         else                    $etat = array( '⬜', 'non renseigné', "n'a plus de réponse enregistrée (ni disponible, ni indisponible)" );
 
@@ -631,6 +635,7 @@ class SpCalPro_Notifications {
      * @return int         Nombre d'emails envoyés
      */
     private function do_send_recap_mensuel( $year, $month ) {
+        global $wpdb; // manquait depuis l'origine : erreur fatale sur la requête des km exceptionnels
         $bureau = $this->db->get_bureau_members();
         if ( empty($bureau) ) return 0;
 
@@ -675,7 +680,8 @@ class SpCalPro_Notifications {
             if ( strpos($t->roles, 'entraineur') === false ) continue;
 
             $tid     = intval($t->id);
-            $nb      = intval( $interventions[$tid] ?? 0 );
+            $jours   = intval( $interventions[$tid]['jours'] ?? 0 );
+            $nb      = intval( $interventions[$tid]['ar'] ?? 0 ); // allers-retours : base des IK
             $has_km_excep = isset($km_excep_by_trainer[$tid]);
             if ( $nb === 0 && ! $has_km_excep ) continue; // exclure sans activité ET sans km excep
 
@@ -692,6 +698,7 @@ class SpCalPro_Notifications {
 
             $lignes[] = array(
                 'nom'          => trim($t->nom),
+                'jours'        => $jours,
                 'nb'           => $nb,
                 'km'           => $km,
                 'km_excep'     => $km_excep,
@@ -727,7 +734,8 @@ class SpCalPro_Notifications {
             $rows_html .= '
             <tr style="background:' . $bg . ';">
                 <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;">' . esc_html($l['nom']) . '</td>
-                <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;text-align:center;">' . $l['nb'] . ' cours</td>
+                <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;text-align:center;">' . $l['jours'] . '</td>
+                <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;text-align:center;">' . ( $l['nb'] > $l['jours'] ? '<strong>' . $l['nb'] . '</strong>' : $l['nb'] ) . '</td>
                 <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;text-align:center;">' . $km_str . '</td>
                 <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;text-align:right;">' . $m_str . '</td>
             </tr>';
@@ -736,7 +744,7 @@ class SpCalPro_Notifications {
         // Ligne total
         $rows_html .= '
             <tr style="background:#1e3a5f;color:#ffffff;">
-                <td style="padding:11px 14px;font-weight:700;" colspan="3">Total à régler</td>
+                <td style="padding:11px 14px;font-weight:700;" colspan="4">Total à régler</td>
                 <td style="padding:11px 14px;text-align:right;font-weight:700;font-size:15px;">' . $total_str . '</td>
             </tr>';
 
@@ -755,7 +763,7 @@ class SpCalPro_Notifications {
             $tarif_html = '
             <div style="margin-bottom:20px;padding:10px 14px;background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:4px;font-size:13px;color:#0c4a6e;">
                 💶 Tarif : <strong>' . number_format($tarif_km, 2, ',', ' ') . ' €/km</strong>
-                &nbsp;·&nbsp; Formule : tarif × km A/R × interventions
+                &nbsp;·&nbsp; Formule : tarif × km A/R × allers-retours
             </div>';
         } else {
             $tarif_html = '
@@ -799,7 +807,8 @@ class SpCalPro_Notifications {
             <thead>
               <tr style="background:#1e3a5f;color:#ffffff;">
                 <th style="padding:11px 14px;text-align:left;font-weight:700;">Entraîneur</th>
-                <th style="padding:11px 14px;text-align:center;font-weight:700;">Interventions</th>
+                <th style="padding:11px 14px;text-align:center;font-weight:700;">Jours d\'intervention</th>
+                <th style="padding:11px 14px;text-align:center;font-weight:700;">Allers-retours</th>
                 <th style="padding:11px 14px;text-align:center;font-weight:700;">Km A/R</th>
                 <th style="padding:11px 14px;text-align:right;font-weight:700;">Montant</th>
               </tr>
@@ -818,7 +827,8 @@ class SpCalPro_Notifications {
 
           <!-- Note -->
           <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px;">
-            Une intervention = une date où l\'entraîneur était disponible ✅ et où au moins un cours était prévu.
+            Jour d\'intervention = une date où l\'entraîneur était disponible ✅ et où au moins un cours était prévu.
+            Il compte 1 aller-retour, ou 2 quand l\'entraîneur l\'a déclaré (deux interventions trop éloignées dans la journée). Les IK se calculent sur les allers-retours.
           </p>
 
           <!-- Bouton -->
