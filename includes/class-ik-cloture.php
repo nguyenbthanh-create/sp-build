@@ -9,7 +9,8 @@
  * Fonctionnement (choix de l'utilisateur du 05/10/2026) :
  *   - le trésorier clôture un mois une fois les IK payées (bouton dans Réglages → Récapitulatif
  *     mensuel) : le détail de chaque entraîneur est figé (jours, allers-retours, km, tarif, montant) ;
- *   - un mois clôturé ne se modifie plus depuis « Mes dispos » ; l'admin peut encore corriger
+ *   - un mois clôturé ne se modifie plus depuis « Mes dispos » ; seuls les comptes cochés en bas du bloc (option sp_cal_ik_modif_comptes,
+ *     sur le modèle de « Accès bureau » de sp-compta) peuvent encore corriger
  *     après confirmation, et l'écart avec le figé apparaît dans le récapitulatif suivant
  *     (bloc « Régularisations ») ;
  *   - clôturer le mois suivant solde ces régularisations : elles font partie du montant figé
@@ -33,6 +34,7 @@ class SP_Cal_IK_Cloture {
 
 	const OPTION = 'sp_cal_ik_clotures';
 	const CAP    = 'manage_options';
+	const OPTION_DROITS = 'sp_cal_ik_modif_comptes';
 
 	public static function get_instance( $db = null ): self {
 		if ( self::$instance === null ) self::$instance = new self( $db );
@@ -43,6 +45,7 @@ class SP_Cal_IK_Cloture {
 		$this->db = $db;
 		add_action( 'admin_post_sp_cal_ik_cloturer', [ $this, 'handle_cloturer' ] );
 		add_action( 'admin_post_sp_cal_ik_rouvrir',  [ $this, 'handle_rouvrir' ] );
+		add_action( 'admin_post_sp_cal_ik_droits',   [ $this, 'handle_droits' ] );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -120,6 +123,17 @@ class SP_Cal_IK_Cloture {
 	/** Le mois de cette date (AAAA-MM-JJ ou AAAA-MM) est-il clôturé ? */
 	public function est_cloture( string $date ): bool {
 		return isset( $this->clotures()[ substr( $date, 0, 7 ) ] );
+	}
+
+	/** Identifiants des comptes autorisés à corriger un mois clôturé (Réglages → Clôture des IK). */
+	public function comptes_autorises(): array {
+		$ids = get_option( self::OPTION_DROITS, [] );
+		return is_array( $ids ) ? array_values( array_map( 'intval', $ids ) ) : [];
+	}
+
+	/** Le compte connecté peut-il corriger une dispo d'un mois clôturé ? */
+	public function peut_modifier_cloture(): bool {
+		return current_user_can( self::CAP ) && in_array( get_current_user_id(), $this->comptes_autorises(), true );
 	}
 
 	/**
@@ -243,9 +257,10 @@ class SP_Cal_IK_Cloture {
 
 		echo '<div class="sp-box" id="sp-ik-cloture"><h2>🔒 Clôture des IK</h2>'
 			. '<p class="description">Une fois les IK d\'un mois payées, clôturez-le : le montant de chaque entraîneur est figé et les entraîneurs ne peuvent plus modifier leurs dispos de ce mois. '
-			. 'Une correction faite ensuite par un admin apparaît en <strong>régularisation</strong> dans le récapitulatif suivant ; elle est soldée à la clôture du mois suivant.</p>';
+			. 'Seuls les comptes cochés en bas de ce bloc peuvent ensuite corriger ce mois depuis le calendrier ; l\'écart apparaît en <strong>régularisation</strong> dans le récapitulatif suivant et il est soldé à la clôture du mois suivant.</p>';
 		if ( $msg === 'cloture' ) echo '<div class="notice notice-success inline"><p>Mois clôturé.</p></div>';
 		if ( $msg === 'rouvert' ) echo '<div class="notice notice-warning inline"><p>Mois rouvert : les entraîneurs peuvent de nouveau modifier leurs dispos de ce mois.</p></div>';
+		if ( $msg === 'droits' )  echo '<div class="notice notice-success inline"><p>Autorisations enregistrées.</p></div>';
 		if ( $msg === 'refuse' )  echo '<div class="notice notice-error inline"><p>Action impossible (mois en cours, déjà clôturé, ou pas la dernière clôture faite).</p></div>';
 
 		if ( $regul ) {
@@ -287,7 +302,30 @@ class SP_Cal_IK_Cloture {
 			}
 			echo '</td></tr>';
 		}
-		echo '</tbody></table></div>';
+		echo '</tbody></table>';
+		$this->render_droits();
+		echo '</div>';
+	}
+
+	/**
+	 * Bas du bloc : comptes autorisés à corriger un mois clôturé (sur le modèle de « Accès
+	 * bureau » de sp-compta). Seuls les comptes qui gèrent déjà le calendrier sont proposés.
+	 */
+	private function render_droits(): void {
+		$autorises = $this->comptes_autorises();
+		$comptes   = get_users( [ 'capability' => self::CAP, 'orderby' => 'display_name' ] );
+		echo '<h3 style="margin-top:20px">Modification des mois clôturés</h3>'
+			. '<p class="description">Comptes autorisés à corriger une dispo d\'un mois clôturé depuis le calendrier (avec confirmation ; l\'écart passe en régularisation). '
+			. 'Les autres comptes, et les entraîneurs dans « Mes dispos », ne peuvent plus modifier un mois clôturé.</p>'
+			. '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">'
+			. wp_nonce_field( 'sp_cal_ik_droits', '_wpnonce', true, false )
+			. '<input type="hidden" name="action" value="sp_cal_ik_droits">';
+		foreach ( $comptes as $u ) {
+			echo '<label style="display:block;margin:4px 0;"><input type="checkbox" name="comptes[]" value="' . intval( $u->ID ) . '"'
+				. ( in_array( intval( $u->ID ), $autorises, true ) ? ' checked' : '' ) . '> '
+				. esc_html( $u->display_name ) . ' (' . esc_html( $u->user_email ) . ')</label>';
+		}
+		echo '<p><button class="button">Enregistrer les autorisations</button></p></form>';
 	}
 
 	private function retour( string $msg ): void {
@@ -307,5 +345,15 @@ class SP_Cal_IK_Cloture {
 		check_admin_referer( 'sp_cal_ik_rouvrir' );
 		$ok = $this->rouvrir( sanitize_text_field( wp_unslash( $_POST['mois'] ?? '' ) ) );
 		$this->retour( $ok ? 'rouvert' : 'refuse' );
+	}
+
+	public function handle_droits(): void {
+		if ( ! current_user_can( self::CAP ) ) wp_die( 'Accès refusé.' );
+		check_admin_referer( 'sp_cal_ik_droits' );
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', (array) ( $_POST['comptes'] ?? [] ) ) ) ) );
+		// Seuls des comptes qui gèrent le calendrier peuvent être autorisés.
+		$ids = array_values( array_filter( $ids, static fn( $id ) => user_can( $id, self::CAP ) ) );
+		update_option( self::OPTION_DROITS, $ids, false );
+		$this->retour( 'droits' );
 	}
 }
