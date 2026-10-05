@@ -58,7 +58,7 @@ class SP_Cal_Passages {
 		add_action( 'init', [ __CLASS__, 'maybe_create_tables' ] );
 		add_action( 'admin_menu', [ $this, 'register_menu' ], 20 );
 
-		foreach ( [ 'creer', 'preparer', 'statut', 'supprimer', 'epreuve', 'epreuve_suppr' ] as $a ) {
+		foreach ( [ 'creer', 'preparer', 'statut', 'supprimer', 'epreuve', 'epreuve_suppr', 'imprimer' ] as $a ) {
 			add_action( 'admin_post_sp_passage_' . $a, [ $this, 'handle_' . $a ] );
 		}
 
@@ -408,7 +408,7 @@ class SP_Cal_Passages {
 			foreach ( $par_crit[ $crit['cle'] ] ?? [] as $ev ) {
 				$val = $poom ? self::note_eval( $crit, $ev ) : self::niveau_eval( $crit, $ev );
 				if ( $val === null ) continue;
-				$ligne['votes'][] = [ 'juge' => $noms[ $ev->juge_id ] ?? 'Juge', 'valeur' => $val, 'brut' => $ev->valeur !== null ? floatval( $ev->valeur ) : null ];
+				$ligne['votes'][] = [ 'juge' => $noms[ $ev->juge_id ] ?? 'Juge', 'juge_id' => $ev->juge_id, 'valeur' => $val, 'brut' => $ev->valeur !== null ? floatval( $ev->valeur ) : null ];
 			}
 			$vals = array_column( $ligne['votes'], 'valeur' );
 
@@ -775,6 +775,7 @@ class SP_Cal_Passages {
 		<p><a href="<?php echo esc_url( self::url() ); ?>">← Tous les passages</a></p>
 
 		<?php $this->bloc_statut( $p, $juges ); ?>
+		<?php $this->bloc_impression( $p, $juges, count( $cands ) ); ?>
 
 		<form method="post" action="<?php echo $post_url; // phpcs:ignore -- esc_url ci-dessus ?>" id="sp-pg-prep">
 			<?php wp_nonce_field( 'sp_passage_preparer_' . $pid ); ?>
@@ -863,6 +864,36 @@ class SP_Cal_Passages {
 		})();
 		</script>
 		<?php
+	}
+
+	/**
+	 * Feuilles de notation A5. Vierges : secours papier si la notation au téléphone est
+	 * impossible, une feuille par candidat et par juge (même grille que l'écran du juge).
+	 * Remplies : archive du club, une feuille par candidat, une fois le passage validé.
+	 */
+	private function bloc_impression( $p, array $juges, int $nb_cands ): void {
+		if ( ! $nb_cands ) return;
+		$pid    = intval( $p->id );
+		$action = esc_url( admin_url( 'admin-post.php' ) );
+		$caches = '<input type="hidden" name="action" value="sp_passage_imprimer">'
+			. '<input type="hidden" name="passage_id" value="' . $pid . '">'
+			. '<input type="hidden" name="_wpnonce" value="' . esc_attr( wp_create_nonce( 'sp_passage_imprimer_' . $pid ) ) . '">';
+		echo '<div class="sp-pg-box"><h2>🖨️ Feuilles de notation (A5)</h2>'
+			. '<p class="description"><strong>Vierges</strong> : secours papier si un téléphone ou le réseau fait défaut — une feuille par candidat et par juge, avec la même grille qu\'à l\'écran. Les notes se recopient ensuite avec le lien du juge tant que la notation est ouverte. '
+			. '<strong>Remplies</strong> : archive du club, une feuille par candidat avec les notes de chaque juge, la décision et les remarques.</p>';
+		echo '<form method="get" action="' . $action . '" target="_blank" class="sp-pg-actions">' . $caches // phpcs:ignore -- échappé ci-dessus
+			. '<input type="hidden" name="mode" value="vierge"><label>Juge <select name="juge">';
+		if ( $juges ) echo '<option value="0">Tous les juges (' . count( $juges ) . ')</option>';
+		foreach ( $juges as $j ) echo '<option value="' . intval( $j->id ) . '">' . esc_html( $j->nom ) . '</option>';
+		echo '<option value="-1">Sans nom (juge à compléter à la main)</option></select></label>'
+			. '<button class="button">🖨️ Feuilles vierges</button></form>';
+		if ( $p->statut === 'valide' ) {
+			echo '<form method="get" action="' . $action . '" target="_blank" class="sp-pg-actions" style="margin-top:10px">' . $caches // phpcs:ignore
+				. '<input type="hidden" name="mode" value="rempli"><button class="button button-primary">🖨️ Feuilles remplies (archive)</button></form>';
+		} else {
+			echo '<p class="sp-pg-muted" style="margin:10px 0 0">Les feuilles remplies seront disponibles après « Valider les grades ».</p>';
+		}
+		echo '</div>';
 	}
 
 	private function bloc_candidats( $p, array $cands ): void {
@@ -1346,6 +1377,202 @@ class SP_Cal_Passages {
 		global $wpdb;
 		$wpdb->delete( self::t( 'passage_epreuves' ), [ 'id' => intval( $_POST['id'] ?? 0 ) ] );
 		self::retour( [ 'tab' => 'epreuves', 'msg' => 'ep_suppr' ] );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// IMPRESSION — feuilles de notation A5 (vierges / remplies)
+	// ══════════════════════════════════════════════════════════════════════
+
+	const NIV_LIB = [ self::ACQUIS => 'Acquis', self::REVOIR => 'À revoir', self::NON => 'Non acquis' ];
+
+	/**
+	 * Page d'impression (nouvel onglet). mode=vierge : juge=ID (un juge), 0 (tous, une série par
+	 * juge) ou -1 (nom à compléter). mode=rempli : passage validé uniquement ; les notes et le
+	 * verdict viennent de resultats(), le même calcul que l'écran du président.
+	 */
+	public function handle_imprimer(): void {
+		$pid = intval( $_GET['passage_id'] ?? 0 );
+		$this->exiger( 'sp_passage_imprimer_' . $pid );
+		$p = $this->get_passage( $pid );
+		if ( ! $p ) wp_die( 'Passage introuvable.' );
+		$rempli = sanitize_key( $_GET['mode'] ?? '' ) === 'rempli';
+		$juges  = $this->get_juges( $pid );
+		$html   = '';
+		$nb     = 0;
+
+		if ( $rempli ) {
+			if ( $p->statut !== 'valide' ) wp_die( 'Les feuilles remplies sont disponibles une fois le passage validé.' );
+			foreach ( $this->resultats( $p ) as $c ) { $html .= $this->feuille_remplie( $p, (object) $c, $juges ); $nb++; }
+		} else {
+			$jid  = intval( $_GET['juge'] ?? 0 );
+			$noms = [];
+			foreach ( $juges as $j ) {
+				if ( $jid === 0 || $jid === intval( $j->id ) ) $noms[] = $j->nom;
+			}
+			if ( $jid < 0 || ! $noms ) $noms = [ '' ];
+			$cands = $this->get_candidats( $pid );
+			foreach ( $noms as $nom ) {
+				foreach ( $cands as $c ) { $html .= $this->feuille_vierge( $p, $c, $nom ); $nb++; }
+			}
+		}
+
+		nocache_headers();
+		header( 'Content-Type: text/html; charset=utf-8' );
+		$titre = ( $rempli ? 'Feuilles remplies' : 'Feuilles vierges' ) . ' — ' . $p->titre . ' ' . self::date_fr( $p->date );
+		echo '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex">'
+			. '<title>' . esc_html( $titre ) . '</title><style>' . self::css_feuilles() . '</style></head><body>'
+			. '<div class="barre"><button onclick="window.print()">🖨️ Imprimer</button><span>' . intval( $nb ) . ' feuille' . ( $nb > 1 ? 's' : '' ) . ' A5'
+			. ' · sur une imprimante A4, choisir « 2 pages par feuille » dans la fenêtre d\'impression.</span></div>'
+			. $html // phpcs:ignore -- construit et échappé par feuille_vierge() / feuille_remplie()
+			. '</body></html>';
+		exit;
+	}
+
+	private static function css_feuilles(): string {
+		return '@page{size:A5 portrait;margin:8mm}'
+			. '*{box-sizing:border-box}'
+			. 'body{margin:0;font:9pt/1.35 Arial,Helvetica,sans-serif;color:#111;background:#e5e7eb;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+			. '.barre{position:sticky;top:0;display:flex;gap:12px;align-items:center;padding:10px 16px;background:#1e3a5f;color:#fff;font-size:13px}'
+			. '.barre button{font:600 14px Arial;padding:8px 16px;border:0;border-radius:6px;background:#fff;color:#1e3a5f;cursor:pointer}'
+			. '.f{width:148mm;min-height:210mm;margin:8mm auto;padding:8mm;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2);break-after:page;page-break-after:always}'
+			. '.f-tete{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;border-bottom:2px solid #1e3a5f;padding-bottom:4px;margin-bottom:6px}'
+			. '.f-club{font-weight:700;font-size:10pt;color:#1e3a5f}.f-pass{font-size:8.5pt;color:#555}'
+			. '.f-type{font-weight:700;font-size:8pt;text-transform:uppercase;letter-spacing:.04em;color:#1e3a5f;text-align:right}'
+			. '.f-nom{font-size:13pt;font-weight:700;margin-top:2px}.f-grades{margin:2px 0 4px}'
+			. '.f-alerte{color:#b45309;font-weight:600;font-size:8pt}'
+			. '.f-juge{margin:6px 0;font-size:10pt}.f-ligne{display:inline-block;width:60mm;border-bottom:1px solid #111;height:4mm;vertical-align:bottom}'
+			. 'table{width:100%;border-collapse:collapse;margin:6px 0}'
+			. 'th,td{border:1px solid #9ca3af;padding:3px 4px;text-align:left;vertical-align:top}'
+			. 'th{background:#eef2f7;font-size:8pt}'
+			. 'td small{display:block;color:#555;font-size:7.5pt}'
+			. 'td.c,th.c{text-align:center;vertical-align:middle;font-size:8pt}'
+			. 'td.saisie{width:52mm;vertical-align:middle;white-space:nowrap}'
+			. '.box{display:inline-block;width:3.4mm;height:3.4mm;border:1px solid #111;vertical-align:-0.6mm;margin:0 1.2mm 0 2mm}'
+			. '.case{display:inline-block;width:16mm;height:6mm;border:1px solid #111;vertical-align:middle;margin-right:1.5mm}'
+			. '.ok{color:#15803d}.rev{color:#b45309}.non{color:#b91c1c}.muted{color:#666}'
+			. '.rem{margin-top:6px}.rem .l{border-bottom:1px solid #9ca3af;height:6mm}'
+			. '.rem p{margin:2px 0}'
+			. '.dec{margin-top:6px;padding:5px 8px;border:2px solid #111;border-radius:4px;font-size:11pt;font-weight:700}'
+			. '.dec.ok{border-color:#15803d}.dec.non{border-color:#b91c1c}'
+			. '.dec small{display:block;font-weight:400;font-size:8pt;color:#333}'
+			. '.pied{margin-top:8px;display:flex;justify-content:space-between;gap:8px;font-size:8pt}'
+			. '.sign{flex:0 0 55mm;border-bottom:1px solid #111;height:12mm}'
+			. '.regle{font-size:7.5pt;color:#555;margin-top:6px}'
+			. '@media print{body{background:#fff}.barre{display:none}.f{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}.f:last-child{break-after:auto;page-break-after:auto}}';
+	}
+
+	/** En-tête commun : club, passage, candidat, grades, alerte d'âge. */
+	private function entete_feuille( $p, $c, string $type ): string {
+		$alerte = intval( $c->alerte_age );
+		return '<div class="f-tete"><div><div class="f-club">' . esc_html( get_bloginfo( 'name' ) ) . '</div>'
+			. '<div class="f-pass">' . esc_html( $p->titre ) . ' — ' . esc_html( self::date_fr( $p->date ) ) . '</div></div>'
+			. '<div class="f-type">' . esc_html( $type ) . '</div></div>'
+			. '<div class="f-nom">' . esc_html( mb_strtoupper( (string) $c->nom ) . ' ' . $c->prenom ) . '</div>'
+			. '<div class="f-grades">' . ( $c->categorie ? esc_html( $c->categorie ) . ' · ' : '' )
+			. 'Grade actuel : <b>' . esc_html( $c->grade_actuel ?: '—' ) . '</b> → grade visé : <b>' . esc_html( $c->grade_vise ?: '—' ) . '</b>'
+			. ( $c->mode === 'poom' ? ' · notes sur 10' : '' ) . '</div>'
+			. ( $alerte ? '<div class="f-alerte">⚠ Trop jeune de ' . $alerte . ' an' . ( $alerte > 1 ? 's' : '' ) . ' pour ce grade (âge conseillé du Parcours).</div>' : '' );
+	}
+
+	private static function libelle_critere( array $k ): string {
+		return '<b>' . esc_html( $k['libelle'] ) . '</b>' . ( ( $k['detail'] ?? '' ) !== '' ? '<small>' . esc_html( $k['detail'] ) . '</small>' : '' );
+	}
+
+	private function regle_admission( $p, bool $poom ): string {
+		return $poom
+			? 'Admis si la moyenne générale des juges atteint ' . self::nb( $p->poom_seuil ) . '/10 et qu\'aucune épreuve n\'est sous ' . self::nb( $p->poom_plancher ) . '/10.'
+			: 'Avis majoritaire des juges par critère. Admis s\'il n\'y a aucun « Non acquis » et au plus un « À revoir ».';
+	}
+
+	/** Feuille vierge d'un juge pour un candidat : même grille que l'écran du juge, à cocher. */
+	private function feuille_vierge( $p, $c, string $juge ): string {
+		$poom = $c->mode === 'poom';
+		$h    = '<section class="f">' . $this->entete_feuille( $p, $c, 'Feuille de notation' )
+			. '<div class="f-juge">Juge : ' . ( $juge !== '' ? '<b>' . esc_html( $juge ) . '</b>' : '<span class="f-ligne"></span>' ) . '</div>';
+		if ( ! $c->criteres ) {
+			$h .= '<p class="muted">Aucun critère : le grade visé n\'est pas dans TKD Parcours et aucune épreuve transverse ne s\'applique.</p>';
+		} else {
+			$h .= '<table><tbody>';
+			foreach ( $c->criteres as $k ) {
+				$h .= '<tr><td>' . self::libelle_critere( $k ) . '</td><td class="saisie">';
+				if ( $k['type'] === 'mesure' ) {
+					$aide = '';
+					if ( $k['seuil_acquis'] !== null ) {
+						$aide = $poom ? self::nb( $k['seuil_acquis'] ) . ' = 10/10'
+							: 'Acquis ≥ ' . self::nb( $k['seuil_acquis'] ) . ( $k['seuil_revoir'] !== null ? ' · à revoir ≥ ' . self::nb( $k['seuil_revoir'] ) : '' );
+					}
+					$h .= '<span class="case"></span>' . esc_html( $k['unite'] ) . ( $aide !== '' ? '<small>' . esc_html( $aide ) . '</small>' : '' );
+				} elseif ( $poom || $k['type'] !== 'niveaux' ) {
+					$h .= '<span class="case"></span>/ 10';
+				} else {
+					foreach ( self::NIV_LIB as $lib ) $h .= '<span class="box"></span>' . esc_html( $lib );
+				}
+				$h .= '</td></tr>';
+			}
+			$h .= '</tbody></table>';
+		}
+		$h .= '<div class="rem"><b>Remarque</b> <span class="muted">(facultatif, transmise à l\'élève)</span>'
+			. '<div class="l"></div><div class="l"></div><div class="l"></div></div>'
+			. '<p class="regle">' . esc_html( $this->regle_admission( $p, $poom ) ) . '</p>'
+			. '<div class="pied"><span>Signature du juge</span><span class="sign"></span></div>';
+		return $h . '</section>';
+	}
+
+	/** Feuille remplie (archive) : notes de chaque juge, avis retenu, décision, remarques. */
+	private function feuille_remplie( $p, $c, array $juges ): string {
+		$poom = $c->mode === 'poom';
+		$r    = $c->resultat;
+		$h    = '<section class="f">' . $this->entete_feuille( $p, $c, 'Résultat — archive' );
+
+		if ( $r['criteres'] ) {
+			$h .= '<table><thead><tr><th>Critère</th>';
+			foreach ( $juges as $j ) $h .= '<th class="c">' . esc_html( $j->nom ) . ( $j->president ? '<br><small>président</small>' : '' ) . '</th>';
+			$h .= '<th class="c">Retenu</th></tr></thead><tbody>';
+			foreach ( $r['criteres'] as $l ) {
+				$h .= '<tr><td>' . self::libelle_critere( $l ) . '</td>';
+				foreach ( $juges as $j ) {
+					$v = null;
+					foreach ( $l['votes'] as $vote ) if ( ( $vote['juge_id'] ?? 0 ) === intval( $j->id ) ) $v = $vote;
+					if ( ! $v ) { $h .= '<td class="c muted">—</td>'; continue; }
+					$brut = ( ! $poom && $v['brut'] !== null && strpos( $l['cle'], 'e:' ) === 0 ) ? '<small>(' . esc_html( self::nb( $v['brut'] ) ) . ')</small>' : '';
+					$h .= $poom ? '<td class="c">' . esc_html( self::nb( $v['valeur'] ) ) . '</td>'
+						: '<td class="c ' . self::classe_niveau( intval( $v['valeur'] ) ) . '">' . esc_html( self::NIV_LIB[ intval( $v['valeur'] ) ] ) . $brut . '</td>';
+				}
+				if ( $l['statut'] === 'manquant' )    $ret = '<span class="muted">non noté</span>';
+				elseif ( $l['statut'] === 'egalite' ) $ret = '<span class="rev">égalité</span>';
+				elseif ( $poom )                      $ret = '<b>' . esc_html( self::nb( $l['moyenne'] ) ) . '/10</b>';
+				else $ret = '<b class="' . self::classe_niveau( $l['niveau'] ) . '">' . esc_html( self::NIV_LIB[ $l['niveau'] ] ) . '</b>' . ( ! empty( $l['arbitre'] ) ? '<small>tranché par le président</small>' : '' );
+				$h .= '<td class="c">' . $ret . '</td></tr>';
+			}
+			$h .= '</tbody></table>';
+		}
+
+		$admis = $c->decision === 'admis';
+		$prop  = $r['proposition'];
+		$h .= '<div class="dec ' . ( $admis ? 'ok' : 'non' ) . '">'
+			. ( $admis ? 'ADMIS — ' . esc_html( $c->grade_obtenu ) : ( $c->decision === 'ajourne' ? 'AJOURNÉ' : 'Sans décision' ) )
+			. ( isset( $r['moyenne'] ) ? ' · moyenne ' . esc_html( self::nb( $r['moyenne'] ) ) . '/10' : '' )
+			. ( ! empty( $r['raison'] ) ? '<small>Calcul : ' . esc_html( $r['raison'] ) . '</small>' : '' )
+			. ( in_array( $prop, [ 'admis', 'ajourne' ], true ) && $prop !== $c->decision ? '<small>Décision du jury différente de la proposition du calcul (' . ( $prop === 'admis' ? 'admis' : 'ajourné' ) . ').</small>' : '' )
+			. ( $admis && $c->grade_obtenu !== $c->grade_vise ? '<small>Grade obtenu différent du grade visé (' . esc_html( $c->grade_vise ) . ').</small>' : '' )
+			. '</div>';
+
+		if ( $r['remarques'] ) {
+			$h .= '<div class="rem"><b>Remarques des juges</b>';
+			foreach ( $r['remarques'] as $m ) $h .= '<p><b>' . esc_html( $m['juge'] ) . ' :</b> ' . nl2br( esc_html( $m['texte'] ) ) . '</p>';
+			$h .= '</div>';
+		}
+
+		$pres = '';
+		foreach ( $juges as $j ) if ( $j->president ) $pres = $j->nom;
+		$h .= '<p class="regle">' . esc_html( $this->regle_admission( $p, $poom ) ) . '<br>Validé le ' . esc_html( mysql2date( 'd/m/Y à H:i', $p->valide_at ) )
+			. ( $p->valide_par ? ' par ' . esc_html( $p->valide_par ) : '' ) . '.</p>'
+			. '<div class="pied"><span>Signature du président de jury' . ( $pres !== '' ? '<br><b>' . esc_html( $pres ) . '</b>' : '' ) . '</span><span class="sign"></span></div>';
+		return $h . '</section>';
+	}
+
+	private static function classe_niveau( int $n ): string {
+		return [ self::ACQUIS => 'ok', self::REVOIR => 'rev', self::NON => 'non' ][ $n ] ?? '';
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
