@@ -3292,7 +3292,7 @@ function spCalBufToB64u(buf) {
             <form method="post" style="margin-top:12px;">
                 <?php wp_nonce_field( 'sp_cal_save_slot' ); ?>
                 <input type="hidden" name="slot_id" value="<?php echo $edit ? intval($edit->id) : 0; ?>">
-                <table class="form-table">
+                <table class="form-table sp-form-stack">
                     <tr>
                         <th>Jour</th>
                         <td><select name="slot_jour" class="sp-select">
@@ -3320,17 +3320,17 @@ function spCalBufToB64u(buf) {
                     <tr>
                         <th>Discipline</th>
                         <td>
-                            <?php foreach ( SpCalPro_DB::COURS_DISCIPLINES as $d ) : ?>
-                                <label style="display:inline-flex;align-items:center;gap:4px;margin:0 14px 4px 0;"><input type="checkbox" name="slot_discipline[]" value="<?php echo esc_attr( $d ); ?>" <?php checked( in_array( $d, $ed['disc'], true ) ); ?>> <?php echo esc_html( $d ); ?></label>
-                            <?php endforeach; ?>
+                            <div class="sp-checks"><?php foreach ( SpCalPro_DB::COURS_DISCIPLINES as $d ) : ?>
+                                <label class="sp-check"><input type="checkbox" name="slot_discipline[]" value="<?php echo esc_attr( $d ); ?>" <?php checked( in_array( $d, $ed['disc'], true ) ); ?>> <?php echo esc_html( $d ); ?></label>
+                            <?php endforeach; ?></div>
                         </td>
                     </tr>
                     <tr>
                         <th>Pour qui</th>
                         <td>
-                            <?php foreach ( SpCalPro_DB::COURS_AGES as $a ) : ?>
-                                <label style="display:inline-flex;align-items:center;gap:4px;margin:0 14px 4px 0;"><input type="checkbox" name="slot_ages[]" value="<?php echo esc_attr( $a ); ?>" <?php checked( in_array( $a, $ed['ages'], true ) ); ?>> <?php echo esc_html( $a ); ?></label>
-                            <?php endforeach; ?>
+                            <div class="sp-checks"><?php foreach ( SpCalPro_DB::COURS_AGES as $a ) : ?>
+                                <label class="sp-check"><input type="checkbox" name="slot_ages[]" value="<?php echo esc_attr( $a ); ?>" <?php checked( in_array( $a, $ed['ages'], true ) ); ?>> <?php echo esc_html( $a ); ?></label>
+                            <?php endforeach; ?></div>
                             <p class="description">Sert à prévenir les bons adhérents quand le cours est annulé et à afficher le cours dans leur application. Rien de coché = tout le club.<?php if ( ! empty( $ed['a_reclasser'] ) ) echo '<br><strong>⚠️ Ancienne catégorie en texte libre : « ' . esc_html( $ed['cat'] ) . ' ».</strong> Les cases ont été pré-cochées à partir de ce texte : vérifiez-les puis enregistrez.'; ?></p>
                         </td>
                     </tr>
