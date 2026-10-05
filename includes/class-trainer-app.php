@@ -248,6 +248,7 @@ class SP_Cal_Trainer_App {
 			'dispos'   => $this->db->get_dispos_for_month( $year, $month ),
 			'year'     => $year,
 			'month'    => $month,
+			'cloture'  => SP_Cal_IK_Cloture::get_instance( $this->db )->est_cloture( sprintf( '%04d-%02d', $year, $month ) ),
 		] );
 	}
 
@@ -262,6 +263,10 @@ class SP_Cal_Trainer_App {
 		$note       = sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) );
 
 		if ( ! $date ) wp_send_json_error( 'Date manquante.' );
+		// Mois clôturé (IK déjà payées) : seul un admin peut encore corriger (SP_Cal_IK_Cloture).
+		if ( SP_Cal_IK_Cloture::get_instance( $this->db )->est_cloture( $date ) ) {
+			wp_send_json_error( 'Ce mois est clôturé (indemnités déjà payées) : pour une correction, adressez-vous au bureau.' );
+		}
 
 		$disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
@@ -391,7 +396,7 @@ class SP_Cal_Trainer_App {
 			var state = {
 				year: new Date().getFullYear(),
 				month: new Date().getMonth() + 1,
-				me: null, trainers: [], dispos: {},
+				me: null, trainers: [], dispos: {}, cloture: false,
 				selected: null
 			};
 
@@ -420,6 +425,7 @@ class SP_Cal_Trainer_App {
 					state.me       = res.data.me;
 					state.trainers = res.data.trainers;
 					state.dispos   = res.data.dispos;
+					state.cloture  = !!res.data.cloture; // mois clôturé : IK payées, plus de modification ici
 					state.selected = null;
 					renderGrid();
 					renderPanel();
@@ -498,6 +504,19 @@ class SP_Cal_Trainer_App {
 				var mine = dayDispos[state.me.id] || null;
 				var val  = mine ? mine.disponible : null; // 1 / 0 / null (neutre = non renseigné, comme ⬜ dans l'admin)
 				var ar   = mine && mine.allers_retours === 2 ? 2 : 1;
+				if (state.cloture) {
+					// Mois clôturé : IK payées, lecture seule (le serveur refuse aussi l'enregistrement).
+					html += '<div class="sda-me-label">Votre disponibilité</div>'
+						+ '<p class="sda-nr-hint" style="font-size:13px">'
+						+ (val === 1 ? '✅ Disponible' + (ar === 2 ? ' · 2 allers-retours' : '') : val === 0 ? '❌ Indisponible' : '⬜ Pas de réponse')
+						+ '</p><p class="sda-hint">🔒 Mois clôturé : les indemnités sont déjà payées. Pour une correction, adressez-vous au bureau.</p>';
+					panel.innerHTML = html;
+					document.getElementById('sda-close').addEventListener('click', function(){
+						state.selected = null; renderGrid(); renderPanel();
+						if (root.scrollIntoView) root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+					});
+					return;
+				}
 				html += '<div class="sda-me-label">Votre disponibilité</div>'
 					+ '<div class="sda-btns">'
 					+ '<button type="button" class="sda-btn sda-btn-ok' + (val === 1 ? ' sda-active' : '') + '" data-val="1">✅<span>Disponible</span></button>'
@@ -566,7 +585,7 @@ class SP_Cal_Trainer_App {
 						post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note, allers_retours: allers || '' }, function(res){
 							var saved = document.getElementById('sda-saved');
 							if (saved) {
-								saved.textContent = res.success ? '✓ Enregistré' : '⚠️ Erreur — réessayez';
+								saved.textContent = res.success ? '✓ Enregistré' : '⚠️ ' + (typeof res.data === 'string' ? res.data : 'Erreur — réessayez');
 								saved.style.color = res.success ? '' : '#dc2626';
 								setTimeout(function(){ if (saved) saved.textContent = ''; }, 2000);
 							}

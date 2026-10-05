@@ -1458,7 +1458,8 @@
         },
 
         // allers : 1 ou 2 allers-retours dans la journée ; non précisé = garder la valeur enregistrée.
-        saveDispo: function (trainer_id, date, disponible, note, allers) {
+        // forcer : correction confirmée sur un mois clôturé (IK déjà payées).
+        saveDispo: function (trainer_id, date, disponible, note, allers, forcer) {
             var btn = $('.sp-dispo-act[data-trainer-id="'+trainer_id+'"][data-date="'+date+'"]').css('opacity','0.4').css('pointer-events','none');
             $.post(SpCal.ajaxurl, {
                 action:     'sp_cal_save_trainer_dispo',
@@ -1468,9 +1469,20 @@
                 disponible: disponible,
                 note:       note,
                 allers_retours: allers || '', // vide = garder la valeur enregistrée
+                confirmer_cloture: forcer ? 1 : '',
             }, function(res) {
                 btn.css('opacity','').css('pointer-events','');
-                if (!res.success) { alert('Erreur : ' + res.data); return; }
+                if (!res.success) {
+                    // Mois clôturé (IK payées) : correction possible après confirmation, l'écart
+                    // apparaîtra en régularisation dans le récapitulatif suivant.
+                    if (res.data && res.data.code === 'mois_cloture' && !forcer) {
+                        if (confirm(res.data.message + '\n\nModifier quand même ? L\'écart (allers-retours et montant) apparaîtra en régularisation dans le prochain récapitulatif mensuel.')) {
+                            CAL.saveDispo(trainer_id, date, disponible, note, allers, true);
+                        }
+                        return;
+                    }
+                    alert('Erreur : ' + (res.data && res.data.message ? res.data.message : res.data)); return;
+                }
 
                 // Mettre à jour le cache local
                 if (!CAL.disposByDate[date]) CAL.disposByDate[date] = {};

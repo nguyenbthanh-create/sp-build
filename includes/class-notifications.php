@@ -635,14 +635,9 @@ class SpCalPro_Notifications {
      * @return int         Nombre d'emails envoyés
      */
     private function do_send_recap_mensuel( $year, $month ) {
-        global $wpdb; // manquait depuis l'origine : erreur fatale sur la requête des km exceptionnels
         $bureau = $this->db->get_bureau_members();
         if ( empty($bureau) ) return 0;
 
-        $trainers = $this->db->get_trainers( true );
-        if ( empty($trainers) ) return 0;
-
-        $tarif_km    = floatval( get_option('sp_cal_tarif_km', 0) );
         $nom_club    = get_option('blogname', 'Club');
         $mois_labels = array(
             1=>'janvier',2=>'février',3=>'mars',4=>'avril',5=>'mai',6=>'juin',
@@ -650,64 +645,18 @@ class SpCalPro_Notifications {
         );
         $mois_label = $mois_labels[$month] . ' ' . $year;
 
-        // ── Compter les interventions par entraîneur ─────────────────────────
-        $interventions = $this->db->get_interventions_par_trainer( $year, $month );
+        // ── Calcul des IK : une seule source (SP_Cal_IK_Cloture), partagée avec la clôture ──
+        $ik           = SP_Cal_IK_Cloture::get_instance( $this->db );
+        $calc         = $ik->calcul_mois( intval( $year ), intval( $month ) );
+        $tarif_km     = $calc['tarif'];
+        $lignes       = array_values( $calc['lignes'] );
+        $total_global = $calc['total'];
+        $nb_actifs    = count( $lignes );
+        $sans_km      = $calc['sans_km'];
+        // Corrections faites après coup sur des mois déjà clôturés (payés)
+        $regul        = $ik->regularisations();
 
-        // ── Km exceptionnels du mois par entraîneur ────────────────────────────
-        $tkm_exc  = $this->db->table_km_exceptionnels();
-        $start_km = sprintf('%04d-%02d-01', $year, $month);
-        $end_km   = date('Y-m-t', strtotime($start_km));
-        $km_exc_rows = $wpdb->get_results( $wpdb->prepare(
-            "SELECT trainer_id, SUM(km) AS total_km, GROUP_CONCAT(CONCAT(description,' (',DATE_FORMAT(date,'%d/%m'),'): ',km,' km') ORDER BY date SEPARATOR ' | ') AS detail
-             FROM $tkm_exc WHERE date BETWEEN %s AND %s GROUP BY trainer_id",
-            $start_km, $end_km
-        ) );
-        $km_excep_by_trainer = array();
-        foreach ( $km_exc_rows as $r ) {
-            $km_excep_by_trainer[ intval($r->trainer_id) ] = array(
-                'total'  => floatval($r->total_km),
-                'detail' => $r->detail,
-            );
-        }
-
-        // ── Construire les lignes (entraîneurs actifs ayant eu au moins 1 cours) ──
-        $lignes        = array();
-        $total_global  = 0.0;
-        $nb_actifs     = 0;
-        $sans_km       = array(); // entraîneurs avec cours mais km = 0
-
-        foreach ( $trainers as $t ) {
-            if ( strpos($t->roles, 'entraineur') === false ) continue;
-
-            $tid     = intval($t->id);
-            $jours   = intval( $interventions[$tid]['jours'] ?? 0 );
-            $nb      = intval( $interventions[$tid]['ar'] ?? 0 ); // allers-retours : base des IK
-            $has_km_excep = isset($km_excep_by_trainer[$tid]);
-            if ( $nb === 0 && ! $has_km_excep ) continue; // exclure sans activité ET sans km excep
-
-            $km          = isset($t->km_aller_retour) ? floatval($t->km_aller_retour) : 0.0;
-            $km_excep    = $has_km_excep ? $km_excep_by_trainer[$tid]['total'] : 0.0;
-            $excep_detail= $has_km_excep ? $km_excep_by_trainer[$tid]['detail'] : '';
-            $montant_hab = ( $tarif_km > 0 && $km > 0 && $nb > 0 ) ? round($tarif_km * $km * $nb, 2) : 0.0;
-            $montant_exc = ( $tarif_km > 0 && $km_excep > 0 ) ? round($tarif_km * $km_excep, 2) : 0.0;
-            $montant     = $montant_hab + $montant_exc;
-
-            $total_global += $montant;
-            $nb_actifs++;
-            if ( $km === 0.0 && $nb > 0 ) $sans_km[] = trim($t->nom);
-
-            $lignes[] = array(
-                'nom'          => trim($t->nom),
-                'jours'        => $jours,
-                'nb'           => $nb,
-                'km'           => $km,
-                'km_excep'     => $km_excep,
-                'excep_detail' => $excep_detail,
-                'montant'      => $montant,
-            );
-        }
-
-        if ( empty($lignes) ) return 0;
+        if ( empty($lignes) && empty($regul) ) return 0;
 
         $total_str = number_format($total_global, 2, ',', ' ') . ' €';
 
@@ -747,6 +696,34 @@ class SpCalPro_Notifications {
                 <td style="padding:11px 14px;font-weight:700;" colspan="4">Total à régler</td>
                 <td style="padding:11px 14px;text-align:right;font-weight:700;font-size:15px;">' . $total_str . '</td>
             </tr>';
+
+        // Bloc régularisations : dispos corrigées après la clôture d'un mois déjà payé
+        $regul_html = '';
+        if ( ! empty($regul) ) {
+            $total_regul = round( array_sum( array_column( $regul, 'montant' ) ), 2 );
+            $lignes_regul = '';
+            foreach ( $regul as $r ) {
+                [ $ry, $rm ] = array_map( 'intval', explode( '-', $r['mois'] ) );
+                $detail = array();
+                if ( $r['ar'] )       $detail[] = sprintf( '%+d aller(s)-retour(s)', $r['ar'] );
+                if ( $r['km_excep'] ) $detail[] = sprintf( '%+.1f km excep.', $r['km_excep'] );
+                $lignes_regul .= '<tr><td style="padding:6px 10px;border-bottom:1px solid #fde68a;">' . esc_html( ucfirst( $mois_labels[$rm] ) . ' ' . $ry ) . '</td>'
+                    . '<td style="padding:6px 10px;border-bottom:1px solid #fde68a;">' . esc_html( $r['nom'] ) . '</td>'
+                    . '<td style="padding:6px 10px;border-bottom:1px solid #fde68a;">' . esc_html( implode( ', ', $detail ) ) . '</td>'
+                    . '<td style="padding:6px 10px;border-bottom:1px solid #fde68a;text-align:right;"><strong>' . ( $r['montant'] > 0 ? '+' : '' ) . number_format( $r['montant'], 2, ',', ' ' ) . ' €</strong></td></tr>';
+            }
+            $regul_html = '
+            <div style="margin:20px 0;padding:12px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:4px;font-size:13px;color:#78350f;">
+                <strong>🔁 Régularisations — mois déjà clôturés (payés)</strong><br>
+                Dispos corrigées après la clôture. À ajouter au paiement (ou à déduire si négatif) ; elles seront soldées à la prochaine clôture.
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;font-size:13px;">' . $lignes_regul . '
+                    <tr><td colspan="3" style="padding:8px 10px;font-weight:700;">Total des régularisations</td>
+                        <td style="padding:8px 10px;text-align:right;font-weight:700;">' . ( $total_regul > 0 ? '+' : '' ) . number_format( $total_regul, 2, ',', ' ' ) . ' €</td></tr>
+                    <tr><td colspan="3" style="padding:8px 10px;font-weight:700;">Total à régler avec régularisations</td>
+                        <td style="padding:8px 10px;text-align:right;font-weight:700;">' . number_format( $total_global + $total_regul, 2, ',', ' ' ) . ' €</td></tr>
+                </table>
+            </div>';
+        }
 
         // Bloc alerte km manquants
         $alerte_km = '';
@@ -822,6 +799,8 @@ class SpCalPro_Notifications {
           <div style="margin-top:16px;font-size:14px;color:#475569;">
             Entraîneurs actifs ce mois : <strong>' . $nb_actifs . '</strong>
           </div>
+
+          ' . $regul_html . '
 
           ' . $alerte_km . '
 

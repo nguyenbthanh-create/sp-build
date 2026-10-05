@@ -1369,6 +1369,12 @@ class SpCalPro_Ajax {
 
         if ( ! $trainer_id || ! $date ) wp_send_json_error( 'Paramètres manquants.' );
 
+        // Mois clôturé (IK déjà payées) : correction possible après confirmation ; l'écart
+        // apparaîtra en régularisation dans le récapitulatif suivant (SP_Cal_IK_Cloture).
+        if ( empty( $_POST['confirmer_cloture'] ) && SP_Cal_IK_Cloture::get_instance( $this->db )->est_cloture( $date ) ) {
+            wp_send_json_error( array( 'code' => 'mois_cloture', 'message' => 'Ce mois est clôturé : les IK sont déjà payées.' ) );
+        }
+
         $disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
         $avant = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['disponible'] ?? null;

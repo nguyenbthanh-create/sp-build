@@ -237,7 +237,7 @@ Carte **« Mon prochain grade »** : programme à préparer avec les vidéos du 
 
 Jamais utilisé : **supprimé** au moment du développement (7 étapes, `exam_epreuves`, `exam_grade_progression`, Transcription, doublon `class-jury-mobile.php` à la racine). Seule l'idée des seuils ZEMITA est reprise, sous la forme du type d'épreuve « mesure ». **À vérifier avant suppression** (relevé le 03/10/2026) : `class-pdf.php` lit `get_exam_epreuves()` (3 endroits, impressions d'examen) et `sp-pointage.php` lit la table `exam_grade_contenu` (ressources par grade) ; la progression des examens est aussi recalculée par l'harmonisation des grades de `class-admin-members.php` (commit e367ea6).
 
-## 05/10/2026 — IK : dispos modifiées après coup sur un mois déjà payé (à traiter plus tard)
+## 05/10/2026 — IK : dispos modifiées après coup sur un mois déjà payé (FAIT le 05/10/2026, voir REALISATION.md : clôture des IK)
 
 Les interventions (base des IK, récapitulatif mensuel et module IK de sp-compta via le filtre `sp_cal_interventions_par_trainer`) sont **recalculées à chaque fois** depuis les dispos (`get_interventions_par_trainer()`). Une dispo ajoutée ou retirée sur un mois déjà récapitulé ou payé change donc le total sans que personne ne le voie, et le mail récapitulatif déjà envoyé n'est plus juste. Pistes : verrouiller les dispos d'un mois une fois le récapitulatif envoyé (réouverture par l'admin), ou au minimum signaler l'écart. Reporté à la demande de l'utilisateur.
 

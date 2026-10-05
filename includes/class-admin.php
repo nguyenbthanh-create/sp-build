@@ -11,6 +11,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -77,6 +78,7 @@ class SpCalPro_Admin {
         SP_Cal_Dobok::get_instance( $this->db );
         SP_Cal_Anniversaires::get_instance( $this->db );
         SP_Cal_Passages::get_instance( $this->db );
+        SP_Cal_IK_Cloture::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -4233,6 +4235,9 @@ function spCalBufToB64u(buf) {
             })(jQuery);
             </script>
         </div>
+
+        <!-- CLÔTURE DES IK (mois payés) -->
+        <?php SP_Cal_IK_Cloture::get_instance( $this->db )->render_admin(); ?>
 
         <!-- TOKENS FICHE MEMBRE -->
         <?php
