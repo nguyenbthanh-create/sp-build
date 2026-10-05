@@ -1413,6 +1413,41 @@ class SpCalPro_DB {
     }
 
     /**
+     * Encadrement d'une journée d'entraînement, d'après les disponibilités déclarées (par jour) :
+     * un entraîneur qui se déplace reste pour tous les cours du jour (choix du 01/10/2026,
+     * plutôt qu'un titulaire par créneau). Même règle que les cases du calendrier admin :
+     * seuls les entraîneurs actifs déclarés disponibles, plus le remplaçant désigné par le
+     * bureau pour un entraîneur absent (« Noé (remplace Thanh) »). Utilisé par l'application
+     * (route /calendrier/club) et par le mail au bureau quand une dispo change.
+     *
+     * @return string[] noms à afficher, dans l'ordre des entraîneurs ; vide = non renseigné
+     */
+    public function get_encadrement_du_jour( $date ) {
+        static $entraineurs = null, $tous = null;
+        if ( $entraineurs === null ) {
+            $entraineurs = $this->get_trainers_entraineurs( true );
+            $tous        = array();
+            foreach ( $this->get_trainers( false ) as $t ) {
+                $tous[ intval( $t->id ) ] = $t->nom_public ?: $t->nom;
+            }
+        }
+        $dispos = $this->get_dispos_for_date( $date );
+        $noms   = array(); // trainer_id affiché => libellé (le remplaçant remplace sa propre ligne « disponible »)
+        foreach ( $entraineurs as $t ) {
+            $id = intval( $t->id );
+            $d  = $dispos[ $id ] ?? null;
+            if ( ! $d ) continue;
+            $nom = $t->nom_public ?: $t->nom;
+            if ( $d['disponible'] === 1 ) {
+                if ( ! isset( $noms[ $id ] ) ) $noms[ $id ] = $nom;
+            } elseif ( ! empty( $d['remplacant_id'] ) && isset( $tous[ $d['remplacant_id'] ] ) ) {
+                $noms[ $d['remplacant_id'] ] = $tous[ $d['remplacant_id'] ] . ' (remplace ' . $nom . ')';
+            }
+        }
+        return array_values( $noms );
+    }
+
+    /**
      * Sauvegarde (upsert) la dispo d'un entraîneur pour une date.
      * $disponible : 1 = dispo, 0 = indisponible, null = supprimer l'entrée
      */

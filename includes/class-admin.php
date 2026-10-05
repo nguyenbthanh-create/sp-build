@@ -384,38 +384,9 @@ public function enqueue( $hook ) {
         return rest_ensure_response( array( 'from' => $from, 'nb' => count( $cours ), 'cours' => $cours ) );
     }
 
-    /**
-     * Encadrement d'une journée d'entraînement, d'après les disponibilités déclarées (par jour) :
-     * un entraîneur qui se déplace reste pour tous les cours du jour (choix du 01/10/2026,
-     * plutôt qu'un titulaire par créneau). Même règle que les cases du calendrier admin :
-     * seuls les entraîneurs actifs déclarés disponibles, plus le remplaçant désigné par le
-     * bureau pour un entraîneur absent (« Noé (remplace Thanh) »).
-     *
-     * @return string[] noms à afficher, dans l'ordre des entraîneurs ; vide = non renseigné
-     */
+    /** Encadrement d'une journée : voir SpCalPro_DB::get_encadrement_du_jour() (règle partagée avec le mail au bureau). */
     private function encadrement_du_jour( $date ) {
-        static $entraineurs = null, $tous = null;
-        if ( $entraineurs === null ) {
-            $entraineurs = $this->db->get_trainers_entraineurs( true );
-            $tous        = array();
-            foreach ( $this->db->get_trainers( false ) as $t ) {
-                $tous[ intval( $t->id ) ] = $t->nom_public ?: $t->nom;
-            }
-        }
-        $dispos = $this->db->get_dispos_for_date( $date );
-        $noms   = array(); // trainer_id affiché => libellé (le remplaçant remplace sa propre ligne « disponible »)
-        foreach ( $entraineurs as $t ) {
-            $id = intval( $t->id );
-            $d  = $dispos[ $id ] ?? null;
-            if ( ! $d ) continue;
-            $nom = $t->nom_public ?: $t->nom;
-            if ( $d['disponible'] === 1 ) {
-                if ( ! isset( $noms[ $id ] ) ) $noms[ $id ] = $nom;
-            } elseif ( ! empty( $d['remplacant_id'] ) && isset( $tous[ $d['remplacant_id'] ] ) ) {
-                $noms[ $d['remplacant_id'] ] = $tous[ $d['remplacant_id'] ] . ' (remplace ' . $nom . ')';
-            }
-        }
-        return array_values( $noms );
+        return $this->db->get_encadrement_du_jour( $date );
     }
 
     public function rest_pwa_calendrier( WP_REST_Request $req ) {

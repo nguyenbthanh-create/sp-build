@@ -31,7 +31,6 @@ class SpCalPro_Ajax {
         add_action( 'wp_ajax_nopriv_sp_cal_get_trainer_dispos', array( $this, 'get_trainer_dispos_public' ) );
         add_action( 'wp_ajax_sp_cal_save_trainer_dispo',      array( $this, 'save_trainer_dispo' ) );
         add_action( 'wp_ajax_sp_cal_save_dispo_remplacant',   array( $this, 'save_dispo_remplacant' ) );
-        add_action( 'wp_ajax_sp_cal_notify_bureau_dispos',    array( $this, 'notify_bureau_dispos' ) );
         add_action( 'wp_ajax_sp_cal_get_comp',                array( $this, 'get_comp' ) );
         add_action( 'wp_ajax_sp_cal_save_comp_epreuves',      array( $this, 'save_comp_epreuves' ) );
         add_action( 'wp_ajax_sp_cal_save_comp_resultats',     array( $this, 'save_comp_resultats' ) );
@@ -1370,7 +1369,12 @@ class SpCalPro_Ajax {
 
         $disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
+        $avant = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['disponible'] ?? null;
         $this->db->save_dispo( $trainer_id, $date, $disponible, $note, $remplacant_id );
+
+        // Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
+        $notif   = new SpCalPro_Notifications( $this->db );
+        $notifie = $notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, wp_get_current_user()->display_name ?: 'un administrateur' );
 
         wp_send_json_success( array(
             'trainer_id'    => $trainer_id,
@@ -1378,6 +1382,7 @@ class SpCalPro_Ajax {
             'disponible'    => $disponible,
             'note'          => $note,
             'remplacant_id' => $remplacant_id,
+            'bureau'        => $notifie,
         ) );
     }
 
@@ -1416,42 +1421,6 @@ class SpCalPro_Ajax {
             'trainer_id'    => $trainer_id,
             'date'          => $date,
             'remplacant_id' => $remplacant_id,
-        ) );
-    }
-
-    /**
-     * Envoie immédiatement la notification bureau avec les changements
-     * passés depuis le JS au moment du clic sur "Envoyer au bureau".
-     * POST : date, changements (JSON array)
-     */
-    public function notify_bureau_dispos() {
-        $this->nonce();
-        $this->require_admin();
-
-        $date       = sanitize_text_field( $_POST['date'] ?? '' );
-        $raw        = wp_unslash( $_POST['changements'] ?? '[]' );
-        $changements = json_decode( $raw, true );
-
-        if ( ! $date || empty($changements) ) wp_send_json_error( 'Données manquantes.' );
-
-        // Sanitiser les données reçues
-        $clean = array();
-        foreach ( $changements as $chg ) {
-            $clean[] = array(
-                'trainer_nom'   => sanitize_text_field( $chg['trainer_nom']   ?? '' ),
-                'trainer_email' => sanitize_email(      $chg['trainer_email'] ?? '' ),
-                'avant'         => isset($chg['avant'])  ? intval($chg['avant'])  : null,
-                'apres'         => isset($chg['apres'])  ? intval($chg['apres'])  : null,
-                'note'          => sanitize_text_field( $chg['note'] ?? '' ),
-            );
-        }
-
-        $notif = new SpCalPro_Notifications( $this->db );
-        $sent  = $notif->notify_bureau_dispo_changes_grouped( $date, $clean );
-
-        wp_send_json_success( array(
-            'sent' => $sent,
-            'msg'  => $sent > 0 ? '✅ Notification envoyée au bureau.' : '⚠️ Aucun membre bureau avec email configuré.',
         ) );
     }
 

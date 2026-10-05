@@ -14,7 +14,6 @@ class SpCalPro_Notifications {
         add_filter( 'cron_schedules', array( $this, 'add_schedules' ) );
         add_action( 'sp_cal_daily_notif',          array( $this, 'run_all' ) );
         add_action( 'sp_cal_trainer_reminder_day', array( $this, 'send_trainer_reminders' ) ); // matin 8h — jour J uniquement
-        add_action( 'sp_cal_send_dispo_notif',     array( $this, 'send_dispo_notif_debounced' ) ); // différé 2min
         add_action( 'sp_cal_recap_mensuel',        array( $this, 'send_recap_mensuel_auto' ) );    // 1x/jour — vérifie le bon jour
 
         // Planifier le cron général si pas déjà fait
@@ -426,152 +425,122 @@ class SpCalPro_Notifications {
     }
 
     /* ══════════════════════════════════════════════════════════
-       NOTIFICATION BUREAU — CHANGEMENT DISPO ENTRAÎNEUR J-3
+       NOTIFICATION BUREAU — CHANGEMENT DE DISPO ENTRE J ET J+3
     ══════════════════════════════════════════════════════════ */
 
-    /**
-     * Notifie les membres du bureau quand la disponibilité d'un entraîneur
-     * change dans les 3 jours à venir (J, J-1, J-2, J-3).
-     */
-    /* ══════════════════════════════════════════════════════════
-       ENVOI DIFFÉRÉ (debouncé) — appelé par WP-Cron 2 min après
-    ══════════════════════════════════════════════════════════ */
+    /** Nombre de jours à venir (après aujourd'hui) pour lesquels un changement de dispo est signalé. */
+    const DISPO_FENETRE_JOURS = 3;
 
     /**
-     * Lit le transient de date, construit un seul mail récapitulatif
-     * avec tous les changements de disponibilité du jour, puis l'envoie.
-     */
-    public function send_dispo_notif_debounced( $transient_key ) {
-        $data = get_transient( $transient_key );
-        if ( ! $data ) return;
-        delete_transient( $transient_key );
-
-        $this->notify_bureau_dispo_changes_grouped(
-            $data['date'],
-            $data['changements'] ?? array()
-        );
-    }
-
-    /* ══════════════════════════════════════════════════════════
-       NOTIFICATION BUREAU — GROUPE DE CHANGEMENTS DISPOS J-3
-    ══════════════════════════════════════════════════════════ */
-
-    /**
-     * Envoie UN seul mail récapitulatif au bureau pour tous les changements
-     * de disponibilité sur une même date.
+     * À appeler juste après SpCalPro_DB::save_dispo(), depuis la page « Mes dispos » de
+     * l'entraîneur comme depuis le calendrier admin. Le mail part tout de suite (pas de WP-Cron :
+     * il ne se déclenche qu'avec des visites et partait en retard ou jamais), à trois conditions :
+     *   - la date est entre aujourd'hui et J+3 ;
+     *   - ce jour-là porte au moins un cours non annulé ou un événement (sinon ni encadrement
+     *     ni intervention : rien à signaler) ;
+     *   - l'état diffère du dernier état annoncé au bureau pour cet entraîneur et cette date
+     *     (mémorisé quelques jours) : un aller-retour revenu à l'état annoncé n'envoie rien.
+     * Les IK ne dépendent pas de ce mail : get_interventions_par_trainer() relit les dispos.
      *
-     * @param string $date_str     Date concernée (YYYY-MM-DD)
-     * @param array  $changements  [ trainer_id => { trainer_nom, avant, apres, note } ]
+     * @param int      $trainer_id
+     * @param string   $date   Y-m-d
+     * @param int|null $avant  état avant l'enregistrement : 1, 0 ou null (non renseigné)
+     * @param int|null $apres  état enregistré
+     * @param string   $note
+     * @param string   $par    '' = l'entraîneur lui-même, sinon nom de l'admin qui a modifié
+     * @return int nombre de mails envoyés
      */
-    public function notify_bureau_dispo_changes_grouped( $date_str, $changements ) {
-        if ( empty($changements) ) return 0;
+    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '' ) {
+        $trainer_id = intval( $trainer_id );
+        $avant      = $avant === null ? null : intval( $avant );
+        $apres      = $apres === null ? null : intval( $apres );
+        if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) return 0;
+
+        $today = current_time( 'Y-m-d' );
+        $ecart = intval( round( ( strtotime( $date . ' 00:00:00 UTC' ) - strtotime( $today . ' 00:00:00 UTC' ) ) / DAY_IN_SECONDS ) );
+        if ( $ecart < 0 || $ecart > self::DISPO_FENETRE_JOURS ) return 0;
+
+        $cle      = 'sp_cal_dispo_annonce_' . str_replace( '-', '', $date );
+        $annonces = get_transient( $cle );
+        if ( ! is_array( $annonces ) ) $annonces = array();
+        $reference = array_key_exists( $trainer_id, $annonces ) ? $annonces[ $trainer_id ] : $avant;
+        if ( $reference === $apres ) return 0;
+
+        $cours = $this->activites_du_jour( $date );
+        if ( ! $cours ) return 0;
 
         $bureau = $this->db->get_bureau_members();
-        if ( empty($bureau) ) return 0;
+        if ( empty( $bureau ) ) return 0;
+
+        // Mémorisé avant l'envoi : un échec de wp_mail() ne doit pas faire repartir le même
+        // mail à chaque clic suivant.
+        $annonces[ $trainer_id ] = $apres;
+        set_transient( $cle, $annonces, ( self::DISPO_FENETRE_JOURS + 2 ) * DAY_IN_SECONDS );
+
+        $nom = '';
+        foreach ( $this->db->get_trainers( false ) as $t ) {
+            if ( intval( $t->id ) === $trainer_id ) { $nom = trim( $t->nom_public ?: $t->nom ); break; }
+        }
+        if ( $nom === '' ) $nom = 'Un entraîneur';
 
         $nom_club    = get_option( 'blogname', 'Club' );
-        $date_fmt    = date_create( $date_str )->format('d/m/Y');
-        $dow_labels  = array(1=>'lundi',2=>'mardi',3=>'mercredi',4=>'jeudi',5=>'vendredi',6=>'samedi',7=>'dimanche');
-        $dow         = intval( date_create($date_str)->format('N') );
-        $jour_label  = ucfirst( $dow_labels[$dow] ?? $date_str );
+        $jours       = array( 1 => 'lundi', 2 => 'mardi', 3 => 'mercredi', 4 => 'jeudi', 5 => 'vendredi', 6 => 'samedi', 7 => 'dimanche' );
+        $ts          = strtotime( $date . ' 12:00:00 UTC' );
+        $jour        = $jours[ intval( gmdate( 'N', $ts ) ) ] . ' ' . gmdate( 'd/m', $ts );
+        $quand       = $ecart === 0 ? "aujourd'hui" : ( $ecart === 1 ? 'demain' : 'dans ' . $ecart . ' jours' );
+        $encadrement = $this->db->get_encadrement_du_jour( $date );
 
-        $jours_restants = intval( ceil( ( strtotime($date_str) - time() ) / 86400 ) );
-        if ( $jours_restants === 0 )      $urgence = "⚠️ AUJOURD'HUI";
-        elseif ( $jours_restants === 1 )  $urgence = '⚠️ DEMAIN';
-        else                              $urgence = "dans $jours_restants jours";
+        if ( $apres === 1 )     $etat = array( '✅', 'disponible',    'est désormais disponible' );
+        elseif ( $apres === 0 ) $etat = array( '❌', 'indisponible',  'est désormais indisponible' );
+        else                    $etat = array( '⬜', 'non renseigné', "n'a plus de réponse enregistrée (ni disponible, ni indisponible)" );
 
-        // ── Construire les lignes de changements ─────────────────
-        $lignes_indispo  = array();
-        $lignes_dispo    = array();
-        $lignes_autres   = array();
-
-        foreach ( $changements as $chg ) {
-            $nom   = $chg['trainer_nom'] ?? 'Inconnu';
-            $avant = $chg['avant'];
-            $apres = $chg['apres'];
-            $note  = $chg['note'] ?? '';
-
-            $suffix = $note ? " (note : $note)" : '';
-
-            if ( $apres === 0 || $apres === null ) {
-                // Devient indisponible ou non renseigné
-                $remplacant_nom = isset( $chg['remplacant_nom'] ) && $chg['remplacant_nom'] !== ''
-                    ? ' → remplaçant : ' . sanitize_text_field( $chg['remplacant_nom'] )
-                    : '';
-                $lignes_indispo[] = "  🚨 $nom : indisponible$remplacant_nom$suffix";
-            } elseif ( $apres === 1 ) {
-                // Devient disponible
-                if ( $avant === 0 || $avant === null ) {
-                    $lignes_dispo[] = "  ✅ $nom : disponible — remplacement confirmé$suffix";
-                } else {
-                    $lignes_dispo[] = "  ✅ $nom : disponible$suffix";
-                }
-            }
-        }
-
-        // ── Résumé en langage naturel ─────────────────────────────
-        $nb_indispo = count($lignes_indispo);
-        $nb_dispo   = count($lignes_dispo);
-
-        if ( $nb_indispo > 0 && $nb_dispo > 0 ) {
-            $intro = "Modification des disponibilités $urgence — $jour_label $date_fmt :";
-        } elseif ( $nb_indispo > 0 ) {
-            $intro = "$nb_indispo entraîneur(s) indisponible(s) $urgence — $jour_label $date_fmt :";
-        } else {
-            $intro = "Mise à jour des disponibilités $urgence — $jour_label $date_fmt :";
-        }
-
-        $subject = '[' . $nom_club . '] ⚠️ Disponibilités entraîneurs — ' . $jour_label . ' ' . $date_fmt;
+        $subject = '[' . $nom_club . '] ' . $etat[0] . ' ' . $nom . ' ' . $etat[1] . ' — ' . ucfirst( $jour )
+            . ( $encadrement ? ' · cours encadré' : ' · ⚠️ aucun entraîneur' );
 
         $body  = "Bonjour,\n\n";
-        $body .= $intro . "\n\n";
-
-        // Indisponibles d'abord
-        if ( ! empty($lignes_indispo) ) {
-            $body .= implode("\n", $lignes_indispo) . "\n";
-        }
-        // Disponibles ensuite (remplaçants)
-        if ( ! empty($lignes_dispo) ) {
-            $body .= implode("\n", $lignes_dispo) . "\n";
-        }
-        if ( ! empty($lignes_autres) ) {
-            $body .= implode("\n", $lignes_autres) . "\n";
-        }
+        $body .= $nom . ' ' . $etat[2] . ' pour ' . $jour . ' (' . $quand . ').' . "\n";
+        if ( $note !== '' ) $body .= 'Note : ' . $note . "\n";
+        $body .= $par !== '' ? 'Modification faite par ' . $par . " dans le calendrier admin.\n" : "Modification faite par l'entraîneur.\n";
         $body .= "\n";
-
-        // Cours prévus ce jour
-        $slots        = $this->db->get_slot_occurrences( $date_str, $date_str );
-        $cours_actifs = array_filter( $slots, function($sl){ return ! $sl['annul_id']; } );
-        if ( ! empty($cours_actifs) ) {
-            $body .= "Cours prévus ce jour :\n";
-            foreach ( $cours_actifs as $sl ) {
-                $body .= '  • ' . $sl['heure_debut'] . ' – ' . $sl['heure_fin']
-                    . ' — ' . $sl['titre']
-                    . ( $sl['categorie'] ? ' (' . $sl['categorie'] . ')' : '' ) . "\n";
-            }
-            $body .= "\n";
-        }
-
-        $body .= "Consulter le calendrier : " . admin_url('admin.php?page=sp-cal-pro') . "\n\n";
-        $body .= "-- \n" . $nom_club . " (notification automatique)";
+        $body .= $encadrement
+            ? 'Encadrement prévu ce jour : ' . implode( ', ', $encadrement ) . "\n\n"
+            : "⚠️ Aucun entraîneur n'est disponible pour l'instant ce jour-là.\n\n";
+        $body .= "Au programme ce jour :\n";
+        foreach ( $cours as $c ) $body .= '  • ' . $c . "\n";
+        $body .= "\nConsulter le calendrier : " . admin_url( 'admin.php?page=sp-cal-pro' ) . "\n\n";
+        $body .= "-- \n" . $nom_club . ' (notification automatique)';
 
         $sent = 0;
         foreach ( $bureau as $m ) {
-            if ( ! $m->email || ! is_email($m->email) ) continue;
-            if ( wp_mail($m->email, $subject, $body) ) $sent++;
+            if ( $par === '' && intval( $m->id ) === $trainer_id ) continue; // pas de mail à soi-même
+            if ( ! $m->email || ! is_email( $m->email ) ) continue;
+            if ( wp_mail( $m->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) ) ) $sent++;
         }
         return $sent;
     }
 
     /**
-     * Compatibilité : garde l'ancienne signature pour les appels directs éventuels.
-     * Redirige vers la version groupée avec un seul changement.
+     * Cours (créneaux récurrents non annulés) et événements ponctuels d'une date, en texte —
+     * mêmes jours d'activité que get_interventions_par_trainer(). Vide = jour sans activité.
+     *
+     * @return string[]
      */
-    public function notify_bureau_dispo_change( $trainer, $date_str, $avant, $apres, $note = '' ) {
-        $nom = $trainer ? trim($trainer->nom) : '';
-        return $this->notify_bureau_dispo_changes_grouped( $date_str, array(
-            array( 'trainer_nom' => $nom, 'avant' => $avant, 'apres' => $apres, 'note' => $note ),
+    private function activites_du_jour( $date ) {
+        global $wpdb;
+        $out = array();
+        foreach ( $this->db->get_slot_occurrences( $date, $date ) as $sl ) {
+            if ( ! empty( $sl['annul_id'] ) ) continue;
+            $out[] = $sl['heure_debut'] . ' – ' . $sl['heure_fin'] . ' — ' . $sl['titre'] . ( $sl['categorie'] ? ' (' . $sl['categorie'] . ')' : '' );
+        }
+        $te = $this->db->table_events();
+        $evs = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM $te WHERE date = %s AND slot_id IS NULL AND type NOT IN ('annulation') ORDER BY heure_debut ASC", $date
         ) );
+        foreach ( $evs as $ev ) {
+            $h     = trim( (string) ( $ev->heure_debut ?? '' ) );
+            $out[] = ( $h !== '' ? $h . ' — ' : '' ) . $ev->titre;
+        }
+        return $out;
     }
 
     /* ══════════════════════════════════════════════════════════

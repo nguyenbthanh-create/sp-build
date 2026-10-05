@@ -69,16 +69,8 @@ $public_link = get_option( 'sp_cal_public_link', home_url('/planning/') );
                     <div id="list-dispos">
                         <div style="text-align:center;color:#aaa;padding:14px;font-size:13px;">Chargement…</div>
                     </div>
-                    <!-- Bouton envoi bureau — visible uniquement quand il y a des changements J-3 -->
-                    <div id="dispo-notif-bar" style="display:none;margin-top:10px;padding:10px 12px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;">
-                        <div style="font-size:12px;color:#92400e;margin-bottom:8px;" id="dispo-notif-summary"></div>
-                        <div style="display:flex;gap:8px;align-items:center;">
-                            <button id="btn-send-dispo-notif" class="button button-primary" style="background:#1e3a5f;border-color:#1e3a5f;font-size:12px;height:32px;">
-                                ✉️ Envoyer la notification au bureau
-                            </button>
-                            <span id="dispo-notif-result" style="font-size:12px;color:#15803d;display:none;"></span>
-                        </div>
-                    </div>
+                    <!-- Retour quand le serveur a prévenu le bureau (changement entre J et J+3) -->
+                    <div id="dispo-notif-result" style="display:none;margin-top:10px;font-size:12px;color:#15803d;"></div>
                 </div>
 
                 <div id="no-day-content" style="text-align:center;color:#888;padding:8px 0 4px;font-size:13px;">

@@ -267,7 +267,11 @@ class SP_Cal_Trainer_App {
 
 		// Un entraîneur ne peut jamais écrire que sur SA PROPRE ligne — le trainer_id
 		// vient du token résolu côté serveur, jamais d'un paramètre envoyé par le client.
+		$avant = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['disponible'] ?? null;
 		$this->db->save_dispo( intval( $me->id ), $date, $disponible, $note );
+
+		// Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
+		( new SpCalPro_Notifications( $this->db ) )->notifier_bureau_dispo( intval( $me->id ), $date, $avant, $disponible, $note );
 
 		wp_send_json_success( [ 'date' => $date, 'disponible' => $disponible, 'note' => $note ] );
 	}

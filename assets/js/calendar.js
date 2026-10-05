@@ -27,7 +27,6 @@
         trainersList:  [],      // [{id, nom, nom_public}]
         disposByDate:  {},      // {'YYYY-MM-DD': {trainer_id: {disponible:1/0, note:''}}}
         disposLoaded:  false,   // flag : dispos chargées pour le mois courant
-        pendingDispoChanges: {}, // {'YYYY-MM-DD': { trainer_id: {trainer_nom, avant, apres, note} }}
 
         // Couleurs calendrier — weekends & vacances Zone C
         weColor:  '#f3f4f6',
@@ -320,33 +319,6 @@
                         setTimeout(function(){ CAL.loadSondage(); }, 1500);
                     } else {
                         $msg.css('color', '#c00').text('❌ ' + (resp.data || 'Erreur'));
-                    }
-                });
-            });
-            // Notification bureau dispos
-            $(document).on('click', '#btn-send-dispo-notif', function(){
-                var date = CAL.currentDate;
-                if (!date || !CAL.pendingDispoChanges[date]) return;
-                var changes = Object.values(CAL.pendingDispoChanges[date]);
-                if (!changes.length) return;
-                var btn = $(this).prop('disabled', true).text('Envoi…');
-                $.post(SpCal.ajaxurl, {
-                    action:      'sp_cal_notify_bureau_dispos',
-                    nonce:       SpCal.nonce,
-                    date:        date,
-                    changements: JSON.stringify(changes),
-                }, function(res) {
-                    btn.prop('disabled', false).text('✉️ Envoyer la notification au bureau');
-                    if (res.success) {
-                        $('#dispo-notif-result').text(res.data.msg).show();
-                        // Effacer les changements en attente pour cette date
-                        delete CAL.pendingDispoChanges[date];
-                        setTimeout(function(){
-                            $('#dispo-notif-bar').hide();
-                            $('#dispo-notif-result').hide();
-                        }, 4000);
-                    } else {
-                        $('#dispo-notif-result').text('❌ Erreur : ' + res.data).show();
                     }
                 });
             });
@@ -1477,11 +1449,6 @@
         },
 
         saveDispo: function (trainer_id, date, disponible, note) {
-            // Mémoriser l'état AVANT le changement (pour le récap bureau)
-            var beforeState = CAL.disposByDate[date] && CAL.disposByDate[date][trainer_id]
-                ? CAL.disposByDate[date][trainer_id].disponible
-                : null;
-
             var btn = $('.sp-dispo-act[data-trainer-id="'+trainer_id+'"][data-date="'+date+'"]').css('opacity','0.4').css('pointer-events','none');
             $.post(SpCal.ajaxurl, {
                 action:     'sp_cal_save_trainer_dispo',
@@ -1502,48 +1469,17 @@
                     CAL.disposByDate[date][trainer_id] = { disponible: parseInt(disponible, 10), note: note };
                 }
 
-                // ── Suivre les changements pour la notification bureau (J-3) ──
-                var dateTs   = new Date(date).getTime();
-                var nowTs    = new Date().setHours(0,0,0,0);
-                var diffDays = Math.ceil((dateTs - nowTs) / 86400000);
-                var afterVal = (disponible === '' || disponible === null) ? null : parseInt(disponible, 10);
-
-                if (diffDays >= 0 && diffDays <= 7 && beforeState !== afterVal) {
-                    // Trouver le nom de l'entraîneur
-                    var trainerInfo = CAL.trainersList.find(function(t){ return t.id === trainer_id; });
-                    var nom = trainerInfo ? (trainerInfo.nom_public || trainerInfo.nom) : '';
-
-                    if (!CAL.pendingDispoChanges[date]) CAL.pendingDispoChanges[date] = {};
-                    CAL.pendingDispoChanges[date][trainer_id] = {
-                        trainer_nom:   nom,
-                        trainer_email: '',
-                        avant:         beforeState,
-                        apres:         afterVal,
-                        note:          note,
-                    };
-                    CAL.updateDispoNotifBar(date);
+                // Le serveur prévient lui-même le bureau (dates de J à J+3) : simple retour ici.
+                if (res.data && res.data.bureau > 0) {
+                    $('#dispo-notif-result').text('✉️ Bureau prévenu (' + res.data.bureau + ' destinataire' + (res.data.bureau > 1 ? 's' : '') + ')').show();
+                    clearTimeout(CAL.dispoNotifTimer);
+                    CAL.dispoNotifTimer = setTimeout(function(){ $('#dispo-notif-result').fadeOut(); }, 4000);
                 }
 
                 // Re-render la section dispos + indicateur grille
                 CAL.renderDispos(date);
                 CAL.refreshDayIndicator(date);
             });
-        },
-
-        updateDispoNotifBar: function (date) {
-            var changes = CAL.pendingDispoChanges[date];
-            if (!changes || !Object.keys(changes).length) {
-                $('#dispo-notif-bar').hide(); return;
-            }
-            // Construire le résumé
-            var lines = [];
-            Object.values(changes).forEach(function(chg){
-                var libApres = chg.apres === 1 ? 'disponible ✅' : chg.apres === 0 ? 'indisponible ❌' : 'non renseigné ⬜';
-                lines.push(chg.trainer_nom + ' → ' + libApres);
-            });
-            $('#dispo-notif-summary').text('Modifications à notifier : ' + lines.join(' · '));
-            $('#dispo-notif-bar').show();
-            $('#dispo-notif-result').hide();
         },
 
         refreshDayIndicator: function (date) {
@@ -1782,7 +1718,7 @@
             $('#sp-event-modal').removeClass('open');
             CAL.editingEvent=null; CAL.presences={}; CAL.notes={}; CAL.elevesAll=[]; CAL.elevesByGroup={}; CAL.catsSaisieAge=[];
             $('#pres-count').hide(); $('#exam-count').hide();
-            $('#dispo-notif-bar').hide(); $('#dispo-notif-result').hide();
+            $('#dispo-notif-result').hide();
         },
         toTimeInput: function (s) {
             if(!s) return '';
