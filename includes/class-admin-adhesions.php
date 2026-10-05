@@ -556,7 +556,7 @@ class SP_Admin_Adhesions {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
 		$id          = absint( $_POST['id'] ?? 0 );
-		$refus_motif = sanitize_textarea_field( $_POST['refus_motif'] ?? '' );
+		$refus_motif = sanitize_textarea_field( wp_unslash( $_POST['refus_motif'] ?? '' ) );
 
 		if ( ! check_admin_referer( "sp_refuser_{$id}", 'sp_refus_nonce' ) ) {
 			wp_redirect( $this->list_url( 'error_nonce' ) );

@@ -353,8 +353,70 @@ class SpCalPro_DB {
 
     /* ── Migration silencieuse (v10.0 → v10.1 → v10.2) ─────── */
 
+    /** Retire les « \ » (un ou plusieurs) placés devant une apostrophe ou un guillemet. */
+    public static function sans_antislash( $v ) {
+        if ( is_array( $v ) ) return array_map( array( __CLASS__, 'sans_antislash' ), $v );
+        return is_string( $v ) ? preg_replace( '/\\\\+(?=[\'"])/u', '', $v ) : $v;
+    }
+
+    /**
+     * Réparation unique (05/10/2026) des textes enregistrés sans wp_unslash() : WordPress
+     * ajoute un « \ » devant chaque apostrophe reçue d'un formulaire, et plusieurs saisies
+     * (intitulés des vacances, notes de dispo, formulaire d'adhésion…) le gardaient — il se
+     * multipliait à chaque réenregistrement (« Vacances d\\\\\\\'Hiver »). Les points
+     * d'entrée sont corrigés ; ceci nettoie l'existant. Colonnes de texte libre uniquement ;
+     * les colonnes JSON sont décodées, nettoyées puis réencodées (jamais modifiées à l'aveugle).
+     */
+    private function reparer_antislash() {
+        global $wpdb;
+        $texte = array(
+            $this->table_eleves()                => array( 'nom', 'prenom', 'adresse', 'lieu_naissance', 'nationalite', 'palmares', 'motif_inactif', 'urgence_nom', 'urgence_prenom', 'licence', 'grade' ),
+            $this->table_trainers()              => array( 'nom', 'nom_public', 'fonction', 'fonction_bureau' ),
+            $this->table_trainer_dispos()        => array( 'note' ),
+            $this->table_presences_eleves()      => array( 'note' ),
+            $this->table_events()                => array( 'titre', 'description' ),
+            $this->table_slots()                 => array( 'label' ),
+            $wpdb->prefix . 'sp_adhesions_pending' => array( 'nom', 'prenom', 'lieu_naissance', 'nationalite', 'adresse', 'message', 'ancien_grade', 'refus_motif' ),
+        );
+        $json = array(
+            $this->table_eleves()                  => array( 'extra_data' ),
+            $wpdb->prefix . 'sp_adhesions_pending' => array( 'representants_legaux', 'contact_urgence' ),
+        );
+        foreach ( array( 'texte' => $texte, 'json' => $json ) as $genre => $tables ) {
+            foreach ( $tables as $table => $cols ) {
+                if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) continue;
+                foreach ( $cols as $col ) {
+                    if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$table` LIKE '$col'" ) ) continue;
+                    $rows = $wpdb->get_results( "SELECT id, `$col` AS v FROM `$table` WHERE INSTR(`$col`, CHAR(92)) > 0" );
+                    foreach ( $rows as $r ) {
+                        if ( $genre === 'texte' ) {
+                            $propre = self::sans_antislash( (string) $r->v );
+                        } else {
+                            $d = json_decode( (string) $r->v, true );
+                            if ( ! is_array( $d ) ) continue;
+                            $p = self::sans_antislash( $d );
+                            if ( $p === $d ) continue;
+                            $propre = wp_json_encode( $p );
+                        }
+                        if ( $propre !== $r->v ) $wpdb->update( $table, array( $col => $propre ), array( 'id' => intval( $r->id ) ) );
+                    }
+                }
+            }
+        }
+        // Intitulés des périodes de vacances (option JSON)
+        $vac = json_decode( (string) get_option( 'sp_cal_vacances_zoneC', '[]' ), true );
+        if ( is_array( $vac ) ) {
+            $p = self::sans_antislash( $vac );
+            if ( $p !== $vac ) update_option( 'sp_cal_vacances_zoneC', wp_json_encode( $p ) );
+        }
+    }
+
     public function maybe_upgrade() {
         global $wpdb;
+        if ( get_option( 'sp_cal_repar_antislash' ) !== '1' ) {
+            $this->reparer_antislash();
+            update_option( 'sp_cal_repar_antislash', '1', false );
+        }
         $tsl = $this->table_slots();
         $te  = $this->table_events();
         $tel = $this->table_eleves();

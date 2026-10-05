@@ -2523,9 +2523,10 @@ function spCalBufToB64u(buf) {
             update_option( 'sp_cal_vac_color', sanitize_hex_color( $_POST['sp_cal_vac_color'] ?? '#fef9c3' ) ?: '#fef9c3' );
             // Périodes manuelles
             $periodes = array();
-            $labels = $_POST['vac_label'] ?? array();
-            $starts = $_POST['vac_start'] ?? array();
-            $ends   = $_POST['vac_end']   ?? array();
+            // wp_unslash : sans lui, « Vacances d'Hiver » prenait un « \ » de plus à chaque enregistrement.
+            $labels = wp_unslash( (array) ( $_POST['vac_label'] ?? array() ) );
+            $starts = wp_unslash( (array) ( $_POST['vac_start'] ?? array() ) );
+            $ends   = wp_unslash( (array) ( $_POST['vac_end']   ?? array() ) );
             foreach ( $starts as $i => $start ) {
                 $start = sanitize_text_field( $start );
                 $end   = sanitize_text_field( $ends[$i] ?? '' );
@@ -2559,13 +2560,13 @@ function spCalBufToB64u(buf) {
             $colors = array();
             if ( ! empty( $_POST['cat_color'] ) ) {
                 // cat_name[md5(cat)] = nom réel de la catégorie (champ caché dans le formulaire)
-                $cat_names = $_POST['cat_name'] ?? array();
+                $cat_names = wp_unslash( (array) ( $_POST['cat_name'] ?? array() ) );
                 foreach ( $_POST['cat_color'] as $key => $color ) {
                     $cat = sanitize_text_field( $cat_names[ $key ] ?? '' );
                     if ( ! $cat ) continue;
                     $colors[ $cat ] = array(
                         'color' => sanitize_hex_color( $color ) ?: '#3B82F6',
-                        'icon'  => sanitize_text_field( $_POST['cat_icon'][ $key ] ?? '' ),
+                        'icon'  => sanitize_text_field( wp_unslash( $_POST['cat_icon'][ $key ] ?? '' ) ),
                     );
                 }
             }

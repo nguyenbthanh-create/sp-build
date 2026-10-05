@@ -659,7 +659,7 @@ class SpCalPro_Ajax {
         $tpe      = $this->db->table_presences_eleves();
         $eleve_id = intval( $_POST['eleve_id']  ?? 0 );
         $event_id = intval( $_POST['event_id']  ?? 0 );
-        $note     = sanitize_text_field( $_POST['note'] ?? '' );
+        $note     = sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) );
         if ( ! $eleve_id || ! $event_id ) wp_send_json_error( 'Paramètres manquants.' );
 
         // Vérifier que c'est bien un examen
@@ -752,7 +752,7 @@ class SpCalPro_Ajax {
         $eleve_id  = intval( $_POST['eleve_id']  ?? 0 );
         $date_key  = sanitize_text_field( $_POST['date_key']  ?? '' );
         $new_date  = sanitize_text_field( $_POST['new_date']  ?? '' );
-        $new_grade = sanitize_text_field( $_POST['new_grade'] ?? '' );
+        $new_grade = sanitize_text_field( wp_unslash( $_POST['new_grade'] ?? '' ) );
         if ( ! $eleve_id || ! $date_key || ! $new_grade ) wp_send_json_error( 'Paramètres manquants.' );
 
         $el = $wpdb->get_row( $wpdb->prepare( "SELECT extra_data, grade FROM $tel WHERE id=%d", $eleve_id ) );
@@ -1199,7 +1199,7 @@ class SpCalPro_Ajax {
     public function confirm_famille_lien() {
         $this->nonce(); $this->require_admin();
         $lien_id   = intval( $_POST['lien_id']   ?? 0 );
-        $type_lien = sanitize_text_field( $_POST['type_lien'] ?? 'famille' );
+        $type_lien = sanitize_text_field( wp_unslash( $_POST['type_lien'] ?? 'famille' ) );
         if ( ! $lien_id ) wp_send_json_error( 'ID lien manquant.' );
         global $wpdb;
         $tfl = $this->db->table_famille_liens();
@@ -1371,7 +1371,7 @@ class SpCalPro_Ajax {
         $trainer_id    = intval( $_POST['trainer_id'] ?? 0 );
         $date          = sanitize_text_field( $_POST['date'] ?? '' );
         $dispo_raw     = $_POST['disponible'] ?? '';
-        $note          = sanitize_text_field( $_POST['note'] ?? '' );
+        $note          = sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) ); // sans wp_unslash, la note de dispo doublait ses « \ » à chaque modification (bouton ✏️)
         $remplacant_id = intval( $_POST['remplacant_id'] ?? 0 ) ?: null;
         // 1 ou 2 allers-retours ; absent = garder la valeur enregistrée (bouton ✏️ de la note)
         $allers_retours = isset( $_POST['allers_retours'] ) && $_POST['allers_retours'] !== '' ? intval( $_POST['allers_retours'] ) : null;

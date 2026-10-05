@@ -292,6 +292,12 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 	private function handle_submission( ?object $renouv_eleve = null ): array {
 		global $wpdb;
 
+		// WordPress ajoute un « \ » devant chaque apostrophe et guillemet reçus : sans ce
+		// retrait, « D'Amico » ou « l'école » étaient enregistrés « D\'Amico », puis recopiés
+		// sur la fiche adhérent à la validation (05/10/2026). Une seule fois pour tout le
+		// formulaire (champs simples, représentants, contact d'urgence).
+		$_POST = wp_unslash( $_POST );
+
 		// ── Sanitisation ──
 		$nom       = sanitize_text_field( $_POST['nom']            ?? '' );
 		$prenom    = sanitize_text_field( $_POST['prenom']         ?? '' );
