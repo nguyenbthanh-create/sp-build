@@ -1375,7 +1375,7 @@ class SpCalPro_Ajax {
         $ik = SP_Cal_IK_Cloture::get_instance( $this->db );
         if ( $ik->est_cloture( $date ) ) {
             if ( ! $ik->peut_modifier_cloture() ) {
-                wp_send_json_error( array( 'code' => 'mois_cloture_refuse', 'message' => 'Ce mois est clôturé (IK déjà payées) et votre compte n\'est pas autorisé à le modifier (Réglages → Clôture des IK).' ) );
+                wp_send_json_error( array( 'code' => 'mois_cloture_refuse', 'message' => 'Ce mois est clôturé (IK déjà payées) et votre compte n\'est pas autorisé à le modifier (page 💶 IK).' ) );
             }
             if ( empty( $_POST['confirmer_cloture'] ) ) {
                 wp_send_json_error( array( 'code' => 'mois_cloture', 'message' => 'Ce mois est clôturé : les IK sont déjà payées.' ) );

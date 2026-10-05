@@ -4236,8 +4236,8 @@ function spCalBufToB64u(buf) {
             </script>
         </div>
 
-        <!-- CLÔTURE DES IK (mois payés) -->
-        <?php SP_Cal_IK_Cloture::get_instance( $this->db )->render_admin(); ?>
+        <!-- IK : détail, clôture des mois payés et autorisations → page 💶 IK -->
+        <p class="sp-muted" style="margin:-6px 0 18px;">💶 Détail des IK par entraîneur, clôture des mois payés et régularisations : page <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . SP_Cal_IK_Cloture::PAGE ) ); ?>">💶 IK</a>.</p>
 
         <!-- TOKENS FICHE MEMBRE -->
         <?php

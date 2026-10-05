@@ -7,8 +7,8 @@
  * sur un mois déjà payé changeait le total sans que personne ne le voie (EVOLUTION.md, 05/10/2026).
  *
  * Fonctionnement (choix de l'utilisateur du 05/10/2026) :
- *   - le trésorier clôture un mois une fois les IK payées (bouton dans Réglages → Récapitulatif
- *     mensuel) : le détail de chaque entraîneur est figé (jours, allers-retours, km, tarif, montant) ;
+ *   - le trésorier clôture un mois une fois les IK payées (page « 💶 IK » du menu SP Calendar) :
+ *     le détail de chaque entraîneur est figé (jours, allers-retours, km, tarif, montant) ;
  *   - un mois clôturé ne se modifie plus depuis « Mes dispos » ; seuls les comptes cochés en bas du bloc (option sp_cal_ik_modif_comptes,
  *     sur le modèle de « Accès bureau » de sp-compta) peuvent encore corriger
  *     après confirmation, et l'écart avec le figé apparaît dans le récapitulatif suivant
@@ -35,6 +35,7 @@ class SP_Cal_IK_Cloture {
 	const OPTION = 'sp_cal_ik_clotures';
 	const CAP    = 'manage_options';
 	const OPTION_DROITS = 'sp_cal_ik_modif_comptes';
+	const PAGE   = 'sp-cal-ik';
 
 	public static function get_instance( $db = null ): self {
 		if ( self::$instance === null ) self::$instance = new self( $db );
@@ -46,6 +47,7 @@ class SP_Cal_IK_Cloture {
 		add_action( 'admin_post_sp_cal_ik_cloturer', [ $this, 'handle_cloturer' ] );
 		add_action( 'admin_post_sp_cal_ik_rouvrir',  [ $this, 'handle_rouvrir' ] );
 		add_action( 'admin_post_sp_cal_ik_droits',   [ $this, 'handle_droits' ] );
+		add_action( 'admin_menu', [ $this, 'register_menu' ], 20 );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -125,7 +127,7 @@ class SP_Cal_IK_Cloture {
 		return isset( $this->clotures()[ substr( $date, 0, 7 ) ] );
 	}
 
-	/** Identifiants des comptes autorisés à corriger un mois clôturé (Réglages → Clôture des IK). */
+	/** Identifiants des comptes autorisés à corriger un mois clôturé (page 💶 IK). */
 	public function comptes_autorises(): array {
 		$ids = get_option( self::OPTION_DROITS, [] );
 		return is_array( $ids ) ? array_values( array_map( 'intval', $ids ) ) : [];
@@ -247,6 +249,78 @@ class SP_Cal_IK_Cloture {
 		return ( $signe && $v > 0 ? '+' : '' ) . number_format( $v, 2, ',', ' ' ) . ' €';
 	}
 
+	public function register_menu(): void {
+		add_submenu_page( 'sp-cal-pro', 'Indemnités kilométriques', '💶 IK', self::CAP, self::PAGE, [ $this, 'render_page' ] );
+	}
+
+	/** Page « 💶 IK » : détail d'un mois par entraîneur, clôture des mois payés, autorisations. */
+	public function render_page(): void {
+		if ( ! current_user_can( self::CAP ) ) wp_die( 'Accès refusé.' );
+		$ts_mois  = strtotime( current_time( 'Y-m' ) . '-01 12:00:00 UTC' );
+		$mois_sel = sanitize_text_field( wp_unslash( $_GET['mois'] ?? '' ) );
+		if ( ! preg_match( '/^\d{4}-\d{2}$/', $mois_sel ) ) $mois_sel = gmdate( 'Y-m', strtotime( '-1 month', $ts_mois ) );
+		[ $y, $m ]  = array_map( 'intval', explode( '-', $mois_sel ) );
+		$calc       = $this->calcul_mois( $y, $m );
+		$cloture    = $this->clotures()[ $mois_sel ] ?? null;
+		$tarif      = floatval( get_option( 'sp_cal_tarif_km', 0 ) );
+
+		echo '<div class="wrap"><h1>💶 Indemnités kilométriques</h1>'
+			. '<p class="description">Formule : tarif × km aller-retour de l\'entraîneur × allers-retours (1 par jour d\'intervention, 2 s\'il l\'a déclaré), plus les km exceptionnels. '
+			. 'Tarif actuel : <strong>' . esc_html( number_format( $tarif, 2, ',', ' ' ) ) . ' €/km</strong> — tarif, envoi du récapitulatif mensuel et km de chaque entraîneur : '
+			. '<a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-settings' ) ) . '">Paramètres</a> et <a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-trainers' ) ) . '">Entraîneurs &amp; Bureau</a>.</p>';
+
+		// ── Détail d'un mois
+		echo '<div class="sp-box"><form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+			. '<input type="hidden" name="page" value="' . esc_attr( self::PAGE ) . '"><h2 style="margin:0">Détail du mois</h2><select name="mois" onchange="this.form.submit()">';
+		for ( $i = 0; $i <= 12; $i++ ) {
+			$ym = gmdate( 'Y-m', strtotime( "-$i month", $ts_mois ) );
+			echo '<option value="' . esc_attr( $ym ) . '"' . selected( $ym, $mois_sel, false ) . '>' . esc_html( ucfirst( self::libelle_mois( $ym ) ) ) . ( $i === 0 ? ' (en cours)' : '' ) . '</option>';
+		}
+		echo '</select>' . ( $cloture ? ' <span>🔒 Clôturé le ' . esc_html( mysql2date( 'd/m/Y', $cloture['date'] ) ) . '</span>' : '' ) . '</form>';
+
+		// Mois clôturé : on montre ce qui est figé (tarif et km du moment), pas un recalcul au
+		// tarif du jour ; les corrections faites depuis sont listées à part.
+		$total_paye = null;
+		if ( $cloture ) {
+			$calc['lignes'] = $cloture['lignes'] ?? [];
+			$calc['total']  = round( array_sum( array_column( $calc['lignes'], 'montant' ) ), 2 );
+			$total_paye     = floatval( $cloture['total'] );
+		}
+
+		if ( ! $calc['lignes'] ) {
+			echo '<p class="description">Aucune intervention ni km exceptionnel ce mois-ci.</p>';
+		} else {
+			echo '<table class="widefat striped" style="max-width:900px;margin-top:10px"><thead><tr><th>Entraîneur</th><th>Jours d\'intervention</th><th>Allers-retours</th><th>Km A/R</th><th>Km exceptionnels</th><th style="text-align:right">Montant</th></tr></thead><tbody>';
+			foreach ( $calc['lignes'] as $l ) {
+				echo '<tr><td>' . esc_html( $l['nom'] ) . '</td><td>' . intval( $l['jours'] ) . '</td>'
+					. '<td>' . ( $l['nb'] > $l['jours'] ? '<strong>' . intval( $l['nb'] ) . '</strong>' : intval( $l['nb'] ) ) . '</td>'
+					. '<td>' . ( $l['km'] > 0 ? esc_html( number_format( $l['km'], 1, ',', '' ) ) . ' km' : '<span style="color:#b45309">non renseigné</span>' ) . '</td>'
+					. '<td>' . ( $l['km_excep'] > 0 ? esc_html( number_format( $l['km_excep'], 1, ',', '' ) . ' km' ) . '<br><small>' . esc_html( $l['excep_detail'] ) . '</small>' : '—' ) . '</td>'
+					. '<td style="text-align:right">' . esc_html( self::euros( $l['montant'] ) ) . '</td></tr>';
+			}
+			echo '</tbody><tfoot><tr><th colspan="5">Total' . ( $cloture ? ' (montants figés)' : ' (calcul en cours, mois non clôturé)' ) . '</th><th style="text-align:right">' . esc_html( self::euros( $calc['total'] ) ) . '</th></tr>';
+			if ( $total_paye !== null && abs( $calc['total'] - $total_paye ) >= 0.01 ) {
+				echo '<tr><td colspan="5">dont payé à la clôture de ce mois ; le reste a été réglé en régularisation avec un mois suivant</td><td style="text-align:right">' . esc_html( self::euros( $total_paye ) ) . '</td></tr>';
+			}
+			echo '</tfoot></table>';
+		}
+		if ( $cloture ) {
+			$attente = array_filter( $this->regularisations(), static fn( $r ) => $r['mois'] === $mois_sel );
+			if ( $attente ) {
+				echo '<p><strong>Corrections depuis la clôture</strong> (régularisations en attente, soldées à la prochaine clôture) :</p><ul style="margin-left:18px;list-style:disc">';
+				foreach ( $attente as $r ) {
+					echo '<li>' . esc_html( $r['nom'] . ' : ' . ( $r['ar'] ? sprintf( '%+d aller(s)-retour(s)', $r['ar'] ) : '' )
+						. ( $r['km_excep'] ? ' ' . sprintf( '%+.1f km exceptionnels', $r['km_excep'] ) : '' ) . ' → ' . self::euros( $r['montant'], true ) ) . '</li>';
+				}
+				echo '</ul>';
+			}
+		}
+		echo '</div>';
+
+		$this->render_admin();
+		echo '</div>';
+	}
+
 	public function render_admin(): void {
 		if ( ! current_user_can( self::CAP ) ) return;
 		$clotures = $this->clotures();
@@ -329,7 +403,7 @@ class SP_Cal_IK_Cloture {
 	}
 
 	private function retour( string $msg ): void {
-		wp_safe_redirect( add_query_arg( 'ik', $msg, wp_get_referer() ?: admin_url( 'admin.php?page=sp-cal-pro' ) ) . '#sp-ik-cloture' );
+		wp_safe_redirect( add_query_arg( 'ik', $msg, wp_get_referer() ?: admin_url( 'admin.php?page=' . self::PAGE ) ) . '#sp-ik-cloture' );
 		exit;
 	}
 
