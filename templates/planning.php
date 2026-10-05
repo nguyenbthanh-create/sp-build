@@ -41,7 +41,7 @@ $start_m    = $dow_first > 1
 $cat_colors   = json_decode(get_option('sp_cal_cat_colors','{}'), true) ?: array();
 $sp_we_color  = get_option('sp_cal_we_color',  '#f3f4f6');
 $sp_vac_color = get_option('sp_cal_vac_color', '#fef9c3');
-$sp_vacances  = json_decode(get_option('sp_cal_vacances_zoneC','[]'), true) ?: array();
+$sp_vacances  = SpCalPro_DB::get_vacances();
 
 if ( ! function_exists('sp_cal_bg_day') ) :
 function sp_cal_bg_day( $ds, $we_color, $vac_color, $vacances ) {

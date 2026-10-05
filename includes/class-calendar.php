@@ -61,7 +61,7 @@ class SpCalPro_Calendar {
                              : get_option( 'sp_cal_palmares_url', '' ),
             'weColor'     => get_option( 'sp_cal_we_color',  '#f3f4f6' ),
             'vacColor'    => get_option( 'sp_cal_vac_color', '#fef9c3' ),
-            'vacances'    => get_option( 'sp_cal_vacances_zoneC', '[]' ),
+            'vacances'    => wp_json_encode( SpCalPro_DB::get_vacances() ),
         ) );
     }
 

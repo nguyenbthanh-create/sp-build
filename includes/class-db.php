@@ -353,6 +353,16 @@ class SpCalPro_DB {
 
     /* ── Migration silencieuse (v10.0 → v10.1 → v10.2) ─────── */
 
+    /**
+     * Périodes de vacances (option sp_cal_vacances_zoneC), intitulés nettoyés des « \ » à la
+     * lecture : un réenregistrement de Paramètres avec l'ancien code ne doit plus jamais se voir.
+     * @return array [ [ 'label', 'start', 'end' ], … ]
+     */
+    public static function get_vacances() {
+        $vac = json_decode( (string) get_option( 'sp_cal_vacances_zoneC', '[]' ), true );
+        return is_array( $vac ) ? self::sans_antislash( $vac ) : array();
+    }
+
     /** Retire les « \ » (un ou plusieurs) placés devant une apostrophe ou un guillemet. */
     public static function sans_antislash( $v ) {
         if ( is_array( $v ) ) return array_map( array( __CLASS__, 'sans_antislash' ), $v );
@@ -413,9 +423,10 @@ class SpCalPro_DB {
 
     public function maybe_upgrade() {
         global $wpdb;
-        if ( get_option( 'sp_cal_repar_antislash' ) !== '1' ) {
+        // v2 : la v1 a pu passer avant que tous les fichiers corrigés soient en ligne.
+        if ( get_option( 'sp_cal_repar_antislash_v2' ) !== '1' ) {
             $this->reparer_antislash();
-            update_option( 'sp_cal_repar_antislash', '1', false );
+            update_option( 'sp_cal_repar_antislash_v2', '1', false );
         }
         $tsl = $this->table_slots();
         $te  = $this->table_events();

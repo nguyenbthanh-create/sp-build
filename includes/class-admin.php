@@ -3928,7 +3928,7 @@ function spCalBufToB64u(buf) {
                     Source officielle : <a href="https://www.education.gouv.fr/calendrier-scolaire-100148" target="_blank">education.gouv.fr/calendrier-scolaire</a>
                 </p>
 
-                <?php $vac_stored = json_decode( get_option('sp_cal_vacances_zoneC','[]'), true ) ?: array(); ?>
+                <?php $vac_stored = SpCalPro_DB::get_vacances(); ?>
 
                 <table class="wp-list-table widefat fixed" id="vac-table" style="max-width:720px;margin-bottom:10px;">
                     <thead><tr>
