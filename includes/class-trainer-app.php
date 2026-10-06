@@ -115,12 +115,31 @@ class SP_Cal_Trainer_App {
 			return new WP_REST_Response( [ 'success' => false, 'data' => 'Lien invalide ou expiré.' ], 403 );
 		}
 		$pin = function_exists( 'sp_pointage_pin' ) ? sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		$roles  = array_map( 'trim', explode( ',', (string) ( $me->roles ?? '' ) ) );
+		$bureau = in_array( 'bureau', $roles, true );
 		return new WP_REST_Response( [
 			'success'    => true,
 			'nom'        => $me->nom_public ?: $me->nom,
 			'pin'        => (string) $pin,
 			'dispos_url' => self::url_embed( $token ),
+			// Onglet « 💶 Saisie » (membres du bureau seulement) : ouvre la saisie rapide de la
+			// trésorerie (extension sp-compta) dans une fenêtre à part — vide = pas d'onglet.
+			'saisie_url' => $bureau ? $this->url_saisie_rapide() : '',
 		], 200 );
+	}
+
+	/**
+	 * Page publiée qui porte le shortcode de saisie rapide de la trésorerie, '' si la
+	 * trésorerie (sp-compta) n'est pas active ou si aucune page ne l'utilise. Seul lien
+	 * avec sp-compta : le nom de son shortcode public, aucune table ni classe partagée.
+	 */
+	private function url_saisie_rapide(): string {
+		if ( ! shortcode_exists( 'sp_compta_saisie_rapide' ) ) return '';
+		global $wpdb;
+		$page_id = $wpdb->get_var(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' AND post_content LIKE '%[sp_compta_saisie_rapide%' LIMIT 1"
+		);
+		return $page_id ? (string) get_permalink( (int) $page_id ) : '';
 	}
 
 	// ─── Schéma : colonnes token sur la table entraîneurs ──────────────────────

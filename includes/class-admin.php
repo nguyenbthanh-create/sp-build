@@ -635,6 +635,12 @@ window.addEventListener('error', function(e) {
 .spcal-screen.active{display:block;}
 /* Onglet « Mes dispos » (lien personnel entraîneur) : page des dispos en ambiance sombre dans un cadre */
 #spcal-dispos{padding:0;}
+.spcal-saisie-carte{background:#1a1a1a;border-radius:12px;padding:20px 18px;text-align:center;}
+.spcal-saisie-ico{font-size:40px;line-height:1;margin-bottom:8px;}
+.spcal-saisie-carte p{font-size:14px;color:rgba(255,255,255,.75);margin:0 0 16px;line-height:1.45;}
+.spcal-saisie-carte strong{color:#fff;font-size:16px;}
+.spcal-saisie-btn{display:block;background:#0f70b7;color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:14px;border-radius:10px;margin-bottom:14px;}
+.spcal-saisie-carte .spcal-saisie-aide{font-size:12px;color:rgba(255,255,255,.5);margin:0;}
 
 /* ── BOTTOM NAV ──────────────────────────────────────────────── */
 #spcal-nav{flex-shrink:0;background:#1a1a1a;border-top:1px solid rgba(255,255,255,.08);display:flex;padding-bottom:max(8px,env(safe-area-inset-bottom));}
@@ -983,6 +989,19 @@ window.addEventListener('error', function(e) {
                 <div id="spcal-dispos-box"><div class="spcal-empty">Chargement…</div></div>
             </section>
 
+            <!-- Saisie rapide de la trésorerie (membres du bureau, lien personnel) : ouverte dans une
+                 fenêtre à part — pas insérée ici (un cadre bloquait le défilement pour « Mes dispos »,
+                 et l'envoi du formulaire ferait quitter l'application). -->
+            <section id="spcal-saisie" class="spcal-screen">
+                <div class="spcal-section-title">Trésorerie</div>
+                <div class="spcal-saisie-carte">
+                    <div class="spcal-saisie-ico">💶</div>
+                    <p><strong>Saisie rapide</strong><br>Une dépense ou une recette en quelques secondes, avec la photo du justificatif.</p>
+                    <a id="spcal-saisie-lien" class="spcal-saisie-btn" href="#" target="_blank" rel="noopener">Ouvrir la saisie rapide</a>
+                    <p class="spcal-saisie-aide">S'ouvre dans une fenêtre à part : fermez-la (« OK » / « Terminé ») pour revenir ici. La première fois, connectez-vous avec votre compte du site : la connexion est ensuite gardée un an.</p>
+                </div>
+            </section>
+
         </main>
 
         <!-- Bottom nav -->
@@ -1010,6 +1029,10 @@ window.addEventListener('error', function(e) {
             <button class="spcal-nav-btn" id="spcal-nav-anniv" style="display:none" onclick="spCalNav('anniv',this)">
                 <span class="spcal-nav-ico">🎂</span>
                 <span>Anniversaires</span>
+            </button>
+            <button class="spcal-nav-btn" id="spcal-nav-saisie" style="display:none" onclick="spCalNav('saisie',this)">
+                <span class="spcal-nav-ico">💶</span>
+                <span>Saisie</span>
             </button>
         </nav>
 
@@ -1185,7 +1208,7 @@ function initEntraineurToken(tt) {
     .then(function(r){ return r.json(); })
     .then(function(r) {
         if (!r || !r.success) { STORE.del('spcal_trainer_token'); initEleve(); return; }
-        initEntraineur(r.pin, {nom: r.nom, dispos_url: r.dispos_url});
+        initEntraineur(r.pin, {nom: r.nom, dispos_url: r.dispos_url, saisie_url: r.saisie_url || ''});
     })
     .catch(function() { showError('Erreur de connexion. Réessayez.'); });
 }
@@ -1215,8 +1238,18 @@ function initEntraineur(pin, opts) {
         if (navCarte) navCarte.style.display  = 'none';
         if (navEvt)   navEvt.style.display    = 'none';
         document.querySelectorAll('.spcal-nav-btn').forEach(function(b){
-            if (b.id !== 'spcal-nav-carte' && b.id !== 'spcal-nav-evenements') b.style.display = 'flex';
+            // « Saisie » : jamais affiché par défaut, seulement pour le bureau (ci-dessous).
+            if (b.id !== 'spcal-nav-carte' && b.id !== 'spcal-nav-evenements' && b.id !== 'spcal-nav-saisie') b.style.display = 'flex';
         });
+        // Membre du bureau (lien personnel) : onglet « 💶 Saisie » vers la saisie rapide de la trésorerie.
+        if (opts && opts.saisie_url) {
+            var navSaisie = document.getElementById('spcal-nav-saisie');
+            var lienSaisie = document.getElementById('spcal-saisie-lien');
+            if (navSaisie && lienSaisie) {
+                lienSaisie.href = opts.saisie_url;
+                navSaisie.style.display = 'flex';
+            }
+        }
         // Lien personnel : « Calendrier » devient « Mes dispos », pas de déconnexion (lien permanent)
         if (opts && opts.dispos_url) {
             gEntr = opts;
