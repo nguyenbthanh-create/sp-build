@@ -275,7 +275,7 @@ L'authentification est parfaite : c'est une question de **réputation d'envoi** 
 - **`sandrafonteneau66@gmail.com`** : boîte Gmail pleine (« soft bounce » 452 4.2.2 sur le rappel du jour du 06/10) — la prévenir, elle ne reçoit plus les emails du club.
 
 ### Divers relevés dans le journal WP Mail SMTP
-- Adresses d'adhérents mal saisies qui font échouer leurs envois : **`may_278@msn.comm`** (un « m » de trop) et **`noe@lens-group.fp`** (probablement `.fr`) — à corriger sur les fiches.
+- ~~Adresses d'adhérents mal saisies qui font échouer leurs envois : **`may_278@msn.comm`** (un « m » de trop) et **`noe@lens-group.fp`** (probablement `.fr`) — à corriger sur les fiches.~~ **Clos le 06/10/2026** : plus aucune des 116 fiches (adresse de l'adhérent et du parent) ne les contient. `noe@lens-group.fp` : erreur unique du 19/03/2026 (plugin 10.16.4) — très probablement Noé PETIT DE MIRBECK, dont la fiche porte aujourd'hui une adresse Gmail. `may_278@msn.comm` : deux échecs le 22/09/2026, sans nom associé (probablement l'accusé de réception d'un formulaire d'adhésion / renouvellement) ; aucune fiche ne contient `may_278` — adresse corrigée à la validation ou demande sans suite.
 
 ## Comment tenir ce fichier à jour
 
