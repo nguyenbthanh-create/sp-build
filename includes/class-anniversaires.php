@@ -51,6 +51,7 @@ class SP_Cal_Anniversaires {
 		add_action( 'admin_post_sp_anniv_voeux_reglage', [ $this, 'handle_voeux_reglage' ] );
 		add_action( 'admin_post_sp_anniv_voeux_exclure', [ $this, 'handle_voeux_exclure' ] );
 		add_action( 'admin_post_sp_anniv_voeux_test', [ $this, 'handle_voeux_test' ] );
+		add_action( 'admin_post_sp_anniv_voeux_rattraper', [ $this, 'handle_voeux_rattraper' ] );
 		add_action( 'rest_api_init', [ $this, 'register_rest' ] );
 		// Tâche quotidienne de 8 h existante (planifiée par SpCalPro_Notifications).
 		add_action( 'sp_cal_daily_notif', [ $this, 'envoyer_voeux_du_jour' ], 20 );
@@ -216,6 +217,7 @@ class SP_Cal_Anniversaires {
 		$exclus     = array_map( 'intval', (array) get_option( self::OPT_EXCLUS, [] ) );
 		$journal    = (array) get_option( self::OPT_JOURNAL, [] );
 		$envoyes    = array_map( 'intval', (array) ( ( (array) get_option( self::OPT_ENVOYES, [] ) )[ $annee ] ?? [] ) );
+		$echecs     = $this->echecs_a_rattraper( $annee );
 		$aujourdhui = current_time( 'Y-m-d' );
 		$jours_sem  = [ 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi' ];
 
@@ -227,6 +229,8 @@ class SP_Cal_Anniversaires {
 				'inclus'   => [ 'success', 'Cet adhérent recevra de nouveau les vœux par email.' ],
 				'test_ok'  => [ 'success', 'Exemple de vœux envoyé — voir l\'adresse dans le journal ci-dessous (pensez aux courriers indésirables).' ],
 				'test_ko'  => [ 'error', 'L\'exemple n\'a pas pu être envoyé — voir la raison dans le journal ci-dessous.' ],
+				'rattrape_ok' => [ 'success', 'Vœux envoyés avec un message « avec un peu de retard » — voir le journal ci-dessous.' ],
+				'rattrape_ko' => [ 'error', 'Les vœux n\'ont toujours pas pu être envoyés — voir la raison dans le journal ci-dessous.' ],
 			];
 			$k = sanitize_key( wp_unslash( $_GET['voeux_msg'] ) );
 			if ( isset( $msgs[ $k ] ) ) {
@@ -277,7 +281,10 @@ class SP_Cal_Anniversaires {
 								: $el->jour . ' ' . self::MOIS[ $mois ];
 
 							// État des vœux pour cette personne.
-							if ( in_array( (int) $el->id, $envoyes, true ) ) {
+							$a_rattraper = self::est_en_echec( $el, $echecs ) && $date_iso !== '' && $date_iso <= $aujourdhui;
+							if ( $a_rattraper ) {
+								$etat = '❌ envoi raté — à rattraper';
+							} elseif ( in_array( (int) $el->id, $envoyes, true ) ) {
 								$etat = '✅ vœux envoyés';
 							} elseif ( ! $actif ) {
 								$etat = 'vœux désactivés';
@@ -305,6 +312,16 @@ class SP_Cal_Anniversaires {
 										<?php echo esc_html( $dest ); ?>
 										<a href="<?php echo esc_url( $url_bascule ); ?>" class="button button-small" title="Ne pas envoyer de vœux à cet adhérent">Ne pas envoyer</a>
 										<br><span class="sp-muted"><?php echo esc_html( $etat ); ?></span>
+										<?php if ( $a_rattraper ) : ?>
+											<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;"
+											      onsubmit="return confirm(<?php echo esc_attr( wp_json_encode( 'Envoyer à ' . $dest . ' les vœux de ' . $el->prenom . ', avec la mention « avec un peu de retard » ?' ) ); ?>);">
+												<input type="hidden" name="action" value="sp_anniv_voeux_rattraper">
+												<input type="hidden" name="eleve_id" value="<?php echo intval( $el->id ); ?>">
+												<input type="hidden" name="mois" value="<?php echo esc_attr( $cle_mois ); ?>">
+												<?php wp_nonce_field( 'sp_anniv_voeux_rattraper' ); ?>
+												<button type="submit" class="button button-small button-primary">Rattraper les vœux</button>
+											</form>
+										<?php endif; ?>
 									<?php endif; ?>
 								</td>
 							</tr>
@@ -570,12 +587,37 @@ endif; ?>
 		return '';
 	}
 
-	/** Sujet et corps des vœux. */
-	private static function message_voeux( object $el ): array {
+	/**
+	 * Sujet et corps des vœux. $en_retard : version « rattrapage » (bouton de la page, après un
+	 * envoi raté le jour J) — le message ne peut plus dire « aujourd'hui ».
+	 */
+	private static function message_voeux( object $el, bool $en_retard = false ): array {
 		$club   = get_bloginfo( 'name' );
 		$prenom = trim( (string) $el->prenom );
 		$ans    = $el->age ? " ses {$el->age} ans" : ' son anniversaire';
 		$sujet  = "[{$club}] Joyeux anniversaire {$prenom} ! 🎂";
+
+		if ( $en_retard ) {
+			$mois  = intval( explode( '/', (string) $el->date_naissance )[1] ?? 0 );
+			$le    = ( ! empty( $el->jour ) && isset( self::MOIS[ $mois ] ) )
+				? ' le ' . $el->jour . ( (int) $el->jour === 1 ? 'er' : '' ) . ' ' . self::MOIS[ $mois ]
+				: '';
+			$sujet = "[{$club}] Joyeux anniversaire {$prenom} ! 🎂 (avec un peu de retard)";
+			if ( self::est_mineur( $el ) ) {
+				$corps = "Bonjour,\n\n"
+				       . "{$prenom} a fêté{$ans}{$le}, et notre petit mot n'est pas parti à temps — le voici, avec un peu de retard :\n\n"
+				       . "« Joyeux anniversaire {$prenom} ! Toute l'équipe du {$club} te souhaite une très belle année. "
+				       . "On fêtera ça tous ensemble au club avec les anniversaires du mois ! »\n\n"
+				       . "Sportivement,\n— L'équipe {$club}";
+			} else {
+				$corps = "Bonjour {$prenom},\n\n"
+				       . "Avec un peu de retard, toute l'équipe du {$club} vous souhaite un très joyeux anniversaire et une excellente année !\n\n"
+				       . "Au plaisir de vous retrouver sur les tatamis.\n\n"
+				       . "Sportivement,\n— L'équipe {$club}";
+			}
+			$corps .= "\n\n—\nVous préférez ne plus recevoir ce message ? Répondez simplement à cet email et nous ne vous l'enverrons plus.";
+			return [ $sujet, $corps ];
+		}
 
 		if ( self::est_mineur( $el ) ) {
 			$corps = "Bonjour,\n\n"
@@ -611,6 +653,7 @@ endif; ?>
 		$journal   = (array) get_option( self::OPT_JOURNAL, [] );
 		$journal[] = [
 			'date'   => current_time( 'd/m/Y H:i' ),
+			'id'     => intval( $el->id ?? 0 ), // 0 pour un exemple
 			'nom'    => trim( $el->prenom . ' ' . $el->nom ),
 			'email'  => $email,
 			'ok'     => $ok,
@@ -618,6 +661,39 @@ endif; ?>
 		];
 		update_option( self::OPT_JOURNAL, array_slice( $journal, -40 ), false );
 		if ( ! $ok ) error_log( "[SP_Build] Vœux d'anniversaire : échec d'envoi à {$email} — {$this->derniere_erreur_mail}" );
+	}
+
+	/**
+	 * Vœux de l'année $annee dont le DERNIER envoi a échoué (panne SMTP du 30/09 au 05/10/2026
+	 * par exemple) : marqués « faits » par l'anti-doublon, ils ne repartent jamais seuls — le
+	 * bouton « Rattraper les vœux » de la page les renvoie. Lu dans le journal : par identifiant,
+	 * ou par nom pour les lignes écrites avant l'ajout de l'identifiant (06/10/2026). Les exemples
+	 * (« Exemple : … ») sont ignorés.
+	 *
+	 * @return array [ 'ids' => [ id => true ], 'noms' => [ nom => true ] ]
+	 */
+	private function echecs_a_rattraper( int $annee ): array {
+		$etat = [];
+		foreach ( (array) get_option( self::OPT_JOURNAL, [] ) as $l ) {
+			if ( ! preg_match( '#^\d{2}/\d{2}/' . $annee . '#', (string) ( $l['date'] ?? '' ) ) ) continue;
+			$nom = (string) ( $l['nom'] ?? '' );
+			if ( strpos( $nom, 'Exemple :' ) === 0 ) continue;
+			// Une ligne récente porte le nom ET l'identifiant : elle remplace aussi l'état d'une
+			// ancienne ligne au même nom (un rattrapage réussi efface l'échec d'avant).
+			$etat[ 'nom:' . $nom ] = empty( $l['ok'] );
+			if ( ! empty( $l['id'] ) ) $etat[ 'id:' . intval( $l['id'] ) ] = empty( $l['ok'] );
+		}
+		$out = [ 'ids' => [], 'noms' => [] ];
+		foreach ( $etat as $cle => $echec ) {
+			if ( ! $echec ) continue;
+			if ( strpos( $cle, 'id:' ) === 0 ) $out['ids'][ intval( substr( $cle, 3 ) ) ] = true;
+			else $out['noms'][ substr( $cle, 4 ) ] = true;
+		}
+		return $out;
+	}
+
+	private static function est_en_echec( object $el, array $echecs ): bool {
+		return isset( $echecs['ids'][ (int) $el->id ] ) || isset( $echecs['noms'][ trim( $el->prenom . ' ' . $el->nom ) ] );
 	}
 
 	/**
@@ -703,5 +779,30 @@ endif; ?>
 		$ok = $this->envoyer_mail( $dest, '[EXEMPLE] ' . $sujet, "(Exemple — ce message n'a pas été envoyé à l'adhérent.)\n\n" . $corps );
 		$this->journaliser( (object) [ 'prenom' => 'Exemple :', 'nom' => trim( $el->prenom . ' ' . $el->nom ) ], $dest, $ok );
 		$this->retour( $ok ? 'test_ok' : 'test_ko' );
+	}
+
+	/**
+	 * Rattrapage d'un vœu dont l'envoi du jour J a échoué (bouton de la page) : version « avec
+	 * un peu de retard », à l'adresse habituelle des vœux. Refusé si le dernier envoi n'est pas
+	 * un échec (pas de doublon, même en cas de double clic).
+	 */
+	public function handle_voeux_rattraper(): void {
+		$this->verifier( 'sp_anniv_voeux_rattraper' );
+		global $wpdb;
+		$el = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->table_eleves()} WHERE id = %d", intval( $_POST['eleve_id'] ?? 0 ) ) );
+		if ( ! $el ) $this->retour( 'rattrape_ko' );
+
+		$annee = intval( current_time( 'Y' ) );
+		if ( ! self::est_en_echec( $el, $this->echecs_a_rattraper( $annee ) ) ) $this->retour( 'rattrape_ok' );
+
+		$el->jour = intval( explode( '/', (string) $el->date_naissance )[0] ?? 0 );
+		$el->age  = ! empty( $el->annee_naissance ) ? $annee - intval( $el->annee_naissance ) : null;
+		$dest     = $this->destinataire_voeux( $el );
+		if ( $dest === '' ) $this->retour( 'rattrape_ko' );
+
+		[ $sujet, $corps ] = self::message_voeux( $el, true );
+		$ok = $this->envoyer_mail( $dest, $sujet, $corps );
+		$this->journaliser( $el, $dest, $ok );
+		$this->retour( $ok ? 'rattrape_ok' : 'rattrape_ko' );
 	}
 }

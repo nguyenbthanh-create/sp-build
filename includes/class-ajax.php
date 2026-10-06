@@ -1904,7 +1904,7 @@ class SpCalPro_Ajax {
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( $result->get_error_message() );
         }
-        wp_send_json_success( [ 'sent' => $result ] );
+        wp_send_json_success( [ 'sent' => $result, 'en_file' => $notif->en_file ] );
     }
 
 

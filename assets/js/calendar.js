@@ -316,7 +316,7 @@
                     $btn.prop('disabled', false).css('opacity', '1');
                     $msg.show();
                     if (resp.success) {
-                        $msg.css('color', '#15803d').text('✅ ' + resp.data.sent + ' email(s) envoyé(s)');
+                        $msg.css('color', '#15803d').text('✅ ' + resp.data.sent + ' email(s) envoyé(s)' + (resp.data.en_file > 0 ? ' — envoi étalé : ' + resp.data.en_file + ' partiront dans les prochaines minutes.' : ''));
                         setTimeout(function(){ CAL.loadSondage(); }, 1500);
                     } else {
                         $msg.css('color', '#c00').text('❌ ' + (resp.data || 'Erreur'));

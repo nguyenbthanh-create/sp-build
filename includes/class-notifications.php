@@ -1161,6 +1161,74 @@ class SpCalPro_Notifications {
         return $this->envoyer_lot( $envois, 'Annulation par lot ' . $periode );
     }
 
+    /* ══════════════════════════════════════════════════════════════════════
+       SONDAGE POST-ÉVÉNEMENT (rétabli le 06/10/2026)
+       Appelée par le bouton « Envoyer le sondage » de l'onglet Sondage d'un événement
+       (SpCalPro_Ajax::ajax_envoyer_sondage) — elle n'existait pas, le bouton plantait.
+       Reprise de l'ancienne version de travail (TKD/site/Evolution_inscription_event/Sondage),
+       avec : adresse du parent ou de l'adhérent (comme les autres envois), jeton créé s'il
+       manque, envoi par la file d'envoi. Lien vers la page de réponse : class-sondage-front.php.
+    ══════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * @param int   $event_id
+     * @param int[] $eleve_ids élèves cochés dans l'onglet Sondage
+     * @return int|WP_Error nombre d'emails envoyés ou en file
+     */
+    public function send_sondage_event( $event_id, array $eleve_ids = array() ) {
+        global $wpdb;
+        $event_id = intval( $event_id );
+        $sondage  = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}sp_cal_sondages WHERE event_id = %d AND actif = 1", $event_id
+        ), ARRAY_A );
+        if ( ! $sondage )           return new WP_Error( 'not_found', 'Sondage introuvable.' );
+        if ( $sondage['envoye'] )   return new WP_Error( 'already_sent', 'Ce sondage a déjà été envoyé.' );
+        if ( ! $this->db->get_sondage_questions( intval( $sondage['id'] ) ) ) {
+            return new WP_Error( 'no_questions', 'Aucune question : enregistrez d\'abord les questions du sondage.' );
+        }
+        $ids = array_values( array_filter( array_map( 'intval', $eleve_ids ) ) );
+        if ( ! $ids ) return new WP_Error( 'no_eleves', 'Aucun élève sélectionné.' );
+
+        $tel    = $this->db->table_eleves();
+        $eleves = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM $tel WHERE id IN (" . implode( ',', array_fill( 0, count( $ids ), '%d' ) ) . ')', ...$ids
+        ) );
+        $titre    = wp_unslash( (string) $wpdb->get_var( $wpdb->prepare( "SELECT titre FROM {$this->db->table_events()} WHERE id = %d", $event_id ) ) ) ?: 'Événement';
+        $nom_club = get_option( 'blogname', 'Club' );
+        $envois   = array();
+
+        foreach ( $eleves as $el ) {
+            $dest = '';
+            foreach ( array( $el->email_parent ?? '', $el->email ?? '' ) as $email ) {
+                $email = trim( (string) $email );
+                if ( $email !== '' && is_email( $email ) ) { $dest = $email; break; }
+            }
+            if ( $dest === '' ) continue;
+            if ( empty( $el->token ) ) {
+                $el->token = bin2hex( random_bytes( 32 ) );
+                $wpdb->update( $tel, array( 'token' => $el->token ), array( 'id' => $el->id ) );
+            }
+            $url = class_exists( 'SP_Cal_Sondage_Front' )
+                ? SP_Cal_Sondage_Front::url( $el->token, $event_id )
+                : add_query_arg( array( 'sp_sondage_token' => rawurlencode( $el->token ), 'sp_sondage_event' => $event_id ), home_url( '/' ) );
+
+            $subject = '[' . $nom_club . '] 🗳️ Votre avis sur : ' . $titre;
+            $body    = "Bonjour,\n\n"
+                     . "Merci pour la participation de " . trim( $el->prenom . ' ' . $el->nom ) . " à : $titre\n\n"
+                     . "Nous aimerions connaître votre avis. Cela ne prend que quelques secondes :\n\n"
+                     . "➜ $url\n\n"
+                     . "Votre retour nous aide à améliorer nos événements.\n\n"
+                     . "-- \n" . $nom_club;
+            $envois[] = array( $dest, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
+        }
+        if ( ! $envois ) return new WP_Error( 'no_email', 'Aucun des élèves sélectionnés n\'a d\'adresse email valide.' );
+
+        $sent = $this->envoyer_lot( $envois, 'Sondage : ' . $titre );
+        if ( $sent === 0 ) return new WP_Error( 'send_failed', 'Aucun email n\'a pu être envoyé — vérifiez l\'envoi des emails du site (WP Mail SMTP).' );
+        $this->db->marquer_sondage_envoye( intval( $sondage['id'] ) );
+        return $sent;
+    }
+
 }
 
 endif; // class_exists SpCalPro_Notifications

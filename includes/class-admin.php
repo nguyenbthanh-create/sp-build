@@ -13,6 +13,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-mail-queue.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-sondage-front.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -81,6 +82,7 @@ class SpCalPro_Admin {
         SP_Cal_Passages::get_instance( $this->db );
         SP_Cal_IK_Cloture::get_instance( $this->db );
         SP_Cal_Mail_Queue::get_instance();
+        SP_Cal_Sondage_Front::get_instance( $this->db );
     }
 
     /* ══════════════════════════════════════════════════════════
