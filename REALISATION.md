@@ -193,4 +193,8 @@ Journal daté de ce qui a été **réellement fait** sur ce plugin. Contrairemen
 
 - **Suite (retour de l'utilisateur : « Vacances d\\\\'Hiver » toujours affiché dans « Annuler par lot »)** : la réparation unique a pu passer avant que tous les fichiers corrigés soient en ligne (ou la page Paramètres être réenregistrée avec l'ancien code), et son indicateur l'empêchait de repasser. Les vacances sont désormais **nettoyées à chaque lecture** par une fonction unique `SpCalPro_DB::get_vacances()`, utilisée par le calendrier admin (« Annuler par lot »), le planning public et la page Paramètres (dont le prochain enregistrement réécrit l'intitulé propre) ; la réparation de la base repasse une fois (option `sp_cal_repar_antislash_v2`).
 
-*Dernière mise à jour de ce fichier : 05/10/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+## 06/10/2026
+
+- **Panne d'envoi des emails résolue** (aucune modification du plugin) : mot de passe SMTP de `contact@tkdclaira.fr` mis à jour dans WP Mail SMTP après son changement chez OVH (~60 échecs d'authentification du 30/09 au 05/10). Configuration WP Mail SMTP et OVH (SPF, DKIM, DMARC tous « PASS ») vérifiées. Reste un problème de **classement en spam chez Gmail** (réputation d'envoi) : plan d'action et résumé complet dans `EVOLUTION.md`, section du 06/10/2026.
+
+*Dernière mise à jour de ce fichier : 06/10/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

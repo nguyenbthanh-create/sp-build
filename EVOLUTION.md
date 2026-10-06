@@ -241,6 +241,32 @@ Jamais utilisé : **supprimé** au moment du développement (7 étapes, `exam_ep
 
 Les interventions (base des IK, récapitulatif mensuel et module IK de sp-compta via le filtre `sp_cal_interventions_par_trainer`) sont **recalculées à chaque fois** depuis les dispos (`get_interventions_par_trainer()`). Une dispo ajoutée ou retirée sur un mois déjà récapitulé ou payé change donc le total sans que personne ne le voie, et le mail récapitulatif déjà envoyé n'est plus juste. Pistes : verrouiller les dispos d'un mois une fois le récapitulatif envoyé (réouverture par l'admin), ou au minimum signaler l'écart. Reporté à la demande de l'utilisateur.
 
+## 06/10/2026 — Envoi des emails : panne réglée, délivrabilité Gmail à améliorer (À REPRENDRE)
+
+> **Résumé pour reprendre le travail sur un autre ordinateur.**
+
+### Ce qui s'est passé (réglé)
+- **Panne** : plus aucun email du site (rappels entraîneurs, relances en lot, vœux d'anniversaire, tkd-cotisations…). **Cause** : le mot de passe de la boîte OVH `contact@tkdclaira.fr` avait été changé, WP Mail SMTP utilisait l'ancien. Le journal **WP Mail SMTP → Outils → Évènements de débogage** montre ~60 erreurs « SMTP Error: Could not authenticate » du **30/09 (15h29) au 05/10 (20h21)**. **Correction** : nouveau mot de passe saisi dans WP Mail SMTP → Réglages → Général (champ « Mot de passe SMTP » : bouton « Supprimer le mot de passe » puis ressaisir). Plus aucune erreur depuis.
+- **Les emails non partis pendant la panne ne repartent pas seuls** : relance en lot à relancer à la main ; rappel entraîneur du jour perdu ; vœux d'anniversaire de la période marqués « faits » (anti-doublon) même en échec → voir le journal de la page 🎂 Anniversaires si besoin de les envoyer à la main.
+
+### Configuration vérifiée le 06/10/2026 (tout est correct)
+- **WP Mail SMTP** (version gratuite, pas de journal des emails) : mailer « Autre SMTP », `ssl0.ovh.net`, port 465, SSL, authentification, utilisateur et expéditeur `contact@tkdclaira.fr` (forcé, nom « TAEKWONDO CLAIRA » forcé), return-path aligné. Onglet Divers : « Ne pas envoyer », « Optimiser l'envoi » et « Limitation du nombre d'e-mails » **désactivés**. Option « Débogage de l'envoi d'e-mails » activée quelques minutes puis **désactivée** (la version gratuite ne garde pas la conversation SMTP).
+- **OVH** (espace client → Web Cloud → Emails → MX Plan → `tkdclaira.fr`) : service actif, MX valides, SPF valide, **DKIM actif** (badge « DKIM » de la rubrique Diagnostique — ⚠️ cliquer dessus ouvre « Désactiver DKIM » : toujours **Annuler**). DNS : SPF `v=spf1 include:mx.ovh.com -all`, DMARC `p=none; rua=mailto:contact@tkdclaira.fr`.
+- **Test réel** (Gmail → « Afficher l'original ») : **SPF PASS** (IP OVH 46.105.58.83), **DKIM PASS** (tkdclaira.fr), **DMARC PASS**. Un email envoyé à un `@cd66.fr` arrive en boîte de réception.
+
+### Problème restant : Gmail classe les emails du club en spam
+L'authentification est parfaite : c'est une question de **réputation d'envoi** — serveurs d'envoi OVH partagés (`ssl0.ovh.net`, réputation variable selon les autres clients) et/ou pics d'envois groupés récents (relance en lot, annulation de cours par lot du 05/10). Les familles et entraîneurs en `@gmail.com` risquent de ne pas voir les emails.
+
+### À faire, dans l'ordre recommandé
+1. **Tout de suite (sans code)** : message aux familles (WhatsApp / affichage au dojang) — « ajoutez `contact@tkdclaira.fr` à vos contacts ; si un mail du club arrive en spam, cliquez sur "Non spam" ». Chaque « Non spam » améliore la réputation.
+2. **Passer l'envoi par un service spécialisé — Brevo recommandé** (ex-Sendinblue, français, gratuit jusqu'à 300 emails/jour) : dans WP Mail SMTP → Réglages → Général, choisir le mailer **Brevo** et coller la clé API ; garder l'expéditeur `contact@tkdclaira.fr` ; ajouter chez OVH (zone DNS de `tkdclaira.fr`) les enregistrements d'authentification demandés par Brevo (code de vérification, DKIM Brevo, ajout de Brevo au SPF). Avantages : serveurs à bonne réputation, journal de chaque email (délivré / ouvert / rejeté). Claude peut guider pas à pas et saisir les DNS dans la console OVH si l'utilisateur y est connecté (navigateur intégré de l'application).
+3. **Étaler les envois en lot dans sp-build** (ex. 20 emails/minute au lieu de tout d'un coup) : relances de renouvellement, annulation de cours par lot, notifications de masse — évite les pics qui dégradent la réputation chez Gmail et le blocage OVH pour envoi massif. À coder.
+4. **Soigner le contenu des emails aux adhérents** : HTML + alternative texte, ligne « pourquoi vous recevez ce mail », adresse du club en pied de message.
+5. *(Optionnel)* **Google Postmaster Tools** (gratuit, vérification par un enregistrement DNS TXT) pour suivre la réputation du domaine chez Gmail.
+
+### Divers relevés dans le journal WP Mail SMTP
+- Adresses d'adhérents mal saisies qui font échouer leurs envois : **`may_278@msn.comm`** (un « m » de trop) et **`noe@lens-group.fp`** (probablement `.fr`) — à corriger sur les fiches.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
