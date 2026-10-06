@@ -148,25 +148,33 @@ class SP_Cal_Renouvellement {
 		// (accès inchangé) — décision du 08/09/2026 (cf. doléances.md) : le lancement doit
 		// directement toucher les adhérents, la désactivation restant une étape séparée et
 		// volontaire, déclenchée plus tard depuis le tableau de bord.
+		// Envoi par la file d'envoi (class-mail-queue.php, 06/10/2026) : au-delà de quelques
+		// adhérents, les rappels partent par paquets au lieu d'un seul coup.
 		$eleves  = $this->get_non_renouveles();
-		$envoyes = 0;
 		$rapport = [ 'sans_email' => [], 'echecs' => [], 'erreur' => '' ];
+		$envois  = [];
+		$noms    = []; // adresse => noms, pour nommer les échecs
 		foreach ( $eleves as $el ) {
-			$res = $this->envoyer_rappel_lancement( $el );
-			if ( $res === 'ok' ) {
-				$envoyes++;
-			} elseif ( $res === 'sans_email' ) {
+			$message = $this->message_rappel_lancement( $el );
+			if ( ! $message ) {
 				$rapport['sans_email'][] = $el->prenom . ' ' . $el->nom;
-			} else {
-				$rapport['echecs'][] = $el->prenom . ' ' . $el->nom . ' (' . $this->destinataire( $el ) . ')';
-				if ( $rapport['erreur'] === '' ) $rapport['erreur'] = $this->derniere_erreur_mail;
+				continue;
 			}
+			$envois[]              = $message;
+			$noms[ $message[0] ][] = $el->prenom . ' ' . $el->nom;
+		}
+		$res = SP_Cal_Mail_Queue::envoyer_lot( $envois, 'Renouvellement : rappel' );
+		foreach ( $res['echecs'] as $dest => $erreur ) {
+			$rapport['echecs'][] = implode( ', ', $noms[ $dest ] ?? [] ) . ' (' . $dest . ')';
+			if ( $rapport['erreur'] === '' ) $rapport['erreur'] = $erreur;
+			error_log( "[SP_Build] Renouvellement : échec d'envoi à {$dest} — {$erreur}" );
 		}
 		set_transient( $this->cle_rapport(), $rapport, 10 * MINUTE_IN_SECONDS );
 
-		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_lance=' . $envoyes
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_lance=' . ( $res['envoyes'] + $res['en_file'] )
+			. '&renouv_lance_file=' . $res['en_file']
 			. '&renouv_lance_sans_email=' . count( $rapport['sans_email'] )
-			. '&renouv_lance_echecs=' . count( $rapport['echecs'] ) ) );
+			. '&renouv_lance_echecs=' . count( $res['echecs'] ) ) );
 		exit;
 	}
 
@@ -176,8 +184,18 @@ class SP_Cal_Renouvellement {
 	 * n'a pas pu envoyer le mail — raison dans $this->derniere_erreur_mail).
 	 */
 	private function envoyer_rappel_lancement( object $el ): string {
+		$message = $this->message_rappel_lancement( $el );
+		if ( ! $message ) return 'sans_email';
+		return $this->envoyer_mail( ...$message ) ? 'ok' : 'echec';
+	}
+
+	/**
+	 * Rappel de renouvellement : [ adresse, sujet, corps ], ou [] si la fiche n'a aucune
+	 * adresse valide. Crée le token de l'adhérent s'il n'en a pas (lien pré-rempli).
+	 */
+	private function message_rappel_lancement( object $el ): array {
 		$dest = $this->destinataire( $el );
-		if ( $dest === '' ) return 'sans_email';
+		if ( $dest === '' ) return [];
 
 		global $wpdb;
 		$tel = $this->table_eleves();
@@ -203,7 +221,7 @@ class SP_Cal_Renouvellement {
 		         . "Votre accès à l'espace personnel reste actif en attendant — pas d'inquiétude à avoir.\n\n"
 		         . "À bientôt sur les tatamis !\n— L'équipe {$club}";
 
-		return $this->envoyer_mail( $dest, $subject, $body ) ? 'ok' : 'echec';
+		return [ $dest, $subject, $body ];
 	}
 
 	public function handle_annuler(): void {
@@ -295,11 +313,18 @@ class SP_Cal_Renouvellement {
 		if ( ! check_admin_referer( 'sp_renouv_desactiver_lot' ) ) wp_die( 'Nonce invalide.' );
 
 		$eleves = $this->get_non_renouveles();
+		$envois = [];
 		foreach ( $eleves as $el ) {
-			$this->desactiver_et_notifier_un( $el );
+			$message = $this->desactiver_et_message( $el );
+			if ( $message ) $envois[] = $message;
+		}
+		// Par la file d'envoi (class-mail-queue.php) : un échec y est retenté puis listé.
+		$res = SP_Cal_Mail_Queue::envoyer_lot( $envois, 'Renouvellement : désactivation' );
+		foreach ( $res['echecs'] as $dest => $erreur ) {
+			error_log( "[SP_Build] Renouvellement : échec d'envoi à {$dest} — {$erreur}" );
 		}
 
-		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_desactive=' . count( $eleves ) ) );
+		wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&renouv_desactive=' . count( $eleves ) . '&renouv_desactive_file=' . $res['en_file'] ) );
 		exit;
 	}
 
@@ -320,6 +345,15 @@ class SP_Cal_Renouvellement {
 
 	/** Désactive un élève (jamais de suppression) et lui envoie le lien de renouvellement. */
 	private function desactiver_et_notifier_un( object $el ): void {
+		$message = $this->desactiver_et_message( $el );
+		if ( $message ) $this->envoyer_mail( ...$message ); // un échec est journalisé (error_log)
+	}
+
+	/**
+	 * Désactive un élève (jamais de suppression) et renvoie l'email avec son lien de
+	 * renouvellement : [ adresse, sujet, corps ], ou [] si la fiche n'a aucune adresse valide.
+	 */
+	private function desactiver_et_message( object $el ): array {
 		global $wpdb;
 		$tel = $this->table_eleves();
 
@@ -336,7 +370,7 @@ class SP_Cal_Renouvellement {
 		}
 
 		$dest = $this->destinataire( $el );
-		if ( $dest === '' ) return;
+		if ( $dest === '' ) return [];
 
 		$club          = get_bloginfo( 'name' );
 		$page_adhesion = $this->url_formulaire_adhesion();
@@ -351,7 +385,7 @@ class SP_Cal_Renouvellement {
 		             : "Contactez le club pour renouveler votre adhésion.\n\n" )
 		         . "À très bientôt sur les tatamis !\n— L'équipe {$club}";
 
-		$this->envoyer_mail( $dest, $subject, $body ); // un échec est journalisé (error_log)
+		return [ $dest, $subject, $body ];
 	}
 
 	/** URL de la page publique portant le shortcode [sp_inscription_adhesion]. */
@@ -376,7 +410,12 @@ class SP_Cal_Renouvellement {
 			$n           = intval( $_GET['renouv_lance'] );
 			$sans_email  = intval( $_GET['renouv_lance_sans_email'] ?? 0 );
 			$echecs      = intval( $_GET['renouv_lance_echecs'] ?? 0 );
+			$en_file     = intval( $_GET['renouv_lance_file'] ?? 0 );
 			$msg = '✅ Renouvellement de saison lancé — rappel envoyé à ' . $n . ' adhérent(s) (comptes non désactivés).';
+			if ( $en_file > 0 ) {
+				$msg .= '<br>⏳ Envoi étalé : <strong>' . $en_file . '</strong> rappel(s) partiront dans les prochaines minutes — suivi sur la page <a href="'
+				      . esc_url( admin_url( 'admin.php?page=' . SP_Cal_Mail_Queue::PAGE ) ) . '">📨 Envois</a>.';
+			}
 			if ( $sans_email > 0 ) {
 				$msg .= '<br>⚠️ <strong>' . $sans_email . '</strong> adhérent(s) sans email valide sur la fiche'
 				      . ( ! empty( $rapport['sans_email'] ) ? ' : ' . esc_html( implode( ', ', $rapport['sans_email'] ) ) : '' )
@@ -402,7 +441,11 @@ class SP_Cal_Renouvellement {
 		}
 		if ( isset( $_GET['renouv_desactive'] ) ) {
 			$n = intval( $_GET['renouv_desactive'] );
-			echo '<div class="notice notice-success is-dismissible"><p>✅ ' . $n . ' compte(s) désactivé(s) — lien de renouvellement envoyé.</p></div>';
+			$en_file = intval( $_GET['renouv_desactive_file'] ?? 0 );
+			echo '<div class="notice notice-success is-dismissible"><p>✅ ' . $n . ' compte(s) désactivé(s) — lien de renouvellement envoyé.'
+			   . ( $en_file > 0 ? '<br>⏳ Envoi étalé : <strong>' . $en_file . '</strong> email(s) partiront dans les prochaines minutes — suivi sur la page <a href="'
+			       . esc_url( admin_url( 'admin.php?page=' . SP_Cal_Mail_Queue::PAGE ) ) . '">📨 Envois</a>.' : '' )
+			   . '</p></div>';
 		}
 		if ( isset( $_GET['renouv_relance_un'] ) ) {
 			$qui   = ! empty( $rapport['nom'] ) ? '<strong>' . esc_html( $rapport['nom'] ) . '</strong>' : 'cet adhérent';

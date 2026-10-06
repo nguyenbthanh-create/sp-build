@@ -791,7 +791,8 @@ class SP_Cal_Inscriptions {
                         if (r.success) {
                             msg.style.color = '#15803d';
                             msg.textContent = '✅ ' + r.data.sent + ' invitation(s) envoyée(s) sur ' + r.data.total + ' élève(s).'
-                                + ( r.data.skipped > 0 ? ' (' + r.data.skipped + ' ignoré(s)).' : '' );
+                                + ( r.data.skipped > 0 ? ' (' + r.data.skipped + ' ignoré(s)).' : '' )
+                                + ( r.data.en_file > 0 ? ' Envoi étalé : ' + r.data.en_file + ' partiront dans les prochaines minutes (page 📨 Envois).' : '' );
                             setTimeout(function(){ location.reload(); }, 3000);
                         } else {
                             msg.style.color = '#b91c1c';
@@ -1061,6 +1062,7 @@ class SP_Cal_Inscriptions {
             'sent'    => $sent,
             'total'   => $total,
             'skipped' => $skipped,
+            'en_file' => isset( $notif ) ? $notif->en_file : 0,
         ) );
     }
 

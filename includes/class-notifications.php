@@ -7,6 +7,9 @@ class SpCalPro_Notifications {
 
     private $db;
 
+    /** Emails du dernier envoi groupé encore dans la file d'envoi (partent dans les minutes qui suivent). */
+    public $en_file = 0;
+
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
 
@@ -57,6 +60,27 @@ class SpCalPro_Notifications {
      */
     public function filter_interventions_par_trainer( $default, $year, $month ) {
         return array_map( static function ( $i ) { return $i['ar']; }, $this->db->get_interventions_par_trainer( intval( $year ), intval( $month ) ) );
+    }
+
+    /**
+     * Envoi groupé par la file d'envoi (class-mail-queue.php, 06/10/2026) : au-delà de
+     * SP_Cal_Mail_Queue::SEUIL_DIRECT destinataires, les emails partent par paquets au lieu
+     * d'un seul coup. Renvoie le nombre d'emails partis OU en file (= destinataires prévenus).
+     *
+     * @param array $envois liste de [ dest, sujet, corps, entetes ]
+     */
+    private function envoyer_lot( array $envois, $contexte ) {
+        $this->en_file = 0;
+        if ( class_exists( 'SP_Cal_Mail_Queue' ) ) {
+            $r = SP_Cal_Mail_Queue::envoyer_lot( $envois, $contexte );
+            $this->en_file = $r['en_file'];
+            return $r['envoyes'] + $r['en_file'];
+        }
+        $sent = 0;
+        foreach ( $envois as $e ) {
+            if ( wp_mail( $e[0], $e[1], $e[2], $e[3] ?? '' ) ) $sent++;
+        }
+        return $sent;
     }
 
     public function add_schedules( $schedules ) {
@@ -866,7 +890,7 @@ class SpCalPro_Notifications {
         }
         $heure   = $event->heure_debut ? ' &middot; ' . esc_html( substr( $event->heure_debut, 0, 5 ) ) : '';
         $headers = array( 'Content-Type: text/html; charset=UTF-8' );
-        $sent    = 0;
+        $envois  = array();
 
         foreach ( $eleves as $el ) {
             if ( ! $el->email || ! is_email( $el->email ) ) continue;
@@ -923,9 +947,9 @@ class SpCalPro_Notifications {
             $body .= '<p style="margin:0;font-size:12px;color:#94a3b8;">' . esc_html( $nom_club ) . ' · Gestion des inscriptions</p>';
             $body .= '</td></tr></table></body></html>';
 
-            if ( wp_mail( $el->email, $subject, $body, $headers ) ) $sent++;
+            $envois[] = array( $el->email, $subject, $body, $headers );
         }
-        return $sent;
+        return $this->envoyer_lot( $envois, 'Invitation : ' . wp_unslash( $event->titre ) );
     }
 
     /**
@@ -979,7 +1003,7 @@ class SpCalPro_Notifications {
 
         $nom_club = get_option( 'blogname', 'Club' );
         $headers  = array( 'Content-Type: text/html; charset=UTF-8' );
-        $sent     = 0;
+        $envois   = array();
 
         // ── Construire la map : eleve_id → liste des annulations qui le concernent ──
         $map = array();
@@ -1055,10 +1079,10 @@ class SpCalPro_Notifications {
             $body .= '<p style="margin:0;font-size:12px;color:#94a3b8;">' . esc_html( $nom_club ) . ' · Gestion des cours</p>';
             $body .= '</td></tr></table></body></html>';
 
-            if ( wp_mail( $dest, $subject, $body, $headers ) ) $sent++;
+            $envois[] = array( $dest, $subject, $body, $headers );
         }
 
-        return $sent;
+        return $this->envoyer_lot( $envois, 'Annulation de cours' );
     }
 
     /* ══════════════════════════════════════════════════════════════════════
@@ -1091,7 +1115,7 @@ class SpCalPro_Notifications {
             return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] ) . '</li>';
         };
         $periode = 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
-        $sent    = 0;
+        $envois  = array();
 
         foreach ( $eleves as $el ) {
             $saisie = trim( (string) ( $el->categorie_saisie ?? '' ) );
@@ -1132,9 +1156,9 @@ class SpCalPro_Notifications {
 
             $subject = '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
                 . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
-            if ( wp_mail( $dest, $subject, $body, $headers ) ) $sent++;
+            $envois[] = array( $dest, $subject, $body, $headers );
         }
-        return $sent;
+        return $this->envoyer_lot( $envois, 'Annulation par lot ' . $periode );
     }
 
 }

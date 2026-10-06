@@ -452,6 +452,7 @@ class SpCalPro_Ajax {
                             'id'     => $new_id,
                             'action' => $action,
                             'sent'   => $sent,
+                            'en_file' => $notif->en_file,
                         ) );
                         return;
                     }
@@ -1699,7 +1700,7 @@ class SpCalPro_Ajax {
 
         $wpdb->update( $te, array( 'inscriptions_envoye' => 1 ), array( 'id' => $event_id ) );
 
-        wp_send_json_success( array( 'sent' => $sent, 'total' => count( $eleves ) ) );
+        wp_send_json_success( array( 'sent' => $sent, 'total' => count( $eleves ), 'en_file' => $notif->en_file ) );
     }
 
     /**
@@ -1926,7 +1927,7 @@ class SpCalPro_Ajax {
         // Vider la file
         delete_option( 'sp_cal_annul_pending' );
 
-        wp_send_json_success( array( 'sent' => $sent ) );
+        wp_send_json_success( array( 'sent' => $sent, 'en_file' => $notif->en_file ) );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -2008,13 +2009,16 @@ class SpCalPro_Ajax {
             if ( $wpdb->insert_id ) $annules[] = $o;
         }
 
-        $sent = 0;
+        $sent    = 0;
+        $en_file = 0;
         if ( $notifier && $annules ) {
             // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés.
             $maintenus = array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) );
-            $sent = ( new SpCalPro_Notifications( $this->db ) )->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif );
+            $notif   = new SpCalPro_Notifications( $this->db );
+            $sent    = $notif->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif );
+            $en_file = $notif->en_file;
         }
-        wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent ) );
+        wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent, 'en_file' => $en_file ) );
     }
 
     /** Rétablit les cours cochés (supprime leur annulation). Aucun mail n'est envoyé. */

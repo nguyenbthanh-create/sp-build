@@ -557,7 +557,7 @@
                     // ne s'affichait et un envoi à 0 destinataire passait inaperçu).
                     if (notifier && !grouper && res.data && typeof res.data.sent !== 'undefined') {
                         alert(res.data.sent > 0
-                            ? '📧 Cours annulé : ' + res.data.sent + ' adhérent(s) prévenu(s) par email.'
+                            ? '📧 Cours annulé : ' + res.data.sent + ' adhérent(s) prévenu(s) par email.' + (res.data.en_file > 0 ? '\n⏳ Envoi étalé : ' + res.data.en_file + ' email(s) partiront dans les prochaines minutes (page 📨 Envois).' : '')
                             : '⚠️ Cours annulé, mais aucun adhérent n\'a été trouvé pour la catégorie de ce créneau (« ' + (categorie || '—') + ' ») : aucun email envoyé.\n\nVérifiez les cases Discipline et Pour qui du créneau (page Créneaux).');
                     }
                 } else {
@@ -713,7 +713,7 @@
                 $('#sp-lot-retablir').prop('disabled', false);
                 if (!res.success) { alert('Erreur : ' + res.data); CAL.majLotBoutons(); return; }
                 if (quoi === 'retablir') alert('↩️ ' + res.data.retablis + ' cours rétabli(s).');
-                else alert('🚫 ' + res.data.annules + ' cours annulé(s).' + (notifier ? '\n📧 ' + res.data.sent + ' adhérent(s) prévenu(s) par email.' : ''));
+                else alert('🚫 ' + res.data.annules + ' cours annulé(s).' + (notifier ? '\n📧 ' + res.data.sent + ' adhérent(s) prévenu(s) par email.' + (res.data.en_file > 0 ? '\n⏳ Envoi étalé : ' + res.data.en_file + ' email(s) partiront dans les prochaines minutes (page 📨 Envois).' : '') : ''));
                 CAL.loadMonth();
                 CAL.loadLot();
             });
@@ -751,7 +751,7 @@
                 nonce:  SpCal.nonce,
             }, function(res){
                 if (res.success) {
-                    alert('✅ ' + (res.data.sent || 0) + ' email(s) envoyé(s).');
+                    alert('✅ ' + (res.data.sent || 0) + ' email(s) envoyé(s).' + (res.data.en_file > 0 ? '\n⏳ Envoi étalé : ' + res.data.en_file + ' partiront dans les prochaines minutes (page 📨 Envois).' : ''));
                     CAL.updatePendingBadge(0);
                 } else {
                     alert('Erreur : ' + res.data);
@@ -1872,7 +1872,7 @@
                 }, function(res){
                     btn.prop('disabled', false).text('🔁 Renvoyer aux non-répondants');
                     if (res.success) {
-                        $res.css('color','#15803d').text('✅ ' + res.data.sent + ' invitation(s) envoyée(s) sur ' + res.data.total + ' élève(s).').show();
+                        $res.css('color','#15803d').text('✅ ' + res.data.sent + ' invitation(s) envoyée(s) sur ' + res.data.total + ' élève(s).' + (res.data.en_file > 0 ? ' Envoi étalé : ' + res.data.en_file + ' partiront dans les prochaines minutes.' : '')).show();
                         // Mettre à jour le lien vers la liste
                         var inscUrl = (typeof ajaxurl !== 'undefined' ? ajaxurl.replace('admin-ajax.php','') : '') + 'admin.php?page=sp-cal-inscriptions&event_id=' + evId;
                         $('#insc-voir-link').attr('href', inscUrl).show();
