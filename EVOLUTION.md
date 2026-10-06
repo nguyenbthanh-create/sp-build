@@ -277,6 +277,24 @@ L'authentification est parfaite : c'est une question de **réputation d'envoi** 
 ### Divers relevés dans le journal WP Mail SMTP
 - ~~Adresses d'adhérents mal saisies qui font échouer leurs envois : **`may_278@msn.comm`** (un « m » de trop) et **`noe@lens-group.fp`** (probablement `.fr`) — à corriger sur les fiches.~~ **Clos le 06/10/2026** : plus aucune des 116 fiches (adresse de l'adhérent et du parent) ne les contient. `noe@lens-group.fp` : erreur unique du 19/03/2026 (plugin 10.16.4) — très probablement Noé PETIT DE MIRBECK, dont la fiche porte aujourd'hui une adresse Gmail. `may_278@msn.comm` : deux échecs le 22/09/2026, sans nom associé (probablement l'accusé de réception d'un formulaire d'adhésion / renouvellement) ; aucune fiche ne contient `may_278` — adresse corrigée à la validation ou demande sans suite.
 
+## 06/10/2026 (suite) — Trésorerie : projets, saisie rapide, onglet « Saisie » (résumé pour reprendre)
+
+> Détail de ce qui a été fait : `sp-build/REALISATION.md` (onglet Saisie) et `sp-build-addons/Developpement plugin TKD Claude/sp-compta/REALISATION.md` + `CLAUDE.md` (incréments 13 et 14). Tout est commité, poussé et **en production** (tkdclaira.fr).
+
+### Fait et vérifié en ligne
+- **Projets de la saison** (sp-compta, onglet « Projets ») : comptabilité analytique par projet (fête de Noël, matériel, stage…), budget prévu facultatif, bilan prévu / réalisé / écart, séparation « fonctionnement courant / projets » dans le **rapport AG**, colonne « Projet » dans l'export CSV, rattachement en lot des mouvements déjà saisis. Champ « Projet (facultatif) » dans Dépense / Recette et la saisie rapide — **n'apparaît qu'à partir d'un premier projet en cours** (choix confirmé le 06/10 : on garde ce comportement).
+- **Date de fin de la saison active corrigée** dans Trésorerie → Paramètres : 2026-08-31 → **2027-08-31** (faute de saisie antérieure).
+- **Saisie rapide sans déconnexion** (sp-compta) : session de **1 an** pour les comptes trésorerie, écran « Connexion nécessaire » qui ramène au formulaire, saisie gardée sur le téléphone, jeton de formulaire renouvelé avant l'envoi.
+- **Onglet « 💶 Saisie » dans l'application entraîneur** (sp-build), visible pour les seuls membres au rôle « bureau » en lien personnel : ouvre la saisie rapide dans une fenêtre à part. **Confirmé par l'utilisateur.**
+
+### Reste à faire / à vérifier
+1. **Chaque membre du bureau doit se reconnecter une fois** dans la saisie rapide installée sur son téléphone (sur iPhone : dans l'application installée, pas dans Safari) pour recevoir la session d'un an.
+2. Vérifier que l'onglet « Saisie » **n'apparaît pas** chez un entraîneur qui n'est pas au bureau.
+3. **Lancer les tests PHPUnit de sp-compta** (projets, session longue, saisie rapide) et `outils\verifier.ps1` sur le PC du travail — écrits mais jamais exécutés (pas de PHP sur le PC de la maison).
+4. **Créer les premiers vrais projets** de la saison (ex. « Fête de Noël 2026 » avec budget) et rattacher les dépenses déjà saisies depuis la fiche du projet ; contrôler le rapport AG.
+5. Pistes non faites (à décider) : filtre par projet dans l'écran Solde ; insertion de la saisie rapide *dans* l'application entraîneur sans fenêtre à part (demanderait une authentification par lien personnel côté trésorerie — compromis de sécurité discuté le 06/10, écarté pour l'instant).
+6. Rappel : le **pointage QR reste servi par l'extension « SP Pointage QR »** (voir « Pistes techniques ouvertes ») — ne pas la désactiver avant d'avoir rebranché le pointage sur sp-build seul.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
