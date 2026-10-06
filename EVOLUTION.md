@@ -265,6 +265,10 @@ L'authentification est parfaite : c'est une question de **réputation d'envoi** 
 4. **Soigner le contenu des emails aux adhérents** : HTML + alternative texte, ligne « pourquoi vous recevez ce mail », adresse du club en pied de message.
 5. *(Optionnel)* **Google Postmaster Tools** (gratuit, vérification par un enregistrement DNS TXT) pour suivre la réputation du domaine chez Gmail.
 
+### À surveiller depuis le passage à Brevo (06/10/2026)
+- **Adresses `@cd66.fr` (messagerie du Département)** : les emails envoyés par Brevo sont « Délivrés » (acceptés par leur serveur) et leurs liens ouverts aussitôt par une passerelle de sécurité, mais **rien n'arrive dans la boîte** (ni réception ni spam) — sondage de 09:33 et email de test de 10:02. Du temps d'OVH, ces emails arrivaient. Si toujours rien le 07/10 : demander au service informatique du CD66 de mettre `contact@tkdclaira.fr` en liste blanche (ID de message `<202610060733.69743503218@smtp-relay.mailin.fr>`), ou utiliser une adresse personnelle sur les fiches concernées.
+- **`sandrafonteneau66@gmail.com`** : boîte Gmail pleine (« soft bounce » 452 4.2.2 sur le rappel du jour du 06/10) — la prévenir, elle ne reçoit plus les emails du club.
+
 ### Divers relevés dans le journal WP Mail SMTP
 - Adresses d'adhérents mal saisies qui font échouer leurs envois : **`may_278@msn.comm`** (un « m » de trop) et **`noe@lens-group.fp`** (probablement `.fr`) — à corriger sur les fiches.
 
