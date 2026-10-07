@@ -12,6 +12,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-pin-garde.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-mail-queue.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-sondage-front.php';
 
@@ -360,8 +361,8 @@ public function enqueue( $hook ) {
 
     public function rest_pwa_calendrier_club( WP_REST_Request $req ) {
         $pin = sanitize_text_field( wp_unslash( $req->get_param( 'pin' ) ?? '' ) );
-        if ( ! $pin || $pin !== $this->pointage_pin() ) {
-            return new WP_Error( 'spcal_invalid_pin', 'PIN invalide.', array( 'status' => 401 ) );
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+            return new WP_Error( 'spcal_invalid_pin', SP_Cal_Pin_Garde::message(), array( 'status' => 401 ) );
         }
         $from_raw = sanitize_text_field( wp_unslash( $req->get_param( 'from' ) ?? date( 'Y-m-d' ) ) );
         $nb       = min( 30, max( 1, intval( $req->get_param( 'nb' ) ?? 20 ) ) );
@@ -3528,8 +3529,8 @@ function spCalBufToB64u(buf) {
     public function ajax_pointage_cours() {
         $pin  = sanitize_text_field( wp_unslash( $_POST['pin']  ?? '' ) );
         $date = sanitize_text_field( wp_unslash( $_POST['date'] ?? date('Y-m-d' ) ) );
-        if ( $pin !== $this->pointage_pin() ) {
-            wp_send_json_error( 'PIN invalide', 403 ); return;
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+            wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         // Utiliser get_slot_occurrences pour avoir les cours récurrents
         $occs = $this->db->get_slot_occurrences( $date, $date );
@@ -3553,8 +3554,8 @@ function spCalBufToB64u(buf) {
     public function ajax_pointage_cours_eleve() {
         $pin   = sanitize_text_field( wp_unslash( $_POST['pin']   ?? '' ) );
         $token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
-        if ( $pin !== $this->pointage_pin() ) {
-            wp_send_json_error( 'PIN invalide', 403 ); return;
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+            wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         global $wpdb;
         $tel   = $this->db->table_eleves();
@@ -3604,8 +3605,8 @@ function spCalBufToB64u(buf) {
         $token    = sanitize_text_field( wp_unslash( $_POST['token']    ?? '' ) );
         $slot_id  = intval( $_POST['slot_id']  ?? 0 );
         $date     = sanitize_text_field( wp_unslash( $_POST['date']     ?? '' ) );
-        if ( $pin !== $this->pointage_pin() ) {
-            wp_send_json_error( 'PIN invalide', 403 ); return;
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+            wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         if ( ! $token || ! $slot_id || ! $date ) {
             wp_send_json_error( 'Données manquantes', 400 ); return;
@@ -3645,8 +3646,8 @@ function spCalBufToB64u(buf) {
         $pin      = sanitize_text_field( wp_unslash( $_POST['pin']   ?? '' ) );
         $token    = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
         $items    = $_POST['items'] ?? array(); // array de {slot_id, date}
-        if ( $pin !== $this->pointage_pin() ) {
-            wp_send_json_error( 'PIN invalide', 403 ); return;
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+            wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         if ( ! $token || empty( $items ) ) {
             wp_send_json_error( 'Données manquantes', 400 ); return;

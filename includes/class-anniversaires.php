@@ -545,8 +545,9 @@ endif; ?>
 
 	public function rest_anniversaires( WP_REST_Request $req ) {
 		$pin = sanitize_text_field( (string) $req->get_param( 'pin' ) );
-		if ( ! function_exists( 'sp_pointage_pin' ) || $pin === '' || ! hash_equals( (string) sp_pointage_pin(), $pin ) ) {
-			return new WP_REST_Response( [ 'success' => false, 'data' => 'PIN invalide' ], 403 );
+		// Essais ratés limités par SP_Cal_Pin_Garde (07/10/2026).
+		if ( ! function_exists( 'sp_pointage_pin' ) || ! SP_Cal_Pin_Garde::verifier( $pin, (string) sp_pointage_pin() ) ) {
+			return new WP_REST_Response( [ 'success' => false, 'data' => SP_Cal_Pin_Garde::message() ], 403 );
 		}
 		$date = sanitize_text_field( (string) $req->get_param( 'date' ) );
 		$ts   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ? strtotime( $date ) : false;

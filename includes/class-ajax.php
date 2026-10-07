@@ -90,7 +90,7 @@ class SpCalPro_Ajax {
         $this->rest_to_post( $req );
         $pin  = sanitize_text_field( $_POST['pin']  ?? '' );
         $date = sanitize_text_field( $_POST['date'] ?? date( 'Y-m-d' ) );
-        if ( $pin !== $this->ptg_pin() ) { wp_send_json_error( 'PIN invalide', 403 ); exit; }
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->ptg_pin() ) ) { wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); exit; }
         $occs  = $this->db->get_slot_occurrences( $date, $date );
         $cours = array();
         foreach ( $occs as $occ ) {
@@ -105,7 +105,7 @@ class SpCalPro_Ajax {
         $token   = sanitize_text_field( $_POST['token']   ?? '' );
         $slot_id = intval(              $_POST['slot_id'] ?? 0  );
         $date    = sanitize_text_field( $_POST['date']    ?? '' );
-        if ( $pin !== $this->ptg_pin() )        { wp_send_json_error( 'PIN invalide', 403 );       exit; }
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->ptg_pin() ) )        { wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 );       exit; }
         if ( ! $token || ! $slot_id || ! $date ) { wp_send_json_error( 'Donnees manquantes', 400 ); exit; }
         $tel = $this->db->table_eleves();
         $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
@@ -122,7 +122,7 @@ class SpCalPro_Ajax {
         $this->rest_to_post( $req ); global $wpdb;
         $pin   = sanitize_text_field( $_POST['pin']   ?? '' );
         $token = sanitize_text_field( $_POST['token'] ?? '' );
-        if ( $pin !== $this->ptg_pin() ) { wp_send_json_error( 'PIN invalide', 403 ); exit; }
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->ptg_pin() ) ) { wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); exit; }
         $tel = $this->db->table_eleves(); $tpe = $this->db->table_presences_eleves();
         $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
         if ( ! $el ) { wp_send_json_error( 'Eleve non trouve', 404 ); exit; }
@@ -140,7 +140,7 @@ class SpCalPro_Ajax {
         $pin   = sanitize_text_field( $_POST['pin']   ?? '' );
         $token = sanitize_text_field( $_POST['token'] ?? '' );
         $items = $_POST['items'] ?? array();
-        if ( $pin !== $this->ptg_pin() )  { wp_send_json_error( 'PIN invalide', 403 );       exit; }
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->ptg_pin() ) )  { wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 );       exit; }
         if ( ! $token || empty( $items ) ) { wp_send_json_error( 'Donnees manquantes', 400 ); exit; }
         $tel = $this->db->table_eleves();
         $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
