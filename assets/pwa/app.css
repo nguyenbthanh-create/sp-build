@@ -1,0 +1,237 @@
+/* Application mobile [sp_cal_app] — styles, sortis tels quels de render_pwa_app() (trait-admin-pwa.php) le 07/10/2026 (restructuration, étape 3, phase B). */
+
+/* ── RESET & BASE PWA ───────────────────────────────────────── */
+#spcal-pwa *,#spcal-pwa *::before,#spcal-pwa *::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+#spcal-pwa{position:fixed;inset:0;background:#111;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;flex-direction:column;z-index:9999;overflow:hidden;}
+
+/* ── LOADING ─────────────────────────────────────────────────── */
+#spcal-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;}
+#spcal-loading img{width:72px;height:72px;object-fit:contain;border-radius:12px;background:#fff;padding:6px;}
+.spcal-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.15);border-top-color:#0f70b7;border-radius:50%;animation:spcal-spin .7s linear infinite;}
+@keyframes spcal-spin{to{transform:rotate(360deg)}}
+#spcal-loading p{color:rgba(255,255,255,.5);font-size:13px;margin:0;}
+
+/* ── ERROR ───────────────────────────────────────────────────── */
+#spcal-error{display:none;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;padding:32px;text-align:center;}
+#spcal-error .spcal-err-ico{font-size:48px;}
+#spcal-error h2{margin:0;font-size:18px;}
+#spcal-error p{margin:0;font-size:14px;color:rgba(255,255,255,.5);line-height:1.6;}
+
+/* ── APP SHELL ───────────────────────────────────────────────── */
+#spcal-app{display:none;flex-direction:column;height:100%;}
+
+/* ── HEADER ──────────────────────────────────────────────────── */
+#spcal-header{flex-shrink:0;background:#111;border-bottom:1px solid rgba(255,255,255,.08);padding:12px 16px;display:flex;align-items:center;gap:12px;padding-top:max(12px, env(safe-area-inset-top));}
+#spcal-header-logo{width:36px;height:36px;border-radius:8px;background:#fff;object-fit:contain;padding:3px;flex-shrink:0;}
+#spcal-header-logo-placeholder{width:36px;height:36px;border-radius:8px;background:#0f70b7;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;}
+#spcal-header-text{flex:1;min-width:0;}
+#spcal-header-club{font-size:11px;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;}
+#spcal-header-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#spcal-grade-pill{background:#0f70b7;color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;max-width:120px;overflow:hidden;text-overflow:ellipsis;}
+
+/* ── MAIN CONTENT ────────────────────────────────────────────── */
+#spcal-main{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
+.spcal-screen{display:none;padding:16px;}
+.spcal-screen.active{display:block;}
+/* Onglet « Mes dispos » (lien personnel entraîneur) : page des dispos en ambiance sombre dans un cadre */
+#spcal-dispos{padding:0;}
+.spcal-saisie-carte{background:#1a1a1a;border-radius:12px;padding:20px 18px;text-align:center;}
+.spcal-saisie-ico{font-size:40px;line-height:1;margin-bottom:8px;}
+.spcal-saisie-carte p{font-size:14px;color:rgba(255,255,255,.75);margin:0 0 16px;line-height:1.45;}
+.spcal-saisie-carte strong{color:#fff;font-size:16px;}
+.spcal-saisie-btn{display:block;background:#0f70b7;color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:14px;border-radius:10px;margin-bottom:14px;}
+.spcal-saisie-carte .spcal-saisie-aide{font-size:12px;color:rgba(255,255,255,.5);margin:0;}
+
+/* ── BOTTOM NAV ──────────────────────────────────────────────── */
+#spcal-nav{flex-shrink:0;background:#1a1a1a;border-top:1px solid rgba(255,255,255,.08);display:flex;padding-bottom:max(8px,env(safe-area-inset-bottom));}
+.spcal-nav-btn{flex:1;background:none;border:none;color:rgba(255,255,255,.4);padding:10px 4px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:500;transition:color .2s;}
+.spcal-nav-btn .spcal-nav-ico{font-size:22px;line-height:1;}
+.spcal-nav-btn.active{color:#0f70b7;}
+.spcal-nav-btn.active .spcal-nav-ico{filter:drop-shadow(0 0 6px #0f70b7);}
+
+/* ── ACCUEIL ─────────────────────────────────────────────────── */
+.spcal-section-title{font-size:12px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin:20px 0 10px;}
+.spcal-section-title:first-child{margin-top:0;}
+#spcal-greeting{font-size:22px;font-weight:700;margin-bottom:6px;}
+#spcal-greeting-sub{font-size:14px;color:rgba(255,255,255,.5);margin-bottom:20px;}
+
+.spcal-assiduite{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:20px;}
+.spcal-assiduite-label{font-size:12px;color:rgba(255,255,255,.4);margin-bottom:8px;}
+.spcal-assiduite-bar{height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;margin-bottom:6px;}
+.spcal-assiduite-fill{height:100%;border-radius:3px;transition:width .8s ease;}
+.spcal-assiduite-nums{font-size:13px;color:rgba(255,255,255,.6);}
+.spcal-fiche-link{display:flex;align-items:center;gap:12px;background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:20px;color:#fff;text-decoration:none;}
+.spcal-fiche-link .spcal-fl-ico{font-size:22px;}
+.spcal-fiche-link small{display:block;color:rgba(255,255,255,.5);font-size:12px;margin-top:2px;}
+.spcal-fiche-link .spcal-fl-go{margin-left:auto;font-size:20px;color:rgba(255,255,255,.4);}
+
+.spcal-adhesion-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:16px;}
+.spcal-adhesion-actif{background:rgba(34,197,94,.15);color:#4ade80;}
+.spcal-adhesion-warn{background:rgba(245,158,11,.15);color:#fbbf24;}
+.spcal-adhesion-ko{background:rgba(239,68,68,.15);color:#f87171;}
+
+/* Cours cards */
+.spcal-cours-card{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:10px;border-left:3px solid #0f70b7;display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.spcal-cours-card.today{border-left-color:#22c55e;}
+.spcal-cours-card.tomorrow{border-left-color:#f59e0b;}
+.spcal-cours-left{flex:1;min-width:0;}
+.spcal-cours-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.spcal-cours-cat{font-size:12px;color:rgba(255,255,255,.4);margin-top:2px;}
+.spcal-cours-encadr{font-size:12px;color:rgba(255,255,255,.75);margin-top:4px;}
+.spcal-cours-encadr.vide{color:#f59e0b;}
+.spcal-cours-right{text-align:right;flex-shrink:0;}
+.spcal-cours-heure{font-size:14px;font-weight:600;color:#0f70b7;}
+.spcal-cours-card.today .spcal-cours-heure{color:#22c55e;}
+.spcal-cours-date{font-size:11px;color:rgba(255,255,255,.7);margin-top:2px;}
+.spcal-cours-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-top:4px;display:inline-block;}
+.spcal-badge-today{background:#22c55e;color:#fff;}
+.spcal-badge-tomorrow{background:#f59e0b;color:#111;}
+.spcal-empty{text-align:center;padding:40px 20px;color:rgba(255,255,255,.3);font-size:14px;}
+
+/* ── ÉVÉNEMENTS & INSCRIPTIONS ───────────────────────────────── */
+.spcal-evt-card{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:12px;border-left:3px solid #0f70b7;}
+.spcal-evt-card.statut-inscrit{border-left-color:#22c55e;}
+.spcal-evt-card.statut-refuse{border-left-color:#ef4444;opacity:.7;}
+.spcal-evt-titre{font-size:15px;font-weight:600;margin-bottom:4px;}
+.spcal-evt-meta{font-size:12px;color:rgba(255,255,255,.45);margin-bottom:10px;}
+.spcal-evt-deadline{font-size:11px;color:#f59e0b;margin-bottom:10px;}
+.spcal-evt-msg{font-size:12px;color:rgba(255,255,255,.55);margin-bottom:10px;line-height:1.4;}
+.spcal-evt-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.spcal-evt-btn{border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;flex:1;min-width:120px;}
+.spcal-evt-btn-oui{background:#16a34a;color:#fff;}
+.spcal-evt-btn-non{background:#1a1a1a;color:#ef4444;border:2px solid #ef4444;}
+.spcal-evt-btn-annuler{background:#1a1a1a;color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.15);font-size:11px;padding:7px 12px;min-width:auto;flex:0;}
+.spcal-evt-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;}
+.spcal-evt-badge-ok{background:rgba(34,197,94,.15);color:#4ade80;}
+.spcal-evt-badge-ko{background:rgba(239,68,68,.15);color:#f87171;}
+.spcal-evt-badge-wait{background:rgba(245,158,11,.15);color:#fbbf24;}
+.spcal-evt-badge-info{background:rgba(255,255,255,.08);color:rgba(255,255,255,.4);}
+.spcal-evt-card.statut-info{border-left-color:rgba(255,255,255,.15);opacity:.75;}
+.spcal-evt-card.statut-moi{border-left-color:#0f70b7;}
+.spcal-evt-card.statut-insc{border-left-color:#f59e0b;box-shadow:0 0 0 1px rgba(245,158,11,.35);}
+.spcal-evt-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.spcal-evt-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
+.spcal-evt-tag-moi{background:rgba(15,112,183,.2);color:#7cc0f5;}
+.spcal-evt-tag-insc{background:#f59e0b;color:#111;}
+.spcal-evt-filtre{display:flex;gap:6px;margin-bottom:14px;}
+.spcal-evt-filtre button{flex:1;background:#1a1a1a;color:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:8px 10px;font-size:13px;font-weight:600;cursor:pointer;}
+.spcal-evt-filtre button.active{background:#0f70b7;border-color:#0f70b7;color:#fff;}
+.spcal-evt-loading{font-size:12px;color:rgba(255,255,255,.4);font-style:italic;}
+
+/* ── PROCHAIN GRADE ───────────────────────────────────────────── */
+#spcal-grade-progression{margin-top:20px;}
+.spcal-grade-section-title{font-size:12px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;}
+.spcal-grade-next{font-size:13px;color:rgba(255,255,255,.7);}
+.spcal-grade-next strong{color:#0f70b7;}
+.spcal-pg-card{background:#1a1a1a;border-radius:12px;padding:14px 16px;margin-bottom:20px;border-left:3px solid #0f70b7;}
+.spcal-pg-card.admis{border-left-color:#22c55e;}
+.spcal-pg-card.ajourne{border-left-color:#f59e0b;}
+.spcal-pg-res{font-size:16px;font-weight:700;margin-bottom:4px;}
+.spcal-pg-sub{font-size:12px;color:rgba(255,255,255,.55);margin:6px 0;}
+.spcal-pg-belt{display:inline-flex;align-items:center;gap:7px;}
+.spcal-pg-belt i{display:inline-block;width:24px;height:10px;border-radius:3px;border:1px solid rgba(255,255,255,.35);}
+.spcal-pg-crits{list-style:none;margin:8px 0 0;padding:0;}
+.spcal-pg-crits li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px;}
+.spcal-pg-crits small{display:block;color:rgba(255,255,255,.55);font-size:12px;margin-top:2px;}
+.spcal-pg-badge{flex-shrink:0;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.75);}
+.spcal-pg-badge.ok{background:rgba(34,197,94,.15);color:#4ade80;}
+.spcal-pg-badge.rev{background:rgba(245,158,11,.15);color:#fbbf24;}
+.spcal-pg-badge.non{background:rgba(239,68,68,.15);color:#f87171;}
+.spcal-pg-revoir{margin-top:10px;font-size:13px;color:#fcd34d;line-height:1.45;}
+.spcal-pg-rem{margin-top:8px;font-size:13px;font-style:italic;color:rgba(255,255,255,.7);}
+.spcal-pg-prevu{font-size:13px;color:#7cc0f5;margin:6px 0;}
+.spcal-pg-video{display:inline-block;margin-top:10px;background:#0f70b7;color:#fff;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:20px;}
+.spcal-pg-rappel{width:100%;border:0;font:inherit;text-align:left;cursor:pointer;}
+
+/* ── CARTE ───────────────────────────────────────────────────── */
+#spcal-carte{padding:20px 16px;}
+.spcal-card-scene{perspective:1200px;width:340px;max-width:100%;margin:0 auto 16px;}
+.spcal-card-inner{position:relative;width:340px;max-width:100%;height:215px;transition:transform .6s cubic-bezier(.4,.2,.2,1);transform-style:preserve-3d;cursor:pointer;}
+.spcal-card-inner.flipped{transform:rotateY(180deg);}
+.sp-carte-recto,.sp-carte-verso{position:absolute;top:0;left:0;width:100%;height:100%;-webkit-backface-visibility:hidden;backface-visibility:hidden;}
+.sp-carte-verso{transform:rotateY(180deg);}
+
+/* Réutilise les styles de class-token.php */
+.sp-carte-recto{background:#111;border-radius:12px;overflow:hidden;}
+.sp-carte-band-blue{position:absolute;right:0;top:0;width:88px;height:215px;background:#0f70b7;}
+.sp-carte-band-yellow{position:absolute;right:84px;top:0;width:4px;height:215px;background:#ffdd0e;}
+.sp-carte-band-red{position:absolute;bottom:0;left:0;width:252px;height:5px;background:#e30613;}
+.sp-carte-logo-wrap{position:absolute;top:10px;left:12px;width:30px;height:30px;border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center;}
+.sp-carte-logo{width:28px;height:28px;object-fit:contain;}
+.sp-carte-club-name{position:absolute;top:12px;left:50px;color:#fff;font-size:10px;font-weight:500;letter-spacing:1.5px;}
+.sp-carte-club-sub{position:absolute;top:25px;left:50px;color:#ffdd0e;font-size:8px;letter-spacing:1px;}
+.sp-carte-sep{position:absolute;top:46px;left:12px;width:240px;height:.5px;background:rgba(255,255,255,.12);}
+.sp-carte-nom{position:absolute;top:54px;left:12px;right:100px;color:#fff;font-size:13px;font-weight:500;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sp-carte-meta{position:absolute;top:72px;left:12px;right:100px;color:rgba(255,255,255,.4);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sp-carte-infos{position:absolute;top:88px;left:12px;right:100px;display:flex;flex-direction:column;gap:4px;}
+.sp-carte-info-row{display:flex;gap:6px;align-items:center;}
+.sp-carte-info-k{color:rgba(255,255,255,.38);font-size:8px;width:50px;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0;}
+.sp-carte-info-v{color:#fff;font-size:9px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sp-carte-info-urgence{color:#e30613!important;}
+.sp-carte-qr-zone{position:absolute;top:8px;right:2px;width:86px;display:flex;flex-direction:column;align-items:center;gap:2px;}
+.sp-carte-qr-box{width:72px;height:72px;background:#fff;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.sp-carte-qr-box img,.sp-carte-qr-box canvas{max-width:72px;max-height:72px;}
+.sp-carte-stars{display:flex;gap:1px;margin-top:3px;}
+.sp-carte-labelise-txt{color:rgba(255,255,255,.35);font-size:7px;letter-spacing:.3px;}
+.sp-carte-qr-scan{color:rgba(255,255,255,.3);font-size:7px;text-align:center;}
+.sp-carte-url{position:absolute;bottom:8px;right:6px;color:rgba(255,255,255,.2);font-size:7px;}
+.sp-carte-photo-wrap{position:absolute;bottom:12px;left:12px;width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.18);background:#222;}
+.sp-carte-photo{width:100%;height:100%;object-fit:cover;display:block;}
+.sp-carte-verso{background:#111;display:flex;flex-direction:column;border-radius:12px;overflow:hidden;}
+.sp-carte-verso-header{height:36px;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;}
+.sp-carte-verso-logo-wrap{width:22px;height:22px;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sp-carte-verso-logo{width:20px;height:20px;object-fit:contain;}
+.sp-carte-verso-title{color:rgba(255,255,255,.75);font-size:10px;font-weight:500;letter-spacing:.8px;}
+.sp-carte-verso-badge{margin-left:auto;background:#ffdd0e;border-radius:8px;padding:2px 8px;font-size:8px;font-weight:500;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+.sp-carte-verso-footer{height:24px;padding:0 12px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:center;font-size:8px;color:rgba(255,255,255,.3);flex-shrink:0;}
+.sp-carte-verso-body{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px;}
+.sp-carte-taegeuk{color:rgba(255,255,255,.15);font-size:40px;line-height:1;user-select:none;font-family:'Song Myung',cursive;letter-spacing:3px;}
+.sp-carte-officiel{color:rgba(255,255,255,.35);font-size:9px;letter-spacing:2px;text-transform:uppercase;}
+
+.spcal-card-hint{text-align:center;font-size:12px;color:rgba(255,255,255,.3);margin:0 0 20px;}
+.spcal-install-hint{background:#1a1a1a;border-radius:12px;padding:14px 16px;font-size:13px;color:rgba(255,255,255,.5);display:flex;align-items:flex-start;gap:10px;}
+.spcal-install-hint .spcal-ih-ico{font-size:20px;flex-shrink:0;margin-top:1px;}
+
+/* ── POINTAGE ────────────────────────────────────────────────── */
+.spcal-ptg-cours-btn{width:100%;background:#1a1a1a;border:none;border-radius:12px;padding:14px 16px;margin-bottom:10px;color:#fff;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;border-left:3px solid #0f70b7;}
+/* Cadre de scan des présences : ligne de balayage (lecture active) + éclair vert / orange / rouge au résultat */
+.spcal-scan-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;border:2px solid rgba(15,112,183,.8);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.45);overflow:hidden;transition:border-color .2s,box-shadow .2s;}
+.spcal-scan-line{position:absolute;left:8%;right:8%;top:8%;height:2px;border-radius:2px;background:#38bdf8;box-shadow:0 0 10px 2px rgba(56,189,248,.7);animation:spcal-scanline 2.2s ease-in-out infinite;}
+@keyframes spcal-scanline{0%,100%{top:8%}50%{top:92%}}
+.spcal-scan-frame.flash-ok{border-color:#22c55e;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(34,197,94,.9);}
+.spcal-scan-frame.flash-already{border-color:#f59e0b;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(245,158,11,.9);}
+.spcal-scan-frame.flash-err{border-color:#ef4444;box-shadow:0 0 0 9999px rgba(0,0,0,.45),0 0 22px 6px rgba(239,68,68,.9);}
+.spcal-scan-frame.flash-ok .spcal-scan-line,.spcal-scan-frame.flash-already .spcal-scan-line,.spcal-scan-frame.flash-err .spcal-scan-line{opacity:0;}
+@media (prefers-reduced-motion:reduce){.spcal-scan-line{animation:none;top:50%;}}
+.spcal-scan-overlay{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:16px;text-align:center;color:#fff;cursor:pointer;background:rgba(15,23,42,.85);}
+.spcal-scan-overlay.ok{background:rgba(22,163,74,.92);}
+.spcal-scan-overlay.already{background:rgba(217,119,6,.92);}
+.spcal-scan-overlay.err{background:rgba(220,38,38,.92);}
+.spcal-scan-ov-nom{font-size:22px;font-weight:800;line-height:1.2;word-break:break-word;}
+.spcal-scan-ov-msg{font-size:15px;font-weight:600;opacity:.95;}
+.spcal-scan-ov-hint{font-size:11px;opacity:.75;margin-top:8px;}
+.spcal-scan-overlay.wait .spcal-scan-ov-hint{display:none;}
+/* Anniversaires du mois (onglet Pointage) */
+.spcal-anniv{background:#1a1a1a;border-radius:12px;padding:12px 14px;margin:0 0 4px;border-left:3px solid #D4000F;}
+.spcal-anniv-titre{font-size:13px;font-weight:700;margin-bottom:8px;}
+.spcal-anniv-cat{font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 4px;}
+.spcal-anniv-ligne{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:14px;}
+.spcal-anniv-jour{flex-shrink:0;width:28px;height:28px;border-radius:50%;background:#D4000F;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.spcal-anniv-ligne.aujourdhui .spcal-anniv-nom{font-weight:700;}
+.spcal-anniv-age{margin-left:auto;font-size:12px;color:rgba(255,255,255,.5);}
+.spcal-anniv-vide{font-size:13px;color:rgba(255,255,255,.4);}
+.spcal-ptg-cours-btn:active{opacity:.7;}
+.spcal-ptg-cours-left{flex:1;min-width:0;}
+.spcal-ptg-cours-btn-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.spcal-ptg-cours-btn-cat{font-size:12px;color:rgba(255,255,255,.4);margin-top:2px;}
+.spcal-ptg-cours-heure{font-size:14px;font-weight:600;color:#0f70b7;flex-shrink:0;}
+.spcal-ptg-log-entry{background:#1a1a1a;border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+.spcal-ptg-log-nom{font-size:14px;font-weight:600;}
+.spcal-ptg-log-time{font-size:11px;color:rgba(255,255,255,.35);}
+.spcal-scan-ok{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);}
+.spcal-scan-already{background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);}
+.spcal-scan-err{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);}
+
+/* ── CALENDRIER ──────────────────────────────────────────────── */
+.spcal-cal-month{font-size:13px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.8px;margin:20px 0 10px;}
+.spcal-cal-month:first-child{margin-top:0;}
