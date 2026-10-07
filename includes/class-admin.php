@@ -361,7 +361,7 @@ public function enqueue( $hook ) {
 
     public function rest_pwa_calendrier_club( WP_REST_Request $req ) {
         $pin = sanitize_text_field( wp_unslash( $req->get_param( 'pin' ) ?? '' ) );
-        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, SP_Cal_Pin_Garde::pin() ) ) {
             return new WP_Error( 'spcal_invalid_pin', SP_Cal_Pin_Garde::message(), array( 'status' => 401 ) );
         }
         $from_raw = sanitize_text_field( wp_unslash( $req->get_param( 'from' ) ?? date( 'Y-m-d' ) ) );
@@ -3485,15 +3485,7 @@ function spCalBufToB64u(buf) {
        POINTAGE QR CODE
     ══════════════════════════════════════════════════════════ */
 
-    // Code PIN pointage
-    private function pointage_pin() {
-        $pin = get_option('sp_cal_pointage_pin', '');
-        if (!$pin) {
-            $pin = substr(str_shuffle('0123456789'), 0, 4);
-            update_option('sp_cal_pointage_pin', $pin);
-        }
-        return $pin;
-    }
+    // Code PIN pointage : SP_Cal_Pin_Garde::pin() (class-pin-garde.php) depuis le 07/10/2026.
 
     // ── Helper : matérialise une occurrence slot+date dans events si besoin ──
     // Retourne l'event_id (existant ou nouvellement créé)
@@ -3529,7 +3521,7 @@ function spCalBufToB64u(buf) {
     public function ajax_pointage_cours() {
         $pin  = sanitize_text_field( wp_unslash( $_POST['pin']  ?? '' ) );
         $date = sanitize_text_field( wp_unslash( $_POST['date'] ?? date('Y-m-d' ) ) );
-        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, SP_Cal_Pin_Garde::pin() ) ) {
             wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         // Utiliser get_slot_occurrences pour avoir les cours récurrents
@@ -3554,7 +3546,7 @@ function spCalBufToB64u(buf) {
     public function ajax_pointage_cours_eleve() {
         $pin   = sanitize_text_field( wp_unslash( $_POST['pin']   ?? '' ) );
         $token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
-        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, SP_Cal_Pin_Garde::pin() ) ) {
             wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         global $wpdb;
@@ -3605,7 +3597,7 @@ function spCalBufToB64u(buf) {
         $token    = sanitize_text_field( wp_unslash( $_POST['token']    ?? '' ) );
         $slot_id  = intval( $_POST['slot_id']  ?? 0 );
         $date     = sanitize_text_field( wp_unslash( $_POST['date']     ?? '' ) );
-        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, SP_Cal_Pin_Garde::pin() ) ) {
             wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         if ( ! $token || ! $slot_id || ! $date ) {
@@ -3646,7 +3638,7 @@ function spCalBufToB64u(buf) {
         $pin      = sanitize_text_field( wp_unslash( $_POST['pin']   ?? '' ) );
         $token    = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
         $items    = $_POST['items'] ?? array(); // array de {slot_id, date}
-        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, (string) $this->pointage_pin() ) ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin, SP_Cal_Pin_Garde::pin() ) ) {
             wp_send_json_error( SP_Cal_Pin_Garde::message(), 403 ); return;
         }
         if ( ! $token || empty( $items ) ) {
@@ -3684,12 +3676,12 @@ function spCalBufToB64u(buf) {
     // Page admin pointage
     public function page_pointage() {
         if (!current_user_can('manage_options')) wp_die('Accès refusé');
-        $pin = $this->pointage_pin();
+        $pin = SP_Cal_Pin_Garde::pin();
         $pointage_url = home_url('/pointage/?pin=' . $pin);
 
         // Régénérer le PIN si demandé
         if (isset($_POST['regenerer_pin']) && check_admin_referer('sp_pointage_regen')) {
-            update_option('sp_cal_pointage_pin', substr(str_shuffle('0123456789'), 0, 4));
+            SP_Cal_Pin_Garde::regenerer();
             wp_redirect(admin_url('admin.php?page=sp-cal-pointage&pin_ok=1')); exit;
         }
         ?>

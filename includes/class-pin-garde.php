@@ -24,6 +24,24 @@ class SP_Cal_Pin_Garde {
 
 	const MAX_ESSAIS = 10;
 	const DUREE      = 15 * MINUTE_IN_SECONDS;
+	const OPTION     = 'sp_cal_pointage_pin';
+
+	/**
+	 * PIN actuel du pointage, créé s'il n'existe pas encore. Seule lecture du PIN dans sp_build
+	 * (07/10/2026 — avant, le même code était copié dans 5 fichiers). Même option et même format
+	 * (4 chiffres tous différents) que l'extension « SP Pointage QR » (sp_pointage_pin()).
+	 */
+	public static function pin(): string {
+		$pin = (string) get_option( self::OPTION, '' );
+		return $pin !== '' ? $pin : self::regenerer();
+	}
+
+	/** Tire et enregistre un nouveau PIN (bouton « Régénérer » de la page Pointage QR). */
+	public static function regenerer(): string {
+		$pin = substr( str_shuffle( '0123456789' ), 0, 4 );
+		update_option( self::OPTION, $pin );
+		return $pin;
+	}
 
 	/**
 	 * Vérifie le PIN saisi. Renvoie false si le PIN est faux, vide, ou si l'adresse est bloquée
@@ -60,7 +78,7 @@ class SP_Cal_Pin_Garde {
 	public static function filtrer_rest( $resultat, $serveur, $requete ) {
 		if ( $resultat !== null || ! ( $requete instanceof WP_REST_Request ) ) return $resultat;
 		if ( strpos( (string) $requete->get_route(), '/spcal/v1/pointage/' ) !== 0 ) return $resultat;
-		$attendu = function_exists( 'sp_pointage_pin' ) ? (string) sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		$attendu = self::pin();
 		if ( self::verifier( sanitize_text_field( (string) $requete->get_param( 'pin' ) ), $attendu ) ) return $resultat;
 		return new WP_REST_Response( [ 'success' => false, 'data' => self::message() ], 403 );
 	}

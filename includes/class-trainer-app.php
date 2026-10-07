@@ -114,7 +114,7 @@ class SP_Cal_Trainer_App {
 		if ( ! $me ) {
 			return new WP_REST_Response( [ 'success' => false, 'data' => 'Lien invalide ou expiré.' ], 403 );
 		}
-		$pin = function_exists( 'sp_pointage_pin' ) ? sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		$pin = SP_Cal_Pin_Garde::pin();
 		$roles  = array_map( 'trim', explode( ',', (string) ( $me->roles ?? '' ) ) );
 		$bureau = in_array( 'bureau', $roles, true );
 		return new WP_REST_Response( [

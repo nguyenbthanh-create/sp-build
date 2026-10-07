@@ -1152,7 +1152,7 @@ class SpCalPro_Token {
     ────────────────────────────────────────────── */
     private function render_pointage_page() {
         $pin_saisi = sanitize_text_field($_GET['pin'] ?? '');
-        $pin_valide = get_option('sp_cal_pointage_pin', '');
+        $pin_valide = SP_Cal_Pin_Garde::pin();
         // Essais ratés limités par SP_Cal_Pin_Garde (07/10/2026).
         if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin_saisi, (string) $pin_valide ) ) {
             wp_die( 'Accès non autorisé — ' . esc_html( SP_Cal_Pin_Garde::message() ) . '.', 'Pointage TKD', array( 'response' => 403 ) );

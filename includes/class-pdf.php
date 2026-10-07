@@ -23,9 +23,9 @@ class SpCalPro_PDF {
             $this->render_liste_appel();
         } elseif ( $type === 'fiche_eleve' ) {
             $this->render_fiche_eleve( intval( $_GET['eleve_id'] ?? 0 ) );
-        } elseif ( $type === 'liste_groupe' ) {
-            $this->render_liste_groupe();
         }
+        // 07/10/2026 : branche « liste_groupe » supprimée — elle appelait render_liste_groupe(),
+        // méthode qui n'a jamais existé (erreur fatale), et aucun bouton ne l'utilisait.
         exit;
     }
 // v2
