@@ -532,30 +532,21 @@ endif; ?>
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// APPLICATION ENTRAÎNEUR — lien personnel des entraîneurs et du bureau
+	// APPLICATION ENTRAÎNEUR (onglet Pointage) — même PIN que le pointage
 	// ══════════════════════════════════════════════════════════════════════
 
 	public function register_rest(): void {
 		register_rest_route( 'spcal/v1', '/anniversaires', [
 			'methods'             => 'POST',
 			'callback'            => [ $this, 'rest_anniversaires' ],
-			'permission_callback' => '__return_true', // contrôle par le jeton personnel ci-dessous
+			'permission_callback' => '__return_true', // contrôle par PIN ci-dessous, comme /pointage/*
 		] );
 	}
 
-	/**
-	 * Données personnelles (prénom, âge) : réservées aux entraîneurs et membres du bureau ACTIFS
-	 * qui ouvrent l'application avec leur lien personnel (jeton de 64 caractères). Avant le
-	 * 07/10/2026, le PIN commun du pointage suffisait — 4 chiffres, sans limite d'essais.
-	 */
 	public function rest_anniversaires( WP_REST_Request $req ) {
-		global $wpdb;
-		$token = sanitize_text_field( (string) $req->get_param( 'token' ) );
-		$moi   = ( $token !== '' && $this->db )
-			? $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$this->db->table_trainers()} WHERE token = %s AND token != '' AND actif = 1", $token ) )
-			: null;
-		if ( ! $moi ) {
-			return new WP_REST_Response( [ 'success' => false, 'data' => 'Réservé aux entraîneurs et au bureau (lien personnel).' ], 403 );
+		$pin = sanitize_text_field( (string) $req->get_param( 'pin' ) );
+		if ( ! function_exists( 'sp_pointage_pin' ) || $pin === '' || ! hash_equals( (string) sp_pointage_pin(), $pin ) ) {
+			return new WP_REST_Response( [ 'success' => false, 'data' => 'PIN invalide' ], 403 );
 		}
 		$date = sanitize_text_field( (string) $req->get_param( 'date' ) );
 		$ts   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ? strtotime( $date ) : false;
