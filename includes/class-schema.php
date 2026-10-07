@@ -49,6 +49,7 @@ class SP_Cal_Schema {
 		'includes/class-schema.php',
 		'includes/class-db.php',
 		'includes/class-admin.php',
+		'includes/trait-admin-pwa.php', // maybe_create_push_table() (déplacée de class-admin.php le 07/10/2026)
 		'includes/class-front-adhesion.php',
 		'includes/class-admin-inscriptions.php',
 		'includes/class-trainer-app.php',
