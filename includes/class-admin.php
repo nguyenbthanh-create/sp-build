@@ -1199,7 +1199,9 @@ function initEleve() {
 /* ── Render ──────────────────────────────────────────────────── */
 /* ── Mode entraîneur ────────────────────────────────────────────── */
 /* Lien personnel : jeton entraîneur → nom + PIN du pointage + adresse de ses dispos. */
+var gTrainerTok = null; // jeton du lien personnel (entraîneur / bureau) — seul sésame des anniversaires
 function initEntraineurToken(tt) {
+    gTrainerTok = tt;
     fetch(API + '/entraineur/session', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
@@ -1239,6 +1241,8 @@ function initEntraineur(pin, opts) {
         if (navEvt)   navEvt.style.display    = 'none';
         document.querySelectorAll('.spcal-nav-btn').forEach(function(b){
             // « Saisie » : jamais affiché par défaut, seulement pour le bureau (ci-dessous).
+            // « Anniversaires » : lien personnel seulement, jamais avec le seul PIN (07/10/2026).
+            if (b.id === 'spcal-nav-anniv' && !gTrainerTok) return;
             if (b.id !== 'spcal-nav-carte' && b.id !== 'spcal-nav-evenements' && b.id !== 'spcal-nav-saisie') b.style.display = 'flex';
         });
         // Membre du bureau (lien personnel) : onglet « 💶 Saisie » vers la saisie rapide de la trésorerie.
@@ -1891,11 +1895,11 @@ function spCalAnnivHtml(liste, titre) {
 }
 function spCalLoadAnniv(date) {
     var box = document.getElementById('spcal-ptg-anniv');
-    if (!box || !gPin) return;
+    if (!box || !gTrainerTok) return; // mode PIN seul : pas d'anniversaires (données personnelles)
     fetch(CFG.apiBase + '/anniversaires', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({pin: gPin, date: date})
+        body: JSON.stringify({token: gTrainerTok, date: date})
     })
     .then(function(r){ return r.json(); })
     .then(function(r) {
