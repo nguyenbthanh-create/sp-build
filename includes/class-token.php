@@ -1651,8 +1651,8 @@ class SpCalPro_Token {
                         + (done ? ' disabled checked' : '') + '>'
                         + '<div class="spt-retro-info">'
                         +   '<div class="spt-retro-date">' + sptFmtDate(c.date) + (done ? ' <span class="spt-retro-done-badge">✓ déjà pointé</span>' : '') + '</div>'
-                        +   '<div class="spt-retro-titre">' + c.titre + '</div>'
-                        +   '<div class="spt-retro-heure">' + (c.heure_debut||'') + (c.heure_fin?' → '+c.heure_fin:'') + (c.categorie?' · '+c.categorie:'') + '</div>'
+                        +   '<div class="spt-retro-titre">' + sptEsc(c.titre) + '</div>'
+                        +   '<div class="spt-retro-heure">' + sptEsc(c.heure_debut||'') + (c.heure_fin?' → '+sptEsc(c.heure_fin):'') + (c.categorie?' · '+sptEsc(c.categorie):'') + '</div>'
                         + '</div>'
                         + '</label>';
                 });

@@ -608,8 +608,8 @@ class SP_Cal_Inscriptions {
                     );
                     $badge = isset($badges[$insc->statut]) ? $badges[$insc->statut]
                            : '<span style="background:#f3f4f6;color:#6b7280;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;">⬜ Pas encore invité</span>';
-                    $email_affiche = ! empty( $insc->email ) ? $insc->email
-                                   : ( ! empty( $insc->email_parent ) ? $insc->email_parent . ' <span style="font-size:11px;color:#9ca3af;">(parent)</span>' : '—' );
+                    $email_affiche = ! empty( $insc->email ) ? esc_html( $insc->email )
+                                   : ( ! empty( $insc->email_parent ) ? esc_html( $insc->email_parent ) . ' <span style="font-size:11px;color:#9ca3af;">(parent)</span>' : '—' );
                 ?>
                 <tr data-eleve="<?php echo intval($insc->eleve_id); ?>">
                     <td><input type="checkbox" class="sp-insc-cb" value="<?php echo intval($insc->eleve_id); ?>"

@@ -1556,7 +1556,7 @@
 
                 var rowCls = dispo===1 ? 'sp-dispo-row sp-dispo-row-ok' : dispo===0 ? 'sp-dispo-row sp-dispo-row-ko' : 'sp-dispo-row sp-dispo-row-nr';
                 html += '<div class="'+rowCls+'" id="dispo-row-'+t.id+'">'
-                    +'<span class="sp-dispo-avatar">'+(t.nom_public||t.nom).charAt(0).toUpperCase()+'</span>'
+                    +'<span class="sp-dispo-avatar">'+CAL.esc((t.nom_public||t.nom).charAt(0).toUpperCase())+'</span>'
                     +'<span class="sp-dispo-name">'+nomDisplay+'</span>'
                     +(note ? '<span class="sp-dispo-note-badge" title="'+CAL.esc(note)+'">'+CAL.esc(note)+'</span>' : '')
                     +'<span class="sp-dispo-acts">'+btnOk+btnAr+btnKo+btnClr+btnNote+'</span>'
