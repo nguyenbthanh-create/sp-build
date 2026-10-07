@@ -3824,8 +3824,8 @@ function spCalBufToB64u(buf) {
                     <tr>
                         <th>Shortcodes</th>
                         <td>
-                            Calendrier : <code>[sp_cal_calendar]</code><br>
                             Planning hebdo : <code>[sp_cal_planning]</code><br>
+                            Prochains événements : <code>[sp_cal_evenements]</code><br>
                             Fiche membre : <code>[sp_cal_fiche_membre]</code><br>
                             Liste des élèves : <code>[sp_cal_eleves]</code><br>
                             Palmarès public : <code>[sp_cal_palmares]</code>

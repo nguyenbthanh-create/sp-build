@@ -10,7 +10,6 @@ class SpCalPro_Ajax {
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
         add_action( 'wp_ajax_sp_cal_get_events',              array( $this, 'get_events' ) );
-        add_action( 'wp_ajax_nopriv_sp_cal_get_events',       array( $this, 'get_events' ) );
         add_action( 'wp_ajax_sp_cal_save_event',              array( $this, 'save_event' ) );
         add_action( 'wp_ajax_sp_cal_delete_event',            array( $this, 'delete_event' ) );
         add_action( 'wp_ajax_sp_cal_get_presences',           array( $this, 'get_presences' ) );
