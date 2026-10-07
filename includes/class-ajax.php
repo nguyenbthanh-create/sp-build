@@ -266,8 +266,14 @@ class SpCalPro_Ajax {
             );
         }
 
-        /* 3 — Anniversaires depuis CSV élèves */
-        $birthdays = $this->db->get_birthdays_for_month( $year, $month );
+        /* 3 — Anniversaires depuis CSV élèves
+           Réservés aux utilisateurs connectés ayant accès au planning (07/10/2026) : cette action
+           est aussi ouverte aux visiteurs (wp_ajax_nopriv_, ancien calendrier en shortcode des
+           entraîneurs, remplacé par leur application) et renvoyait à n'importe qui le nom complet
+           et l'âge des adhérents, mineurs compris. */
+        $birthdays = current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING )
+            ? $this->db->get_birthdays_for_month( $year, $month )
+            : array();
         foreach ( $birthdays as $b ) {
             $parts = explode( '/', $b->date_naissance );
             if ( count( $parts ) < 2 ) continue;

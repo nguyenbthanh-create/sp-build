@@ -295,6 +295,13 @@ L'authentification est parfaite : c'est une question de **réputation d'envoi** 
 5. Pistes non faites (à décider) : filtre par projet dans l'écran Solde ; insertion de la saisie rapide *dans* l'application entraîneur sans fenêtre à part (demanderait une authentification par lien personnel côté trésorerie — compromis de sécurité discuté le 06/10, écarté pour l'instant).
 6. Rappel : le **pointage QR reste servi par l'extension « SP Pointage QR »** (voir « Pistes techniques ouvertes ») — ne pas la désactiver avant d'avoir rebranché le pointage sur sp-build seul.
 
+## 07/10/2026 — Suites de l'audit de sécurité (restructuration, étape 1)
+
+Bilan complet dans `../JOURNAL.md` (section 7). À traiter, par ordre d'importance :
+- **PIN du pointage trop faible et sans limite d'essais** : 4 chiffres tous différents (`substr( str_shuffle( '0123456789' ), 0, 4 )`) = 5 040 combinaisons, aucune limitation des tentatives. Il protège le pointage QR (`/pointage/*`, actions `sp_pointage_*`), le calendrier du club et la liste des anniversaires de l'application (`/anniversaires` : prénoms et âges). Un robot peut le trouver en quelques minutes. Pistes : limiter les essais ratés par adresse IP (blocage temporaire), PIN plus long (6 chiffres ou plus), comparaison `hash_equals()`. Le code de génération est **copié à 4 endroits** (`class-admin.php` ×2, `class-admin-members.php`, `class-ajax.php`) → une seule fonction.
+- **Calendrier en shortcode (copie du calendrier admin)** : créé pour la saisie des dispos des entraîneurs, désormais remplacé par leur application (retour de l'utilisateur du 07/10/2026). À retirer, ainsi que l'ouverture publique (`wp_ajax_nopriv_sp_cal_get_events`) si plus aucune page publique ne l'utilise — vérifier d'abord les pages du site.
+- **Code mort** : `class-pdf.php`, impression `?sp_cal_print=liste_groupe` → `render_liste_groupe()` inexistante (aucun bouton ne l'utilise) — à supprimer.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
