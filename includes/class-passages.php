@@ -55,7 +55,7 @@ class SP_Cal_Passages {
 	private function __construct( $db = null ) {
 		$this->db = $db;
 
-		add_action( 'init', [ __CLASS__, 'maybe_create_tables' ] );
+		SP_Cal_Schema::enregistrer( 'Passages de grade', [ __CLASS__, 'maybe_create_tables' ] );
 		add_action( 'admin_menu', [ $this, 'register_menu' ], 20 );
 
 		foreach ( [ 'creer', 'preparer', 'statut', 'supprimer', 'epreuve', 'epreuve_suppr', 'imprimer' ] as $a ) {
@@ -163,7 +163,9 @@ class SP_Cal_Passages {
 		// Ne marquer le schéma à jour que si toutes les tables existent (droits SQL limités
 		// chez l'hébergeur : on retentera au prochain chargement plutôt que de croire que c'est fait).
 		foreach ( [ 'passages', 'passage_candidats', 'passage_juges', 'passage_epreuves', 'passage_evaluations' ] as $n ) {
-			if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', self::t( $n ) ) ) !== self::t( $n ) ) return;
+			if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', self::t( $n ) ) ) !== self::t( $n ) ) {
+				throw new \RuntimeException( 'table ' . self::t( $n ) . ' non créée' ); // module central : nouvel essai dans 10 min
+			}
 		}
 		update_option( self::OPT_SCHEMA, self::SCHEMA );
 	}

@@ -111,7 +111,7 @@ class SP_Cal_Dobok {
 	private function __construct( $db = null ) {
 		$this->db = $db;
 
-		add_action( 'admin_init',            [ $this, 'maybe_create_tables' ] );
+		SP_Cal_Schema::enregistrer( 'Doboks', [ $this, 'maybe_create_tables' ] );
 		add_action( 'admin_menu',            [ $this, 'add_menu' ], 20 );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue' ] );
 
@@ -223,6 +223,7 @@ class SP_Cal_Dobok {
 			update_option( 'sp_dobok_schema_version', self::SCHEMA_VERSION );
 		} else {
 			error_log( '[SP_Build] Tables dobok non créées — vérifier les droits CREATE TABLE de l\'utilisateur MySQL.' );
+			throw new \RuntimeException( 'tables dobok non créées' ); // module central : nouvel essai dans 10 min
 		}
 	}
 

@@ -57,7 +57,7 @@ class SP_Front_Adhesion {
 		global $wpdb;
 		$this->table = $wpdb->prefix . 'sp_adhesions_pending';
 		add_shortcode( 'sp_inscription_adhesion', [ $this, 'render_shortcode' ] );
-		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
+		SP_Cal_Schema::enregistrer( 'Adhésions en ligne', [ __CLASS__, 'maybe_create_table' ] );
 		add_action( 'init', [ $this, 'maybe_print_attestation' ] );
 		add_action( 'wp_mail_failed', [ __CLASS__, 'log_mail_failure' ] );
 	}
@@ -97,6 +97,10 @@ class SP_Front_Adhesion {
 				'[SP_Build] Colonne(s) toujours absente(s) de ' . $table . ' après dbDelta() : '
 				. implode( ', ', $missing ) . ' — vérifier que l\'utilisateur MySQL du site a bien le droit ALTER TABLE.'
 			);
+			// Signalé comme une erreur au module central (class-schema.php) : la vérification sera
+			// retentée (toutes les 10 min) au lieu d'être considérée comme faite. Avant le 07/10/2026,
+			// cette fonction repassait à chaque page, ce qui assurait la même auto-réparation.
+			throw new \RuntimeException( 'colonnes absentes de ' . $table . ' : ' . implode( ', ', $missing ) );
 		}
 	}
 

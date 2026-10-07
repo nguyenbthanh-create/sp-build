@@ -1,5 +1,6 @@
 <?php 
 if ( ! defined( 'ABSPATH' ) ) exit;
+require_once plugin_dir_path( __FILE__ ) . 'class-schema.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-inscriptions.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-exam.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-admin-members.php';
@@ -47,7 +48,8 @@ class SpCalPro_Admin {
         add_action( 'wp_ajax_sp_pointage_lot',           array( $this, 'ajax_pointage_lot' ) );
         add_action( 'wp_ajax_nopriv_sp_pointage_cours_eleve', array( $this, 'ajax_pointage_cours_eleve' ) );
         add_action( 'wp_ajax_sp_pointage_cours_eleve',        array( $this, 'ajax_pointage_cours_eleve' ) );
-        add_action( 'admin_init',            array( $this->db, 'maybe_upgrade' ) );
+        // Tables : vérifiées par le module central (class-schema.php), une fois après chaque déploiement.
+        SP_Cal_Schema::enregistrer( 'Base principale (class-db)', array( $this->db, 'maybe_upgrade' ) );
         add_action( 'admin_init',            array( $this, 'handle_dates_grades_actions' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
         // REST API publique pour le pointage (bypass blocage /wp-admin/)
@@ -59,7 +61,7 @@ class SpCalPro_Admin {
         add_action( 'template_redirect', array( $this, 'maybe_serve_pwa_assets' ) );
         add_action( 'wp_head', array( $this, 'pwa_head_tags' ) );
         // PWA Phase 3 — Table push subscriptions
-        add_action( 'admin_init', array( $this, 'maybe_create_push_table' ) );
+        SP_Cal_Schema::enregistrer( 'Notifications push', array( $this, 'maybe_create_push_table' ) );
         // Envoi lien app entraîneur
         // Inscriptions événements
         // Catégories saisie pour la modale
@@ -3763,6 +3765,9 @@ function spCalBufToB64u(buf) {
         <?php if (isset($_GET['events_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Cours et événements réinitialisés.</p></div>'; ?>
         <?php if (isset($_GET['eleves_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Élèves et présences réinitialisés.</p></div>'; ?>
         <?php $medal_pts = $this->db->get_medal_points(); ?>
+
+        <!-- ÉTAT DE LA BASE DE DONNÉES (class-schema.php, 07/10/2026) -->
+        <?php SP_Cal_Schema::render_statut(); ?>
 
         <!-- INFORMATIONS CLUB -->
         <div class="sp-box" style="margin-bottom:18px;">

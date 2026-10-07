@@ -31,7 +31,7 @@ class SP_Cal_Trainer_App {
 		$this->db = $db;
 
 		add_shortcode( 'sp_cal_dispo_app', [ $this, 'render' ] );
-		add_action( 'admin_init', [ __CLASS__, 'maybe_add_token_columns' ] );
+		SP_Cal_Schema::enregistrer( 'Application entraîneur (jetons)', [ __CLASS__, 'maybe_add_token_columns' ] );
 
 		add_action( 'wp_ajax_sp_cal_dispo_app_data',        [ $this, 'ajax_get_data' ] );
 		add_action( 'wp_ajax_nopriv_sp_cal_dispo_app_data', [ $this, 'ajax_get_data' ] );
@@ -165,6 +165,8 @@ class SP_Cal_Trainer_App {
 		foreach ( [ 'token', 'token_sent_at' ] as $col ) {
 			if ( ! in_array( $col, $existing_after, true ) ) {
 				error_log( "[SP_Build] Colonne '{$col}' absente de {$table} après tentative d'ajout — vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+				// Erreur pour le module central (class-schema.php) : nouvel essai dans 10 minutes.
+				throw new \RuntimeException( "colonne {$col} absente de {$table}" );
 			}
 		}
 	}

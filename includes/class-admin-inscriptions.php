@@ -33,7 +33,7 @@ class SP_Cal_Inscriptions_Options {
         add_action( 'sp_cal_inscriptions_extra',       array( $this, 'render_save_button' ),  10, 2 );
         add_filter( 'sp_insc_extra_cols',       array( $this, 'filter_extra_cols' ),       10, 2 );
         add_filter( 'sp_insc_extra_row_values', array( $this, 'filter_extra_row_values' ), 10, 3 );
-        add_action( 'admin_init', array( $this, 'maybe_migrate' ) );
+        SP_Cal_Schema::enregistrer( 'Inscriptions (options)', array( $this, 'maybe_migrate' ) );
     }
 
     /* ── Migration DB ───────────────────────────────────────────────────── */

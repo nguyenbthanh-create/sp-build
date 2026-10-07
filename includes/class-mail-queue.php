@@ -49,7 +49,7 @@ class SP_Cal_Mail_Queue {
 	}
 
 	private function __construct() {
-		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
+		SP_Cal_Schema::enregistrer( "File d'envoi des emails", [ __CLASS__, 'maybe_create_table' ] );
 		add_action( 'wp_mail_succeeded', [ __CLASS__, 'compter_envoi' ] );
 		add_action( self::HOOK_CRON, [ $this, 'tick_cron' ] );
 		add_action( 'admin_menu', [ $this, 'register_menu' ], 20 );
@@ -94,6 +94,7 @@ class SP_Cal_Mail_Queue {
 			update_option( self::OPT_SCHEMA, self::SCHEMA );
 		} else {
 			error_log( '[SP_Build] File d\'envoi : création de la table ' . $t . ' impossible — les envois en masse partiront directement.' );
+			throw new \RuntimeException( 'table ' . $t . ' non créée' ); // module central : nouvel essai dans 10 min
 		}
 	}
 
