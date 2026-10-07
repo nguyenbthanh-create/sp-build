@@ -10,9 +10,10 @@
  *
  * Toutes les vérifications du PIN de sp_build passent par SP_Cal_Pin_Garde::verifier() :
  * pointage (AJAX + routes REST /pointage/*, déclarées dans class-admin.php ET class-ajax.php),
- * calendrier du club de l'application, anniversaires de l'application, page de pointage ?pin=.
- * Limite : l'extension séparée « SP Pointage QR » (hors de ce dépôt) fait ses propres
- * vérifications, non couvertes ici.
+ * calendrier du club de l'application, anniversaires de l'application, page de pointage ?pin=,
+ * et — par le filtre rest_pre_dispatch — les routes /pointage/* de l'extension « SP Pointage QR ».
+ * L'extension « SP Pointage QR » (hors de ce dépôt) garde ses propres vérifications, mais
+ * ses routes /pointage/* sont désormais filtrées en amont (filtrer_rest()).
  *
  * @package SP_Build
  */
@@ -47,6 +48,23 @@ class SP_Cal_Pin_Garde {
 			: 'PIN invalide';
 	}
 
+	/**
+	 * Filtre rest_pre_dispatch : contrôle le PIN des routes /spcal/v1/pointage/* AVANT leur
+	 * exécution, quelle que soit l'extension qui les a déclarées. Ces 4 routes sont aussi
+	 * déclarées par l'extension séparée « SP Pointage QR » (hors dépôt), qui répond en premier
+	 * et ne limitait pas les essais : constaté sur la prod le 07/10/2026 (11 PIN faux sur
+	 * /pointage/cours, aucun compté). PIN faux ou adresse bloquée → refus ici, même format de
+	 * réponse que l'extension ; PIN bon → la requête continue normalement (le gestionnaire
+	 * revérifie le PIN, sans compter d'échec puisqu'il est bon).
+	 */
+	public static function filtrer_rest( $resultat, $serveur, $requete ) {
+		if ( $resultat !== null || ! ( $requete instanceof WP_REST_Request ) ) return $resultat;
+		if ( strpos( (string) $requete->get_route(), '/spcal/v1/pointage/' ) !== 0 ) return $resultat;
+		$attendu = function_exists( 'sp_pointage_pin' ) ? (string) sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		if ( self::verifier( sanitize_text_field( (string) $requete->get_param( 'pin' ) ), $attendu ) ) return $resultat;
+		return new WP_REST_Response( [ 'success' => false, 'data' => self::message() ], 403 );
+	}
+
 	private static function compter_echec(): void {
 		$n = intval( get_transient( self::cle() ) ) + 1;
 		set_transient( self::cle(), $n, self::DUREE );
@@ -63,3 +81,5 @@ class SP_Cal_Pin_Garde {
 		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : 'inconnue';
 	}
 }
+
+add_filter( 'rest_pre_dispatch', [ 'SP_Cal_Pin_Garde', 'filtrer_rest' ], 10, 3 );
