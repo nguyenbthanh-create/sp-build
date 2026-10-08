@@ -244,9 +244,10 @@ class SP_Cal_Docs_Adhesion {
 		// Rangement des fichiers existants : un essai par heure au plus tant qu'il n'a pas abouti.
 		if ( get_option( self::OPTION_MIGRATION ) !== self::VERSION_MIGRATION
 			&& current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS )
-			&& ! get_transient( 'sp_cal_docs_fiches_essai' ) ) {
-			set_transient( 'sp_cal_docs_fiches_essai', 1, HOUR_IN_SECONDS );
-			self::migrer();
+			&& ! get_transient( 'sp_cal_docs_fiches_essai_' . self::VERSION_MIGRATION ) ) {
+			set_transient( 'sp_cal_docs_fiches_essai_' . self::VERSION_MIGRATION, 1, HOUR_IN_SECONDS );
+			// Interrompu faute de temps (beaucoup de fichiers) : reprise à la page suivante.
+			if ( ! self::migrer() ) delete_transient( 'sp_cal_docs_fiches_essai_' . self::VERSION_MIGRATION );
 		}
 	}
 
@@ -485,24 +486,36 @@ class SP_Cal_Docs_Adhesion {
 	 * Une fois tout rangé sans échec, ferme aussi l'ancien dossier sp-adhesions-docs/ en entier
 	 * (photos comprises). Bilan chiffré dans OPTION_JOURNAL.
 	 */
-	public static function migrer(): void {
+	public static function migrer( int $secondes = 20 ): bool {
 		global $wpdb;
-		$total = [ 'fiches' => 0, 'demandes' => 0, 'deja' => 0, 'range' => 0, 'garde' => 0, 'absent' => 0, 'echec' => 0 ];
-		foreach ( (array) $wpdb->get_col( "SELECT id FROM {$wpdb->prefix}sp_cal_eleves" ) as $id ) {
+		$fin   = time() + $secondes;  // au-delà : on s'arrête, la page suivante reprendra
+		$total = (array) get_option( self::OPTION_JOURNAL, [] );
+		if ( ( $total['version'] ?? '' ) !== self::VERSION_MIGRATION ) {
+			$total = [ 'version' => self::VERSION_MIGRATION, 'passes' => 0, 'fiches' => 0, 'demandes' => 0, 'deja' => 0, 'range' => 0, 'garde' => 0, 'absent' => 0, 'echec' => 0 ];
+		}
+		$total['passes']++;
+		$termine = true;
+		foreach ( (array) $wpdb->get_col( "SELECT id FROM {$wpdb->prefix}sp_cal_eleves ORDER BY id" ) as $id ) {
+			if ( time() > $fin ) { $termine = false; break; }
 			$b = self::ranger_fiche( (int) $id );
 			if ( $b['range'] ) $total['fiches']++;
-			foreach ( $b as $k => $v ) $total[ $k ] += $v;
+			foreach ( $b as $k => $v ) if ( $k !== 'deja' ) $total[ $k ] += $v;
 		}
-		foreach ( (array) $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}sp_adhesions_pending" ) as $row ) {
-			$b = self::ranger_demande( $row );
-			if ( $b['range'] ) $total['demandes']++;
-			foreach ( $b as $k => $v ) $total[ $k ] += $v;
+		if ( $termine ) {
+			foreach ( (array) $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}sp_adhesions_pending ORDER BY id" ) as $row ) {
+				if ( time() > $fin ) { $termine = false; break; }
+				$b = self::ranger_demande( $row );
+				if ( $b['range'] ) $total['demandes']++;
+				foreach ( $b as $k => $v ) if ( $k !== 'deja' ) $total[ $k ] += $v;
+			}
 		}
-		if ( $total['echec'] === 0 ) {
+		$total['date'] = current_time( 'mysql' );
+		if ( $termine && $total['echec'] === 0 ) {
 			if ( is_dir( self::ancienne_base() ) ) self::ecrire_regle( self::ancienne_base() );
 			update_option( self::OPTION_MIGRATION, self::VERSION_MIGRATION, false );
 		}
-		update_option( self::OPTION_JOURNAL, [ 'date' => current_time( 'mysql' ) ] + $total, false );
+		update_option( self::OPTION_JOURNAL, $total, false );
+		return $termine;
 	}
 }
 
