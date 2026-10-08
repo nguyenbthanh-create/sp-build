@@ -324,6 +324,7 @@ Demande de l'utilisateur : classer tout ce qui concerne un adhérent dans un dos
 - **Existant au 08/10** : ≈ 66 documents (dossier protégé par type) + 77 photos (24 dans `sp-adhesions-docs/photos/`, 53 dans la médiathèque générale) → migration unique automatique.
 - **Intérêt RGPD** : suppression / remise des documents d'un adhérent en une fois ; base de la future règle de conservation.
 - **Test** : copier `uploads/` de la prod sur le site de test avant l'essai (les fichiers n'y sont pas).
+- **État au 08/10/2026 au soir** : codé (`a61bb54` + `8aaa5ef`, `class-docs-adhesion.php`), 40 tests réussis ; `uploads/` de la prod copié sur le test par SSH (`cp -a ~/www/wp-content/uploads/. ~/dev.tkdclaira.fr/wp-content/uploads/`, via le partage de connexion — le réseau habituel bloque le port 22) ; **validé sur le site de test** : 77 photos rangées (adresse signée, réduites à 40–115 Ko), 74 documents rangés (12 absents du test = déjà déplacés en prod l'après-midi), accès direct 403, ancien dossier fermé, signature trafiquée refusée, documents ouverts par le bureau, fiche personnelle, cartes (68 photos), photo d'une demande. **Prochaine étape (prod)** : sauvegarde `tar czf ~/sauvegarde-uploads-2026-10-08.tgz -C ~/www/wp-content uploads` par SSH, puis déploiement de `DEPLOIEMENT_2026-10-08_1544_sp_build_8aaa5ef` (4 fichiers, `class-docs-adhesion.php` en premier), puis vérification. Idée : afficher le bilan du rangement (option `sp_cal_docs_fiches_journal`) dans Paramètres.
 
 ## Comment tenir ce fichier à jour
 
