@@ -382,7 +382,8 @@ class SP_Admin_Adhesions {
 				$val = '<img src="' . esc_url( $url ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
 					. '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">Voir en grand</a>';
 			} else {
-				$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
+				// Documents protégés : lien par sp_build, réservé au bureau (class-docs-adhesion.php).
+				$val = $url ? '<a href="' . esc_url( SP_Cal_Docs_Adhesion::lien( $url ) ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
 			}
 			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), $val );
 			if ( $label === 'Certificat médical' && ! empty( $row->date_certificat_medical ) && $row->date_certificat_medical !== '0000-00-00' ) {

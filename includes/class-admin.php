@@ -16,6 +16,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-pin-garde.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-mail-queue.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-sondage-front.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-docs-adhesion.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {

@@ -708,6 +708,8 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		if ( is_dir( $dir ) && ! file_exists( $htaccess ) ) {
 			@file_put_contents( $htaccess, "Options -Indexes\n" );
 		}
+		// Certificats, attestations, décharges, bons CAF : accès direct refusé (08/10/2026).
+		SP_Cal_Docs_Adhesion::proteger_dossiers();
 	}
 
 	// ─── Emails ──────────────────────────────────────────────────────────────

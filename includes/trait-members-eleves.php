@@ -963,7 +963,7 @@ trait SP_Cal_Members_Eleves {
                             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                                 <input type="hidden" name="<?php echo esc_attr( $post_name ); ?>" id="<?php echo esc_attr( $field_id ); ?>" value="<?php echo esc_attr( $url ); ?>">
                                 <button type="button" class="button sp-eleve-doc-btn" data-target="<?php echo esc_attr( $field_id ); ?>">📁 <?php echo $url ? 'Remplacer' : 'Choisir un fichier'; ?></button>
-                                <a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" class="sp-eleve-doc-link" id="<?php echo esc_attr( $field_id ); ?>_link" style="<?php echo $url ? '' : 'display:none;'; ?>">📄 Voir le document</a>
+                                <a href="<?php echo esc_url( SP_Cal_Docs_Adhesion::lien( (string) $url ) ); ?>" target="_blank" rel="noopener" class="sp-eleve-doc-link" id="<?php echo esc_attr( $field_id ); ?>_link" style="<?php echo $url ? '' : 'display:none;'; ?>">📄 Voir le document</a>
                                 <button type="button" class="button sp-eleve-doc-clear" data-target="<?php echo esc_attr( $field_id ); ?>" style="color:#dc2626;<?php echo $url ? '' : 'display:none;'; ?>">✕ Supprimer</button>
                             </div>
                         </div>
