@@ -135,11 +135,13 @@ class SP_Cal_Members {
                     'telephone' => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_telephone'] ?? '' ) ),
                     'email'     => sanitize_email( wp_unslash( $_POST['eleve_urgence_email'] ?? '' ) ),
                 ),
+                // Document choisi dans la médiathèque (publique) : recopié dans le dossier protégé
+                // et retiré de la médiathèque (class-docs-adhesion.php, 08/10/2026).
                 'documents' => array(
-                    'certificat_medical' => esc_url_raw( wp_unslash( $_POST['eleve_doc_certificat_medical'] ?? '' ) ),
-                    'attestation_rc'     => esc_url_raw( wp_unslash( $_POST['eleve_doc_attestation_rc']     ?? '' ) ),
-                    'decharge_honneur'   => esc_url_raw( wp_unslash( $_POST['eleve_doc_decharge_honneur']   ?? '' ) ),
-                    'bon_caf'            => esc_url_raw( wp_unslash( $_POST['eleve_doc_bon_caf']            ?? '' ) ),
+                    'certificat_medical' => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_certificat_medical'] ?? '' ) ), 'certificat_medical' ),
+                    'attestation_rc'     => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_attestation_rc']     ?? '' ) ), 'attestation_rc' ),
+                    'decharge_honneur'   => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_decharge_honneur']   ?? '' ) ), 'decharge_honneur' ),
+                    'bon_caf'            => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_bon_caf']            ?? '' ) ), 'bon_caf' ),
                 ),
             ) );
 

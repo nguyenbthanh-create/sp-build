@@ -110,6 +110,115 @@ class SP_Cal_Docs_Adhesion {
 	/** Une fois par VERSION, au chargement de l'administration. */
 	public static function verifier(): void {
 		if ( get_option( self::OPTION ) !== self::VERSION ) self::proteger_dossiers();
+		// Migration des fiches : un essai par heure au plus tant qu'elle n'a pas abouti.
+		if ( get_option( self::OPTION_MIGRATION ) !== self::VERSION_MIGRATION
+			&& current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS )
+			&& ! get_transient( 'sp_cal_docs_fiches_essai' ) ) {
+			set_transient( 'sp_cal_docs_fiches_essai', 1, HOUR_IN_SECONDS );
+			self::migrer_fiches();
+		}
+	}
+
+	// ── Documents ajoutés depuis la fiche élève (08/10/2026, suite) ─────────────────────────
+	// Le bouton « 📁 Choisir un fichier » de la fiche élève passe par la médiathèque WordPress,
+	// dont les fichiers sont publics (uploads/AAAA/MM/). À l'enregistrement de la fiche, un tel
+	// document est recopié dans le dossier protégé de son type, et sa copie publique supprimée
+	// de la médiathèque (sauf si le même fichier sert ailleurs sur le site).
+
+	/** Clé du document dans extra_data['documents'] → sous-dossier protégé. */
+	const TYPES = [
+		'certificat_medical' => 'certificats-medicaux',
+		'attestation_rc'     => 'attestations-rc',
+		'decharge_honneur'   => 'decharges',
+		'bon_caf'            => 'bons-caf',
+	];
+	const VERSION_MIGRATION = '1';
+	const OPTION_MIGRATION  = 'sp_cal_docs_fiches_migres';
+	const OPTION_JOURNAL    = 'sp_cal_docs_fiches_journal';
+
+	/**
+	 * Met à l'abri un document de fiche élève : renvoie l'adresse protégée (copie dans
+	 * sp-adhesions-docs/<type>/<année>/), ou l'adresse d'origine si rien n'est à faire / possible.
+	 *
+	 * @param string $url   adresse enregistrée sur la fiche
+	 * @param string $cle   clé de TYPES
+	 * @param array  $info  rempli avec 'action' : 'deja' | 'copie' | 'copie_gardee' | 'ignore' | 'echec'
+	 */
+	public static function securiser_url( string $url, string $cle, array &$info = [] ): string {
+		$info = [ 'action' => 'ignore' ];
+		if ( $url === '' || ! isset( self::TYPES[ $cle ] ) ) return $url;
+		if ( self::chemin_relatif( $url ) !== '' ) { $info['action'] = 'deja'; return $url; }
+
+		// Seuls les fichiers de la médiathèque du site (uploads/AAAA/MM/fichier).
+		$uploads = wp_upload_dir();
+		$chemin  = (string) wp_parse_url( $url, PHP_URL_PATH );
+		$prefixe = (string) wp_parse_url( $uploads['baseurl'], PHP_URL_PATH );
+		if ( $prefixe === '' || strpos( $chemin, $prefixe . '/' ) !== 0 ) return $url;
+		$rel = rawurldecode( substr( $chemin, strlen( $prefixe ) + 1 ) );
+		if ( ! preg_match( '#^\d{4}/\d{2}/[^/\\\\]+$#', $rel ) || strpos( $rel, '..' ) !== false ) return $url;
+		$source = $uploads['basedir'] . '/' . $rel;
+		$type   = wp_check_filetype( $source, [ 'pdf' => 'application/pdf', 'jpg|jpeg' => 'image/jpeg', 'png' => 'image/png' ] );
+		if ( ! is_file( $source ) || empty( $type['type'] ) ) { $info['action'] = 'echec'; return $url; }
+
+		self::proteger_dossiers();
+		$dossier = self::base() . '/' . self::TYPES[ $cle ] . '/' . gmdate( 'Y' );
+		if ( ! wp_mkdir_p( $dossier ) ) { $info['action'] = 'echec'; return $url; }
+		$nom = wp_unique_filename( $dossier, sanitize_file_name( basename( $source ) ) );
+		if ( ! @copy( $source, $dossier . '/' . $nom ) ) { $info['action'] = 'echec'; return $url; }
+
+		$nouvelle = trailingslashit( $uploads['baseurl'] ) . 'sp-adhesions-docs/' . self::TYPES[ $cle ] . '/' . gmdate( 'Y' ) . '/' . $nom;
+
+		// Supprimer la copie publique (fichier + vignettes + entrée de la médiathèque) si elle
+		// n'est utilisée nulle part ailleurs : contenus, réglages, autres fiches élèves.
+		$id = attachment_url_to_postid( $url );
+		if ( $id && ! self::utilise_ailleurs( $url, $id ) ) {
+			wp_delete_attachment( $id, true );
+			$info['action'] = 'copie';
+		} else {
+			$info['action'] = 'copie_gardee';
+		}
+		return $nouvelle;
+	}
+
+	/** Le fichier de la médiathèque sert-il ailleurs que sur une seule fiche élève ? */
+	private static function utilise_ailleurs( string $url, int $id ): bool {
+		global $wpdb;
+		$like = '%' . $wpdb->esc_like( basename( (string) wp_parse_url( $url, PHP_URL_PATH ) ) ) . '%';
+		$posts = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE ID <> %d AND post_type NOT IN ('revision','attachment') AND post_content LIKE %s", $id, $like ) );
+		$meta  = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id <> %d AND meta_value LIKE %s", $id, $like ) );
+		$tel   = $wpdb->prefix . 'sp_cal_eleves';
+		$fiches = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $tel WHERE extra_data LIKE %s", $like ) );
+		return $posts > 0 || $meta > 0 || $fiches > 1;
+	}
+
+	/**
+	 * Une fois (VERSION_MIGRATION) : met à l'abri les documents déjà présents sur les fiches
+	 * élèves. Journal du résultat dans l'option OPTION_JOURNAL (nombres seulement).
+	 */
+	public static function migrer_fiches(): void {
+		global $wpdb;
+		$tel  = $wpdb->prefix . 'sp_cal_eleves';
+		$rows = $wpdb->get_results( "SELECT id, extra_data FROM $tel WHERE extra_data LIKE '%\"documents\"%'" );
+		$bilan = [ 'fiches' => 0, 'copie' => 0, 'copie_gardee' => 0, 'echec' => 0 ];
+		foreach ( (array) $rows as $r ) {
+			$extra = json_decode( (string) $r->extra_data, true );
+			if ( ! is_array( $extra ) || empty( $extra['documents'] ) || ! is_array( $extra['documents'] ) ) continue;
+			$modif = false;
+			foreach ( $extra['documents'] as $cle => $url ) {
+				$info  = [];
+				$neuve = self::securiser_url( (string) $url, (string) $cle, $info );
+				if ( isset( $bilan[ $info['action'] ] ) ) $bilan[ $info['action'] ]++;
+				if ( $neuve !== $url ) { $extra['documents'][ $cle ] = $neuve; $modif = true; }
+			}
+			if ( $modif ) {
+				$wpdb->update( $tel, [ 'extra_data' => wp_json_encode( $extra ) ], [ 'id' => intval( $r->id ) ] );
+				$bilan['fiches']++;
+			}
+		}
+		update_option( self::OPTION_JOURNAL, [ 'date' => current_time( 'mysql' ) ] + $bilan, false );
+		if ( $bilan['echec'] === 0 ) update_option( self::OPTION_MIGRATION, self::VERSION_MIGRATION, false );
 	}
 }
 
