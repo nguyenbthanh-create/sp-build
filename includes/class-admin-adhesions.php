@@ -379,8 +379,10 @@ class SP_Admin_Adhesions {
 		echo "<div class='sp-adh-section'><h3>📎 Documents</h3><table class='form-table'>";
 		foreach ( $docs as $label => $url ) {
 			if ( $label === 'Photo de l\'adhérent' && $url ) {
-				$val = '<img src="' . esc_url( $url ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
-					. '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">Voir en grand</a>';
+				// Photo de la demande : fichier protégé, lu par sp_build (bureau connecté).
+				$voir = SP_Cal_Docs_Adhesion::lien( $url );
+				$val = '<img src="' . esc_url( $voir ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
+					. '<a href="' . esc_url( $voir ) . '" target="_blank" rel="noopener">Voir en grand</a>';
 			} else {
 				// Documents protégés : lien par sp_build, réservé au bureau (class-docs-adhesion.php).
 				$val = $url ? '<a href="' . esc_url( SP_Cal_Docs_Adhesion::lien( $url ) ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
@@ -529,6 +531,10 @@ class SP_Admin_Adhesions {
 			wp_redirect( $this->view_url( $id, 'error_db' ) );
 			exit;
 		}
+
+		// Fichiers de la demande (photo, certificat…) rangés dans le dossier de l'adhérent
+		// (class-docs-adhesion.php, 08/10/2026).
+		SP_Cal_Docs_Adhesion::ranger_fiche( (int) $member_id );
 
 		// Marquer validée
 		$wpdb->update(

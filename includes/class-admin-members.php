@@ -135,13 +135,13 @@ class SP_Cal_Members {
                     'telephone' => sanitize_text_field( wp_unslash( $_POST['eleve_urgence_telephone'] ?? '' ) ),
                     'email'     => sanitize_email( wp_unslash( $_POST['eleve_urgence_email'] ?? '' ) ),
                 ),
-                // Document choisi dans la médiathèque (publique) : recopié dans le dossier protégé
-                // et retiré de la médiathèque (class-docs-adhesion.php, 08/10/2026).
+                // Un document choisi dans la médiathèque (publique) est rangé dans le dossier de
+                // l'adhérent juste après l'enregistrement (ranger_fiche(), plus bas).
                 'documents' => array(
-                    'certificat_medical' => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_certificat_medical'] ?? '' ) ), 'certificat_medical' ),
-                    'attestation_rc'     => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_attestation_rc']     ?? '' ) ), 'attestation_rc' ),
-                    'decharge_honneur'   => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_decharge_honneur']   ?? '' ) ), 'decharge_honneur' ),
-                    'bon_caf'            => SP_Cal_Docs_Adhesion::securiser_url( esc_url_raw( wp_unslash( $_POST['eleve_doc_bon_caf']            ?? '' ) ), 'bon_caf' ),
+                    'certificat_medical' => esc_url_raw( wp_unslash( $_POST['eleve_doc_certificat_medical'] ?? '' ) ),
+                    'attestation_rc'     => esc_url_raw( wp_unslash( $_POST['eleve_doc_attestation_rc']     ?? '' ) ),
+                    'decharge_honneur'   => esc_url_raw( wp_unslash( $_POST['eleve_doc_decharge_honneur']   ?? '' ) ),
+                    'bon_caf'            => esc_url_raw( wp_unslash( $_POST['eleve_doc_bon_caf']            ?? '' ) ),
                 ),
             ) );
 
@@ -204,6 +204,8 @@ class SP_Cal_Members {
                 // Détecter si l'élève passe de inactif → actif pour envoyer le token
                 $was_actif = intval( $wpdb->get_var( $wpdb->prepare( "SELECT actif FROM $tel WHERE id=%d", $id ) ) );
                 $wpdb->update( $tel, $filtered_data, array( 'id' => $id ) );
+                // Photo et documents de la fiche rangés dans le dossier de l'adhérent (08/10/2026).
+                SP_Cal_Docs_Adhesion::ranger_fiche( $id );
                 if ( ! $was_actif && $data['actif'] && $this->token ) {
                     $this->token->generate_and_send( $id );
                 }
@@ -212,6 +214,7 @@ class SP_Cal_Members {
             } else {
                 $wpdb->insert( $tel, $filtered_data );
                 $new_id = $wpdb->insert_id;
+                if ( $new_id ) SP_Cal_Docs_Adhesion::ranger_fiche( (int) $new_id );
                 if ( $data['actif'] && $this->token ) {
                     $this->token->generate_and_send( $new_id );
                 }

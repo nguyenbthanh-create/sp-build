@@ -672,8 +672,11 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 
-		// Rangés à part du dossier uploads/ standard, hors indexation directe (voir protect_uploads_dir()).
-		$target = '/sp-adhesions-docs/' . trim( $subdir, '/' ) . '/' . date( 'Y' );
+		// Dossier de la demande, fermé au web (class-docs-adhesion.php, 08/10/2026) : les fichiers
+		// rejoignent le dossier de l'adhérent quand le bureau accepte la demande. Nom préfixé par
+		// le type (« certificat-medical-… », « photo-… »).
+		$target = SP_Cal_Docs_Adhesion::dossier_demande();
+		$_FILES[ $field ]['name'] = SP_Cal_Docs_Adhesion::nom_depot( trim( $subdir, '/' ), (string) $_FILES[ $field ]['name'] );
 		$filter = static function ( array $dirs ) use ( $target ): array {
 			$dirs['subdir'] = $target;
 			$dirs['path']   = $dirs['basedir'] . $target;
@@ -703,12 +706,8 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 	}
 
 	private function protect_uploads_dir(): void {
-		$dir      = wp_upload_dir()['basedir'] . '/sp-adhesions-docs';
-		$htaccess = $dir . '/.htaccess';
-		if ( is_dir( $dir ) && ! file_exists( $htaccess ) ) {
-			@file_put_contents( $htaccess, "Options -Indexes\n" );
-		}
-		// Certificats, attestations, décharges, bons CAF : accès direct refusé (08/10/2026).
+		// Dossiers des adhérents et des demandes fermés au web (08/10/2026 ; avant : seule la
+		// liste de l'ancien dossier sp-adhesions-docs/ était bloquée, par « Options -Indexes »).
 		SP_Cal_Docs_Adhesion::proteger_dossiers();
 	}
 
