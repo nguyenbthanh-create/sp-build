@@ -322,35 +322,46 @@ trait SpCalPro_DB_Membres {
     }
 
     /**
-     * Bascule les catégories d'âge au 1er septembre selon les règles fédérales.
-     * Règles : âge révolu au 1er septembre de l'année en cours.
-     *   < 6 ans  → Baby
-     *   6-10 ans → Enfant
-     *   11-14 ans → Ado/adulte
-     *   >= 15 ans → Adulte
+     * Catégorie d'âge du Taekwondo, calquée sur la classe scolaire (règle du club, 08/10/2026) :
+     *   Baby = maternelle, Enfant = primaire (CP → CM2), Ado/adulte = collège et plus.
+     * Comme à l'école, seule l'ANNÉE de naissance compte : pour la saison qui commence en
+     * septembre $annee_saison, l'enfant atteint dans l'année civile l'âge de sa classe
+     * (6 ans → CP, 11 ans → 6e). Le Renforcement musculaire reste « Tout âge » (non calculé).
+     * Seule source de la règle côté sp_build : bascule de rentrée et formulaire d'adhésion
+     * (même règle dans tkd-cotisations : tkd_calculer_categorie_age(), vérifiée par outils/tests).
+     * Avant le 08/10/2026 : âge exact au 1er septembre et 4e tranche « Adulte » (15 ans et plus),
+     * sans tarif propre — un enfant né à l'automne était classé un an plus jeune que sa classe.
+     */
+    public static function categorie_scolaire( int $annee_naissance, int $annee_saison ): string {
+        $age_dans_l_annee = $annee_saison - $annee_naissance;
+        if ( $age_dans_l_annee <= 5 )  return 'Baby';    // maternelle (PS 3 ans … GS 5 ans)
+        if ( $age_dans_l_annee <= 10 ) return 'Enfant';  // primaire (CP 6 ans … CM2 10 ans)
+        return 'Ado/adulte';                              // collège (6e 11 ans) et plus
+    }
+
+    /**
+     * Année de la rentrée de septembre pour laquelle on classe : à partir de juin (renouvellements,
+     * inscriptions pour la rentrée, fenêtre de la bascule), la saison qui commence en septembre ;
+     * de janvier à mai, la saison en cours.
+     */
+    public static function annee_saison_categories(): int {
+        $y = (int) current_time( 'Y' );
+        return (int) current_time( 'n' ) >= 6 ? $y : $y - 1;
+    }
+
+    /**
+     * Bascule les catégories d'âge à la rentrée, selon la classe scolaire (categorie_scolaire()).
      *
      * @param bool $dry_run  Si true, retourne les changements sans les appliquer.
-     * @return array  ['updated'=>int, 'details'=>[['nom','prenom','avant','apres'],...]]
+     * @return array  ['updated'=>int, 'details'=>[['id','nom','avant','apres','annee'],...]]
      */
     public function bascule_categories_septembre( $dry_run = false ) {
         global $wpdb;
         $tel = $this->table_eleves();
 
-        // Date de référence : 1er septembre de l'année en cours
-        $annee_ref = intval( date('Y') );
-        // Si on est avant le 1er septembre, la prochaine bascule est cette année
-        // Si on est après le 1er septembre, la bascule de l'année est déjà passée
-        $ts_ref = mktime( 0, 0, 0, 9, 1, $annee_ref );
+        $annee_saison = self::annee_saison_categories();
 
-        // Règles fédérales : catégorie selon âge révolu au 1er septembre
-        $regles = array(
-            array( 'min' => 0,  'max' => 5,  'cat' => 'Baby' ),
-            array( 'min' => 6,  'max' => 10, 'cat' => 'Enfant' ),
-            array( 'min' => 11, 'max' => 14, 'cat' => 'Ado/adulte' ),
-            array( 'min' => 15, 'max' => 999,'cat' => 'Adulte' ),
-        );
-
-        // Récupérer tous les élèves actifs avec date de naissance — le Renforcement musculaire
+        // Élèves actifs avec année de naissance — le Renforcement musculaire
         // (categorie_saisie='RENFO') n'est pas subdivisé par âge (catégorie "Tout âge" fixe,
         // cf. échange du 18/09/2026) : on l'exclut pour ne pas lui écraser sa catégorie chaque
         // rentrée avec une tranche d'âge qui ne le concerne pas.
@@ -359,7 +370,6 @@ trait SpCalPro_DB_Membres {
              FROM $tel
              WHERE actif = 1
                AND annee_naissance != ''
-               AND date_naissance != ''
                AND categorie_saisie != 'RENFO'
              ORDER BY nom ASC, prenom ASC"
         );
@@ -368,22 +378,9 @@ trait SpCalPro_DB_Membres {
         $details = array();
 
         foreach ( $eleves as $el ) {
-            // Calculer l'âge au 1er septembre
-            $parts = explode( '/', $el->date_naissance );
-            if ( count($parts) < 2 ) continue;
-            $ts_naiss = mktime( 0, 0, 0, intval($parts[1]), intval($parts[0]), intval($el->annee_naissance) );
-            if ( ! $ts_naiss ) continue;
-            $age_sept = (int) floor( ($ts_ref - $ts_naiss) / (365.25 * 24 * 3600) );
-
-            // Déterminer la nouvelle catégorie
-            $new_cat = '';
-            foreach ( $regles as $r ) {
-                if ( $age_sept >= $r['min'] && $age_sept <= $r['max'] ) {
-                    $new_cat = $r['cat'];
-                    break;
-                }
-            }
-            if ( ! $new_cat ) continue;
+            $annee = intval( $el->annee_naissance );
+            if ( $annee < 1900 ) continue;
+            $new_cat = self::categorie_scolaire( $annee, $annee_saison );
             // Pas de changement
             if ( $new_cat === $el->categorie_age ) continue;
 
@@ -392,7 +389,7 @@ trait SpCalPro_DB_Membres {
                 'nom'    => $el->prenom . ' ' . mb_strtoupper($el->nom),
                 'avant'  => $el->categorie_age,
                 'apres'  => $new_cat,
-                'age'    => $age_sept,
+                'annee'  => $annee,
             );
 
             if ( ! $dry_run ) {

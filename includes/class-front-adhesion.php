@@ -1155,25 +1155,20 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 					return;
 				}
 
-				const birth = new Date(ddn);
-				const today = new Date();
-				const sept1 = new Date(today.getFullYear(), 8, 1);
+				// Classe scolaire à la rentrée (règle du club, 08/10/2026) : seule l'année de naissance
+				// compte, comme à l'école — même règle que SpCalPro_DB::categorie_scolaire() (PHP).
+				// Rentrée de référence fournie par le serveur (SpCalPro_DB::annee_saison_categories()).
+				const anneeNaissance = parseInt( String(ddn).slice(0, 4), 10 );
+				if ( ! anneeNaissance ) return;
+				const ageDansLAnnee = <?= (int) SpCalPro_DB::annee_saison_categories() ?> - anneeNaissance;
 
-				let age = sept1.getFullYear() - birth.getFullYear();
-				if ( birth.getMonth() > 8 || (birth.getMonth() === 8 && birth.getDate() > 1) ) age--;
-
-				// 4 tranches (pas 3) pour rester cohérent avec la règle fédérale déjà codée côté
-				// admin (SpCalPro_DB::bascule_categories_septembre()) — Ado/adulte (11-14) et
-				// Adulte (15+) étaient jusqu'ici fusionnés en un seul "Ado/Adulte" ici.
 				let cat, label, cssClass;
-				if ( age < 6 ) {
-					cat = 'Baby'; label = 'Baby (moins de 6 ans au 1er sept.)'; cssClass = 'sp-adh-cat-baby';
-				} else if ( age < 11 ) {
-					cat = 'Enfant'; label = 'Enfant (6 à 10 ans au 1er sept.)'; cssClass = 'sp-adh-cat-enfant';
-				} else if ( age < 15 ) {
-					cat = 'Ado/adulte'; label = 'Ado / adulte (11 à 14 ans au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
+				if ( ageDansLAnnee <= 5 ) {
+					cat = 'Baby'; label = 'Baby (maternelle)'; cssClass = 'sp-adh-cat-baby';
+				} else if ( ageDansLAnnee <= 10 ) {
+					cat = 'Enfant'; label = 'Enfant (primaire, CP → CM2)'; cssClass = 'sp-adh-cat-enfant';
 				} else {
-					cat = 'Adulte'; label = 'Adulte (15 ans et plus au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
+					cat = 'Ado/adulte'; label = 'Ado / adulte (collège et plus)'; cssClass = 'sp-adh-cat-adulte';
 				}
 				hidden.value = cat;
 				display.innerHTML = '<strong class="sp-adh-cat-badge ' + cssClass + '">' + label + '</strong>';

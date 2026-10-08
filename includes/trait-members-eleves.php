@@ -165,12 +165,12 @@ trait SP_Cal_Members_Eleves {
         <div class="notice notice-warning" style="padding:16px;">
             <p><strong>👁️ Aperçu de la bascule — <?php echo count($preview); ?> élève(s) concerné(s)</strong></p>
             <table class="wp-list-table widefat fixed striped" style="max-width:600px;margin:10px 0;">
-                <thead><tr><th>Élève</th><th>Âge au 1/09</th><th>Avant</th><th>Après</th></tr></thead>
+                <thead><tr><th>Élève</th><th>Né(e) en</th><th>Avant</th><th>Après</th></tr></thead>
                 <tbody>
                 <?php foreach($preview as $p): ?>
                 <tr>
                     <td><?php echo esc_html($p['nom']); ?></td>
-                    <td><?php echo intval($p['age']); ?> ans</td>
+                    <td><?php echo intval( $p['annee'] ?? 0 ); ?></td>
                     <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($p['avant']); ?></span></td>
                     <td><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($p['apres']); ?></span></td>
                 </tr>
@@ -191,8 +191,8 @@ trait SP_Cal_Members_Eleves {
                 <div style="flex:1;">
                     <strong>🗓️ Bascule des catégories d'âge</strong>
                     <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
-                        Recalcule la catégorie de chaque élève selon son âge au 1<sup>er</sup> septembre.
-                        Baby (&lt; 6 ans) · Enfant (6-10 ans) · Ado/adulte (11-14 ans) · Adulte (≥ 15 ans)
+                        Recalcule la catégorie de chaque élève selon sa classe à la rentrée <?php echo intval( SpCalPro_DB::annee_saison_categories() ); ?> (année de naissance, comme à l'école) :
+                        Baby = maternelle (né en <?php echo intval( SpCalPro_DB::annee_saison_categories() - 5 ); ?> ou après) · Enfant = primaire (<?php echo intval( SpCalPro_DB::annee_saison_categories() - 10 ); ?>–<?php echo intval( SpCalPro_DB::annee_saison_categories() - 6 ); ?>) · Ado/adulte = collège et plus
                         — n'affecte pas les élèves en Renforcement musculaire (catégorie "Tout âge" fixe).
                     </p>
                     <?php if ( ! $bascule_active ) : ?>
