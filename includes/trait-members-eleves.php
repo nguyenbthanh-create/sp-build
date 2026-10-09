@@ -906,20 +906,42 @@ trait SP_Cal_Members_Eleves {
                         </div>
                     </div>
                     <script>
+                    // Envoi direct dans le dossier de l'adhérent, fermé au web (09/10/2026) — plus par
+                    // la médiathèque, publique (class-docs-adhesion.php::ajax_depot()). Partagé avec
+                    // les documents plus bas : window.spAdhDepot( cle, $bouton, function( reponse ) ).
+                    window.spAdhDepot = function( cle, $btn, ok ) {
+                        var $f = jQuery('<input type="file" style="display:none">')
+                            .attr('accept', cle === 'photo' ? 'image/jpeg,image/png,image/webp,image/gif' : '.pdf,.jpg,.jpeg,.png')
+                            .appendTo('body');
+                        $f.on('change', function(){
+                            if ( ! this.files.length ) { $f.remove(); return; }
+                            var fd = new FormData();
+                            fd.append('action', 'sp_cal_adh_depot');
+                            fd.append('_ajax_nonce', <?php echo wp_json_encode( SP_Cal_Docs_Adhesion::nonce_depot() ); ?>);
+                            fd.append('eleve_id', jQuery('input[name="eleve_id"]').val() || 0);
+                            fd.append('cle', cle);
+                            fd.append('fichier', this.files[0]);
+                            var libelle = $btn.text();
+                            $btn.prop('disabled', true).text('⏳ Envoi…');
+                            jQuery.ajax({ url: ajaxurl, type: 'POST', data: fd, processData: false, contentType: false })
+                                .done(function(r){
+                                    if ( r && r.success ) { ok( r.data ); $btn.text('📁 Remplacer'); }
+                                    else { alert( ( r && r.data ) ? r.data : "L'envoi a échoué." ); $btn.text(libelle); }
+                                })
+                                .fail(function(){ alert("L'envoi a échoué (connexion ou fichier trop lourd)."); $btn.text(libelle); })
+                                .always(function(){ $btn.prop('disabled', false); $f.remove(); });
+                        });
+                        $f.trigger('click');
+                    };
                     (function($){
-                        var frame;
                         $('#sp-eleve-photo-btn').on('click', function(e){
                             e.preventDefault();
-                            if (frame) { frame.open(); return; }
-                            frame = wp.media({ title: 'Choisir une photo', button: { text: 'Utiliser cette photo' }, multiple: false, library: { type: 'image' } });
-                            frame.on('select', function(){
-                                var att = frame.state().get('selection').first().toJSON();
-                                $('#eleve_photo_url').val(att.url);
-                                $('#sp-eleve-photo-img').attr('src', att.url).show();
+                            window.spAdhDepot('photo', $(this), function(d){
+                                $('#eleve_photo_url').val(d.valeur);
+                                $('#sp-eleve-photo-img').attr('src', d.voir).show();
                                 $('#sp-eleve-photo-placeholder').hide();
                                 $('#sp-eleve-photo-clear').show();
                             });
-                            frame.open();
                         });
                         $('#sp-eleve-photo-clear').on('click', function(){
                             $('#eleve_photo_url').val('');
@@ -976,23 +998,18 @@ trait SP_Cal_Members_Eleves {
                     ?>
                     <script>
                     (function($){
-                        var frame;
                         $('.sp-eleve-doc-btn').on('click', function(e){
                             e.preventDefault();
                             var targetId = $(this).data('target');
                             var $input   = $('#' + targetId);
                             var $link    = $('#' + targetId + '_link');
                             var $clear   = $('.sp-eleve-doc-clear[data-target="' + targetId + '"]');
-                            var $btn     = $(this);
-                            var f = wp.media({ title: 'Choisir un document', button: { text: 'Utiliser ce fichier' }, multiple: false });
-                            f.on('select', function(){
-                                var att = f.state().get('selection').first().toJSON();
-                                $input.val(att.url);
-                                $link.attr('href', att.url).show();
+                            // eleve_doc_certificat_medical → certificat_medical (clé de class-docs-adhesion.php)
+                            window.spAdhDepot( String(targetId).replace('eleve_doc_', ''), $(this), function(d){
+                                $input.val(d.valeur);
+                                $link.attr('href', d.voir).show();
                                 $clear.show();
-                                $btn.text('📁 Remplacer');
                             });
-                            f.open();
                         });
                         $('.sp-eleve-doc-clear').on('click', function(){
                             var targetId = $(this).data('target');

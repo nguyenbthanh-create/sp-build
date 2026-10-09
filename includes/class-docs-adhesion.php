@@ -124,7 +124,8 @@ class SP_Cal_Docs_Adhesion {
 
 	/** « <id>-<code>/<fichier> » ou « demandes/<code>/<fichier> », sans aucun détour possible. */
 	private static function rel_valide( string $rel ): bool {
-		return (bool) preg_match( '#^(\d+-[a-z0-9]{6,16}|demandes/[a-z0-9]{6,16})/[A-Za-z0-9._-]+$#', $rel )
+		// a-trier/ : photos orphelines sorties de la médiathèque (class-adherents-a-trier.php).
+		return (bool) preg_match( '#^(\d+-[a-z0-9]{6,16}|demandes/[a-z0-9]{6,16}|a-trier)/[A-Za-z0-9._-]+$#', $rel )
 			&& strpos( $rel, '..' ) === false && substr( basename( $rel ), 0, 1 ) !== '.';
 	}
 
@@ -268,8 +269,65 @@ class SP_Cal_Docs_Adhesion {
 		return ( $cle !== '' ? self::TYPES[ $cle ] . '-' : '' ) . $nom;
 	}
 
-	private static function code(): string {
+	public static function code(): string {
 		return strtolower( wp_generate_password( 10, false, false ) );
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// DÉPÔT DEPUIS LA FICHE ÉLÈVE (09/10/2026)
+	// ══════════════════════════════════════════════════════════════════════
+	// Les boutons « Choisir une photo » / « Choisir un fichier » de la fiche élève passaient par
+	// la médiathèque WordPress (publique) : un envoi suivi d'un abandon de la fiche laissait le
+	// fichier public, et les envois répétés y laissaient des doublons (67 photos d'identité
+	// orphelines constatées le 09/10). Désormais le fichier va directement dans le dossier de
+	// l'adhérent (fiche existante) ou dans un dossier de dépôt fermé (nouvelle fiche, rangé à
+	// l'enregistrement par ranger_fiche()).
+
+	const ACTION_DEPOT = 'sp_cal_adh_depot';
+
+	/** admin-ajax.php?action=sp_cal_adh_depot — champs : eleve_id, cle, fichier. */
+	public static function ajax_depot(): void {
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_send_json_error( 'Accès refusé.', 403 );
+		check_ajax_referer( self::ACTION_DEPOT );
+		$id  = absint( $_POST['eleve_id'] ?? 0 );
+		$cle = sanitize_key( wp_unslash( $_POST['cle'] ?? '' ) );
+		if ( ! isset( self::TYPES[ $cle ] ) ) wp_send_json_error( 'Type de document inconnu.', 400 );
+		if ( empty( $_FILES['fichier']['name'] ) || ( $_FILES['fichier']['error'] ?? 1 ) !== UPLOAD_ERR_OK ) wp_send_json_error( "Le fichier n'a pas été reçu.", 400 );
+		if ( (int) $_FILES['fichier']['size'] > 10 * 1024 * 1024 ) wp_send_json_error( 'Fichier trop lourd (10 Mo au plus).', 400 );
+
+		$mimes = $cle === 'photo'
+			? [ 'jpg|jpeg|jpe' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif' ]
+			: [ 'pdf' => 'application/pdf', 'jpg|jpeg|jpe' => 'image/jpeg', 'png' => 'image/png' ];
+
+		self::proteger_dossiers();
+		$dossier = $id ? self::dossier_adherent( $id ) : 'demandes/' . self::code();
+		wp_mkdir_p( self::base() . '/' . $dossier );
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		$cible  = '/' . self::BASE . '/' . $dossier;
+		$filtre = static function ( array $dirs ) use ( $cible ): array {
+			$dirs['subdir'] = $cible;
+			$dirs['path']   = $dirs['basedir'] . $cible;
+			$dirs['url']    = $dirs['baseurl'] . $cible;
+			return $dirs;
+		};
+		$_FILES['fichier']['name'] = self::TYPES[ $cle ] . '-' . self::sans_prefixe( sanitize_file_name( (string) $_FILES['fichier']['name'] ) );
+		add_filter( 'upload_dir', $filtre );
+		$res = wp_handle_upload( $_FILES['fichier'], [ 'test_form' => false, 'mimes' => $mimes ] );
+		remove_filter( 'upload_dir', $filtre );
+		if ( isset( $res['error'] ) ) wp_send_json_error( $res['error'], 400 );
+
+		$rel = $dossier . '/' . basename( $res['file'] );
+		if ( $cle === 'photo' ) self::reduire( $res['file'] );
+		// Photo d'une fiche existante : adresse signée (affichable partout) ; sinon adresse du
+		// fichier, lue par le bureau et rangée à l'enregistrement de la fiche.
+		$valeur = ( $cle === 'photo' && $id ) ? self::url_photo( $rel ) : self::url_fichier( $rel );
+		wp_send_json_success( [ 'valeur' => $valeur, 'voir' => self::lien( $valeur ) ] );
+	}
+
+	/** Jeton à placer dans la fiche élève pour ajax_depot(). */
+	public static function nonce_depot(): string {
+		return wp_create_nonce( self::ACTION_DEPOT );
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
@@ -457,7 +515,7 @@ class SP_Cal_Docs_Adhesion {
 	 * dépassent souvent 4 Mo). Sans effet si l'image est déjà petite ou si l'éditeur d'images
 	 * de WordPress n'est pas disponible.
 	 */
-	private static function reduire( string $fichier ): void {
+	public static function reduire( string $fichier ): void {
 		if ( ! function_exists( 'wp_get_image_editor' ) ) return;
 		$ed = wp_get_image_editor( $fichier );
 		if ( is_wp_error( $ed ) ) return;
@@ -466,14 +524,14 @@ class SP_Cal_Docs_Adhesion {
 		if ( ! is_wp_error( $ed->resize( 800, 800, false ) ) ) $ed->save( $fichier );
 	}
 
-	private static function sans_prefixe( string $nom ): string {
+	public static function sans_prefixe( string $nom ): string {
 		foreach ( self::TYPES as $p ) {
 			if ( strpos( $nom, $p . '-' ) === 0 ) return substr( $nom, strlen( $p ) + 1 );
 		}
 		return $nom;
 	}
 
-	private static function nom_unique( string $dir, string $nom ): string {
+	public static function nom_unique( string $dir, string $nom ): string {
 		return wp_unique_filename( $dir, sanitize_file_name( $nom ) );
 	}
 
@@ -522,3 +580,4 @@ class SP_Cal_Docs_Adhesion {
 add_action( 'admin_post_' . SP_Cal_Docs_Adhesion::ACTION, [ 'SP_Cal_Docs_Adhesion', 'servir' ] );
 add_action( 'admin_init', [ 'SP_Cal_Docs_Adhesion', 'verifier' ] );
 add_action( 'init', [ 'SP_Cal_Docs_Adhesion', 'servir_photo' ], 1 );
+add_action( 'wp_ajax_' . SP_Cal_Docs_Adhesion::ACTION_DEPOT, [ 'SP_Cal_Docs_Adhesion', 'ajax_depot' ] );
