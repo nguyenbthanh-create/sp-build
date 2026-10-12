@@ -750,9 +750,43 @@ trait SP_Cal_Members_Eleves {
                     $f3('Taille (cm)',        'eleve_taille_cm',      $edit->taille_cm      ?? '');
                     $f3('Poids (kg)',          'eleve_poids_kg',       $edit->poids_kg       ?? '');
                     $f3('Pointure',            'eleve_pointure',       $edit->pointure       ?? '');
-                    $f3('Taille t-shirt',     'eleve_taille_tshirt',  $edit->taille_tshirt  ?? '');
-                    $f3('Taille pantalon',    'eleve_taille_pantalon',$edit->taille_pantalon?? '');
+                    // Tailles du haut et du bas : pour un adhérent du renforcement musculaire, liste XS → XXL
+                    // (celle des tenues prêtées, class-tenues.php) au lieu du champ libre — le besoin de
+                    // commande ne sait lire que ces tailles. Chaque champ existe en deux versions de même
+                    // nom ; celle qui ne sert pas est désactivée, donc pas envoyée. Une valeur déjà saisie
+                    // hors liste (« 38 ») reste proposée et sélectionnée : ouvrir puis enregistrer une fiche
+                    // ne modifie rien tant qu'on ne choisit pas autre chose.
+                    $tailles_tenue = SP_Cal_Tenues::tailles_reglees();
+                    $est_renfo     = $edit ? SP_Cal_Tenues::est_renfo( $edit ) : false;
+                    $f_taille = function( $label, $name, $val ) use ( $tailles_tenue, $est_renfo ) {
+                        $val     = (string) $val;
+                        $normale = mb_strtoupper( trim( $val ) );
+                        $connue  = in_array( $normale, $tailles_tenue, true );
+                        echo '<div style="margin-bottom:10px;">';
+                        echo '<label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">' . esc_html( $label ) . '</label>';
+                        echo '<input type="text" name="' . esc_attr( $name ) . '" value="' . esc_attr( $val ) . '" class="regular-text sp-taille-libre" style="width:100%;' . ( $est_renfo ? 'display:none;' : '' ) . '"' . ( $est_renfo ? ' disabled' : '' ) . '>';
+                        echo '<select name="' . esc_attr( $name ) . '" class="sp-taille-liste" style="width:100%;' . ( $est_renfo ? '' : 'display:none;' ) . '"' . ( $est_renfo ? '' : ' disabled' ) . '>';
+                        echo '<option value="">— Choisir —</option>';
+                        if ( $val !== '' && ! $connue ) echo '<option value="' . esc_attr( $val ) . '" selected>' . esc_html( $val ) . ' (à remplacer par une taille de la liste)</option>';
+                        foreach ( $tailles_tenue as $t ) echo '<option value="' . esc_attr( $t ) . '"' . selected( $connue && $t === $normale, true, false ) . '>' . esc_html( $t ) . '</option>';
+                        echo '</select></div>';
+                    };
+                    $f_taille( 'Taille t-shirt',  'eleve_taille_tshirt',   $edit->taille_tshirt   ?? '' );
+                    $f_taille( 'Taille pantalon', 'eleve_taille_pantalon', $edit->taille_pantalon ?? '' );
                     ?>
+                    <script>
+                    (function () {
+                        var disc = document.getElementById('sp-eleve-disc-select'), autre = document.getElementById('sp-eleve-disc-autre');
+                        if (!disc) return;
+                        function majTailles() {
+                            var renfo = disc.value === 'RENFO' || (disc.value === '__autre__' && autre && /renfo|renforcement/i.test(autre.value));
+                            document.querySelectorAll('.sp-taille-libre').forEach(function (el) { el.disabled = renfo; el.style.display = renfo ? 'none' : ''; });
+                            document.querySelectorAll('.sp-taille-liste').forEach(function (el) { el.disabled = !renfo; el.style.display = renfo ? '' : 'none'; });
+                        }
+                        disc.addEventListener('change', majTailles);
+                        if (autre) autre.addEventListener('input', majTailles);
+                    })();
+                    </script>
                     </div><!-- fin grille -->
 
                     <!-- Champs éligibilité Dan (hors grille) -->
