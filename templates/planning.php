@@ -94,6 +94,7 @@ foreach ($ponctuels as $ev) {
         'slot_id'=>null,'date'=>$ev->date,'heure_debut'=>$ev->heure_debut,'heure_fin'=>$ev->heure_fin,
         'titre'=>$ev->titre,'categorie'=>$ev->categorie,'recurrence'=>null,'annul_id'=>null,'ponctuel'=>true,
         'type'  => $ev->type ?? '',
+        'couleur' => $ev->couleur ?? '',
         'id'    => $ev->id   ?? 0,
         'document_url' => $ev->document_url ?? '', 'document_nom' => $ev->document_nom ?? '',
     );
@@ -263,7 +264,9 @@ for ($w=0;$w<6;$w++) {
                         foreach ($occ_by_date[$ds] as $item) {
                             if ($item['heure_debut'] !== $h_debut || $item['heure_fin'] !== $h_fin) continue;
                             $cat   = $item['categorie'] ?? '';
-                            $saved = SpCalPro_DB::style_categorie( $cat, $cat_colors );
+                            // Même règle que le calendrier de gestion : couleur de la catégorie pour un cours,
+                            // couleur du type pour un examen ou une compétition, couleur propre pour un événement.
+                            $saved = SpCalPro_DB::style_element( $item['type'] ?? '', $cat, $item['couleur'] ?? '', $cat_colors );
                             $color = $saved['color'];
                             $icon  = $saved['icon'];
                             $is_annule = !empty($item['annul_id']);
@@ -318,14 +321,26 @@ for ($w=0;$w<6;$w++) {
 
         <!-- Légende catégories -->
         <?php
-        $cats_week = array();
+        $cats_week = array(); $types_week = array();
         foreach ($active_dows as $dow => $_) {
             $d2 = clone $week['start']; $d2->modify( '+' . ( ( $dow - intval( $week['start']->format('N') ) + 7 ) % 7 ) . ' days' );
             $ds = $d2->format('Y-m-d');
-            if (!empty($occ_by_date[$ds])) foreach ($occ_by_date[$ds] as $item) { if ($item['categorie'] && empty($item['annul_id'])) $cats_week[$item['categorie']]=true; }
+            if (!empty($occ_by_date[$ds])) foreach ($occ_by_date[$ds] as $item) {
+                if ( ! empty($item['annul_id']) ) continue;
+                $type_item = $item['type'] ?? '';
+                // La légende des catégories ne concerne que les cours ; examens et compétitions ont la leur.
+                if ( isset( SpCalPro_DB::COULEURS_TYPES[ $type_item ] ) ) $types_week[ $type_item ] = true;
+                elseif ( $type_item !== 'evenement' && $item['categorie'] ) $cats_week[$item['categorie']]=true;
+            }
         }
-        if ($cats_week): ?>
+        if ($cats_week || $types_week): ?>
         <div class="sp-planning-legend">
+            <?php foreach ( array( 'examen' => 'Examen', 'competition' => 'Compétition' ) as $type_leg => $lib_leg ) : if ( empty( $types_week[ $type_leg ] ) ) continue; ?>
+            <span class="sp-legend-item">
+                <span class="sp-legend-dot" style="background:<?php echo esc_attr( SpCalPro_DB::COULEURS_TYPES[ $type_leg ] ); ?>;"></span>
+                <?php echo esc_html( $lib_leg ); ?>
+            </span>
+            <?php endforeach; ?>
             <?php foreach (array_keys($cats_week) as $cat):
                 $saved = SpCalPro_DB::style_categorie( $cat, $cat_colors );
                 $color = $saved['color'];

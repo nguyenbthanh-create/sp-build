@@ -366,6 +366,12 @@ Principe retenu par l'utilisateur : Paramètres = la pratique du sport ; l'admin
 - **Correction** : `SpCalPro_DB::dates_mensuelles()` (`trait-db-calendrier.php`) — même jour de la semaine (celui du créneau) et même rang dans le mois que la première séance : 1er samedi → 07/11, 05/12, 02/01… ; un mois sans 5e samedi prend le dernier. 6 tests (`outils/tests/CreneauxMensuelsTest.php`). Concerne en prod les 3 créneaux mensuels créés le 12/10 (prépa Dan, Combat, Démo/Freestyle) ; la séance du 03/10 ne bouge pas.
 - Page Créneaux : pastille de chaque créneau à la couleur du cours + nom du cours spécial (`4236aa8`, en prod).
 
+## 12/10/2026 — Planning public : même règle de couleur que le calendrier de gestion (codé, À DÉPLOYER)
+
+- Sur `[sp_cal_planning]`, tout élément ponctuel prenait la couleur de sa discipline : « Entraînement Halloween » (événement, case Taekwondo cochée) ressemblait à un cours. Désormais `SpCalPro_DB::style_element()` (`class-db.php`, utilisée par `templates/planning.php`) : **cours** = couleur de la catégorie (discipline ou cours spécial) ; **examen** `#b45309` et **compétition** `#b8860b` (`COULEURS_TYPES`, mêmes teintes que `calendar.js`) ; **événement** = sa propre couleur (champ `couleur`). La légende n'énumère plus que les catégories des cours, plus « Examen » / « Compétition » s'il y en a dans la semaine.
+- **Règle d'usage confirmée à l'utilisateur** : sur une fête ou une sortie, on continue de cocher la discipline et le public — ces cases servent au ciblage (qui est prévenu, qui le voit dans son application), plus à la couleur.
+- Rattachement des créneaux spéciaux fait par l'utilisateur et vérifié en prod (prépa Dan, Combat, Démo/Freestyle, enfants confirmés).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

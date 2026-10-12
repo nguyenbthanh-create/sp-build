@@ -919,6 +919,24 @@ $wpdb->query( "CREATE TABLE $ts (
         }
         return array( 'color' => self::COULEUR_COURS_DEFAUT, 'icon' => '' );
     }
+
+    /** Couleurs fixes des examens et des compétitions (les mêmes que dans calendar.js). */
+    const COULEURS_TYPES = array( 'examen' => '#b45309', 'competition' => '#b8860b' );
+
+    /**
+     * Couleur et icône d'un élément du calendrier ou du planning. Seuls les COURS (ponctuels ou
+     * récurrents) prennent la couleur de leur catégorie ; un examen et une compétition ont la
+     * couleur de leur type, un événement (fête, sortie…) la sienne — même s'il a une discipline
+     * cochée, qui ne sert qu'à savoir quels adhérents il concerne.
+     *
+     * @return array{color:string,icon:string}
+     */
+    public static function style_element( $type, $categorie, $couleur_evenement = '', $couleurs = null ) {
+        $type = (string) $type;
+        if ( isset( self::COULEURS_TYPES[ $type ] ) ) return array( 'color' => self::COULEURS_TYPES[ $type ], 'icon' => '' );
+        if ( $type === 'evenement' ) return array( 'color' => sanitize_hex_color( (string) $couleur_evenement ) ?: self::COULEUR_COURS_DEFAUT, 'icon' => '' );
+        return self::style_categorie( $categorie, $couleurs );
+    }
 	
 	// ============================================================
 	// SONDAGES POST-ÉVÉNEMENT
