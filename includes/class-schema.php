@@ -54,6 +54,7 @@ class SP_Cal_Schema {
 		'includes/class-admin-inscriptions.php',
 		'includes/class-trainer-app.php',
 		'includes/class-dobok.php',
+		'includes/class-tenues.php',
 		'includes/class-passages.php',
 		'includes/class-mail-queue.php',
 	];

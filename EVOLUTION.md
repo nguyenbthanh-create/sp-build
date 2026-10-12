@@ -390,6 +390,17 @@ Demande de l'utilisateur : sur `[sp_cal_planning]`, rien ne distinguait un cours
 - **Correction liée (`6bfba95`)** : un créneau « 1 semaine sur 2 / 3 » dont la date de début ne tombait pas le jour du cours n'apparaissait jamais ; la première séance est désormais le premier jour du cours à partir de cette date. **À savoir** : le planning ignore les jours fériés (une séance du 11 novembre est proposée) — à annuler à la main.
 - Concerne tous les créneaux non hebdomadaires, donc aussi « TKD enfants confirmés » (1 semaine sur 2). Tout est dans `templates/planning.php` ; `/app/` et le calendrier de gestion ne changent pas.
 
+## 13/10/2026 — Tenues du renforcement musculaire, étape 1 : côté bureau (codé, À TESTER sur le site de test)
+
+Demande de l'utilisateur : étendre le principe des doboks (validés en prod) aux tenues prêtées aux adhérents du renforcement musculaire.
+- **Réponses de l'utilisateur** : un haut et un bas ; coupes homme et femme ; tailles XS → XXL, les mêmes pour les deux pièces ; **prêt** (rendu au départ) ; aucune tenue distribuée à ce jour — elles seront commandées puis distribuées pour la première saison. Une adhésion taekwondo donne accès au renforcement (pas l'inverse), sans que rien ne l'enregistre.
+- **Choix technique** : `includes/class-tenues.php` (`SP_Cal_Tenues`) avec ses **propres tables** `sp_cal_tenue_lots` / `sp_cal_tenue_mouvements` (via `SP_Cal_Schema`), pour ne rien modifier au module doboks en service. Même mécanique (journal de mouvements, aucun compteur stocké), même page d'administration : menu « **Doboks & tenues** », bascule en haut de page, tenues à `?page=sp-cal-dobok&objet=tenues`. `class-dobok.php` ne change que par cette bascule et le titre.
+- **Références** : `haut_h`, `haut_f`, `bas_h`, `bas_f` × taille (texte). Pas de modèle déduit d'un grade : un adhérent du renforcement doit avoir 1 haut + 1 bas, coupe de son sexe, taille lue sur sa fiche (« T-shirt » → haut, « Pantalon » → bas, `lire_taille()` : « m », « Taille L », « 2XL », « 14 ans / xs »…).
+- **Onglets** : *Besoin de commande* (grille à commander = besoin − stock ; fiches à compléter : sexe ou taille manquants ; bouton qui préremplit la réception) · *Stock* (disponible / prêté, inventaire par comptage, sortie d'une pièce abîmée) · *Adhérents* (vues Renforcement / Détenteurs / Tous ; remise du haut et du bas en une saisie ; restitution avec motif et état ; non rendu ; un ancien adhérent qui garde une pièce reste listé « à récupérer ») · *Achats* (réception d'une commande en grille, prix unitaire par pièce, suppression d'une réception) · *Journal* (300 derniers mouvements, suppression = correction) · *Réglages* (liste des tailles, seuil de stock bas).
+- **Adhérents du taekwondo** : rien n'est attendu ni compté pour eux ; le bureau peut leur remettre une tenue depuis la vue « Tous les adhérents », et ajoute leurs pièces à la main dans la commande.
+- 6 tests (`outils/tests/TenuesTest.php`) : lecture des tailles, effets des mouvements, pièce attendue, besoin de commande.
+- **Étape 2 (à faire)** : bloc « Ma tenue » sur la fiche de l'adhérent (lien `?token=`) avec demandes de changement de taille et de restitution, réservations et mails, comme les doboks V2 ; échange de taille en une seule saisie côté bureau.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

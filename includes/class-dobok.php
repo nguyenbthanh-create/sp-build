@@ -1550,13 +1550,20 @@ class SP_Cal_Dobok {
 	public function render_page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
+		// Même page pour les tenues du renforcement musculaire (class-tenues.php, 13/10/2026).
+		if ( sanitize_key( $_GET['objet'] ?? '' ) === SP_Cal_Tenues::OBJET ) {
+			SP_Cal_Tenues::get_instance( $this->db )->render_page();
+			return;
+		}
+
 		$nb_dem  = $this->tables_ok() ? $this->nb_demandes_a_traiter() : 0;
 		$onglets = [ 'stock' => 'Stock', 'demandes' => 'Demandes / distribution' . ( $nb_dem ? " ($nb_dem)" : '' ), 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
 		$tab     = sanitize_key( $_GET['tab'] ?? 'stock' );
 		if ( ! isset( $onglets[ $tab ] ) ) $tab = 'stock';
 
 		echo '<div class="wrap sp-cal-wrap spd">';
-		echo '<h1>🥋 Doboks</h1>';
+		echo '<h1>Doboks &amp; tenues</h1>';
+		SP_Cal_Tenues::selecteur( 'doboks' );
 
 		if ( ! $this->tables_ok() ) {
 			delete_option( 'sp_dobok_schema_version' );   // force une nouvelle tentative au prochain chargement

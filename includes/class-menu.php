@@ -36,7 +36,7 @@ class SP_Cal_Menu {
 			'sp-cal-photos-a-trier' => 'Photos à trier',
 			'sp-cal-print-cartes'   => 'Cartes membres',
 			'sp-cal-anniversaires'  => 'Anniversaires',
-			'sp-cal-dobok'          => 'Doboks',
+			'sp-cal-dobok'          => 'Doboks & tenues',
 		],
 		'Grades & compétition' => [
 			'sp-cal-passages' => 'Passages de grade',
