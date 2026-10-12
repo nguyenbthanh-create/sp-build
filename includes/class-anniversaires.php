@@ -376,6 +376,8 @@ class SP_Cal_Anniversaires {
 					</table>
 				<?php endif; ?>
 			</div>
+			<?php // Rappel aux encadrants (venu des notifications, 12/10/2026) — son enregistrement est réservé aux administrateurs.
+			if ( current_user_can( 'manage_options' ) ) SpCalPro_Admin::bloc_rappel_anniversaires(); ?>
 		</div>
 		<?php
 	}

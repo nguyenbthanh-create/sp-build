@@ -158,14 +158,14 @@
                         if      (ev.type==='cours_recurrent') { color=CAL.resolveColor(ev.categorie,'#3B82F6'); prefix=CAL.resolveIcon(ev.categorie,'🔄 '); cls2='sp-evt-pill sp-pill-recurrent'; }
                         else if (ev.type==='annulation')      { if(shown_annul[ev.slot_id])return; shown_annul[ev.slot_id]=true; color='#ef4444'; prefix='🚫 '; cls2='sp-evt-pill sp-pill-annulation'; }
                         else if (ev.type==='cours')           { color=CAL.resolveColor(ev.categorie,'#7c3aed'); prefix=CAL.resolveIcon(ev.categorie,'⚡ '); cls2='sp-evt-pill sp-pill-ponctuel'; }
-                        else if (ev.type==='examen')          { color=CAL.resolveColor(ev.categorie,'#b45309'); prefix='🎓 '; cls2='sp-evt-pill sp-evt-pill-examen'; }
-                        else if (ev.type==='competition')     { color=CAL.resolveColor(ev.categorie,'#b8860b'); prefix='🏆 '; cls2='sp-evt-pill sp-pill-competition'; }
+                        else if (ev.type==='examen')          { color='#b45309'; prefix='🎓 '; cls2='sp-evt-pill sp-evt-pill-examen'; }
+                        else if (ev.type==='competition')     { color='#b8860b'; prefix='🏆 '; cls2='sp-evt-pill sp-pill-competition'; }
                         else if (ev.type==='anniversaire')    {
                             // Anniversaires → séparés, traités en bas
                             bdayHtml += '<span class="sp-pill-bday" data-id="'+CAL.esc(String(ev.id))+'">🎂 '+CAL.esc(ev.titre)+'</span>';
                             return;
                         }
-                        else                                  { color=CAL.resolveColor(ev.categorie,ev.couleur||'#3B82F6'); prefix='📅 '; cls2='sp-evt-pill'; }
+                        else                                  { color=ev.couleur||'#3B82F6'; prefix='📅 '; cls2='sp-evt-pill'; }
                         var time  = ev.heure_debut ? ev.heure_debut+' ' : '';
                         var label = ev.type==='annulation' ? prefix+CAL.esc(ev.titre) : prefix+time+CAL.esc(ev.titre);
                         eventsHtml += '<span class="'+cls2+'" style="background:'+color+';" data-id="'+CAL.esc(String(ev.id))+'">'+label+'</span>';
@@ -181,14 +181,25 @@
             $('#cal-grid-wrap').html(header+grid);
         },
 
+        // Catégorie d'affichage d'un cours = son cours spécial, sinon sa ou ses disciplines
+        // (« Taekwondo,Renforcement musculaire » : on prend la première qui a une couleur).
+        styleCat: function (cat) {
+            if (!cat) return null;
+            var cles = [cat].concat(String(cat).split(',').map(function(s){ return s.trim(); }));
+            for (var i = 0; i < cles.length; i++) {
+                if (cles[i] && CAL.catColors[cles[i]] && CAL.catColors[cles[i]].color) return CAL.catColors[cles[i]];
+            }
+            return null;
+        },
+
         resolveColor: function (cat, fallback) {
-            if (cat && CAL.catColors[cat] && CAL.catColors[cat].color) return CAL.catColors[cat].color;
-            return fallback || '#3B82F6';
+            var s = CAL.styleCat(cat);
+            return s ? s.color : (fallback || '#3B82F6');
         },
 
         resolveIcon: function (cat, defaultIcon) {
-            if (cat && CAL.catColors[cat] && CAL.catColors[cat].icon) return CAL.catColors[cat].icon + ' ';
-            return defaultIcon || '';
+            var s = CAL.styleCat(cat);
+            return (s && s.icon) ? s.icon + ' ' : (defaultIcon || '');
         },
 
         isVacance: function (ds) {
@@ -414,7 +425,7 @@
             // Ponctuels + examens
             var ponctHtml = '';
             ponctArr.forEach(function(ev){
-                var color = CAL.resolveColor(ev.categorie, ev.couleur||'#3B82F6');
+                var color = ev.type==='cours' ? CAL.resolveColor(ev.categorie,'#7c3aed') : ev.type==='examen' ? '#b45309' : ev.type==='competition' ? '#b8860b' : (ev.couleur||'#3B82F6');
                 var icon  = ev.type==='cours' ? '⚡' : ev.type==='examen' ? '🎓' : '📅';
                 var time  = ev.heure_debut?(ev.heure_debut+(ev.heure_fin?' – '+ev.heure_fin:'')):'' ;
                 ponctHtml += '<div class="sp-day-event-item" data-id="'+ev.id+'">'
@@ -787,7 +798,8 @@
             $('#ev-fin').val(ev?CAL.toTimeInput(ev.heure_fin):'');
             CAL.renderCoursCategorieWrap(
                 ev && ev.cours_discipline     ? ev.cours_discipline.split(',').map(function(s){ return s.trim(); }).filter(Boolean)     : [],
-                ev && ev.cours_age_categories ? ev.cours_age_categories.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : []
+                ev && ev.cours_age_categories ? ev.cours_age_categories.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [],
+                ev ? (ev.categorie || '') : ''
             );
             $('#ev-couleur').val(ev?ev.couleur:'#3B82F6');
             $('#ev-description').val(ev?(ev.description||''):'');
@@ -1112,6 +1124,7 @@
                 heure_fin:   $('#ev-fin').val(),
                 titre:       titre,
                 cours_discipline:     coursDiscipline.join(','),
+                cours_special:        $('#ev-cours-special').val() || '',
                 cours_age_categories: coursAge.join(','),
                 couleur:     $('#ev-couleur').val(),
                 type:        $('#ev-type').val(),
@@ -1930,7 +1943,7 @@
         COURS_DISCIPLINES: ['Taekwondo', 'Renforcement musculaire', 'Autre'],
         COURS_AGES:        ['Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge'],
 
-        renderCoursCategorieWrap: function (selectedDiscipline, selectedAge) {
+        renderCoursCategorieWrap: function (selectedDiscipline, selectedAge, categorie) {
             var html = '';
 
             html += '<div style="width:100%;margin-bottom:4px;"><span style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;">Discipline</span></div>';
@@ -1948,6 +1961,18 @@
                       + '<input type="checkbox" class="sp-ev-age-cb" value="' + CAL.esc(a) + '"' + chk + '>'
                       + CAL.esc(a) + '</label>';
             });
+
+            // Cours spécial (liste de Paramètres > Cours & couleurs) : il a sa propre couleur. Un cours
+            // enregistré avec un cours spécial porte son nom dans « categorie ».
+            var speciaux = SpCal.coursSpeciaux || [];
+            if (speciaux.length) {
+                html += '<div style="width:100%;margin-top:6px;margin-bottom:4px;"><span style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;">Cours spécial</span></div>'
+                      + '<select id="ev-cours-special" class="sp-input" style="max-width:100%;"><option value="">— Aucun (cours habituel) —</option>';
+                speciaux.forEach(function(s) {
+                    html += '<option value="' + CAL.esc(s) + '"' + (s === categorie ? ' selected' : '') + '>' + CAL.esc(s) + '</option>';
+                });
+                html += '</select>';
+            }
 
             $('#ev-categorie-wrap').html(html);
         },

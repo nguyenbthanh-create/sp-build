@@ -876,6 +876,49 @@ $wpdb->query( "CREATE TABLE $ts (
     /** Valeurs des deux axes d'un cours (mêmes listes que CAL.COURS_DISCIPLINES / CAL.COURS_AGES). */
     const COURS_DISCIPLINES = array( 'Taekwondo', 'Renforcement musculaire', 'Autre' );
     const COURS_AGES        = array( 'Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge' );
+
+    /* ── Couleurs des cours (refonte du 12/10/2026) ─────────────────────────────────────────
+       Une couleur par DISCIPLINE (Taekwondo, Renforcement musculaire) et une par COURS SPÉCIAL
+       (liste modifiable dans Paramètres > Cours & couleurs). Le champ « categorie » d'un cours
+       ou d'un créneau est sa catégorie d'affichage : le cours spécial s'il y en a un, sinon sa
+       ou ses disciplines. Les couleurs restent dans l'option sp_cal_cat_colors
+       ( nom => [ color, icon ] ), lue par le calendrier, le planning public et l'agenda. */
+
+    const COULEUR_COURS_DEFAUT = '#3B82F6';
+
+    /** Disciplines qui ont une couleur réglable (« Autre » garde la couleur par défaut). */
+    const DISCIPLINES_COLOREES = array( 'Taekwondo', 'Renforcement musculaire' );
+
+    /** Cours spéciaux, dans l'ordre d'affichage. Tant que la liste n'a jamais été enregistrée : les trois du club. */
+    public static function cours_speciaux() {
+        $liste = json_decode( (string) get_option( 'sp_cal_cours_speciaux', '' ), true );
+        if ( ! is_array( $liste ) ) return array( 'Préparation examen Dan', 'Combat & freestyle', 'Cours avancé enfant' );
+        return array_values( array_filter( array_map( 'strval', $liste ), 'strlen' ) );
+    }
+
+    /** Catégorie d'affichage d'un cours : le cours spécial choisi s'il existe, sinon ses disciplines. */
+    public static function categorie_affichage( $special, array $disciplines ) {
+        $special = trim( (string) $special );
+        return ( $special !== '' && in_array( $special, self::cours_speciaux(), true ) ) ? $special : implode( ',', $disciplines );
+    }
+
+    /**
+     * Couleur et icône d'une catégorie d'affichage. Plusieurs disciplines (« Taekwondo,Renforcement
+     * musculaire ») : celle de la première qui a une couleur.
+     *
+     * @param array|null $couleurs Option sp_cal_cat_colors déjà décodée (évite de la relire dans une boucle).
+     * @return array{color:string,icon:string}
+     */
+    public static function style_categorie( $categorie, $couleurs = null ) {
+        if ( ! is_array( $couleurs ) ) $couleurs = json_decode( (string) get_option( 'sp_cal_cat_colors', '{}' ), true ) ?: array();
+        $categorie = (string) $categorie;
+        foreach ( array_merge( array( $categorie ), array_map( 'trim', explode( ',', $categorie ) ) ) as $cle ) {
+            if ( $cle !== '' && ! empty( $couleurs[ $cle ]['color'] ) ) {
+                return array( 'color' => (string) $couleurs[ $cle ]['color'], 'icon' => (string) ( $couleurs[ $cle ]['icon'] ?? '' ) );
+            }
+        }
+        return array( 'color' => self::COULEUR_COURS_DEFAUT, 'icon' => '' );
+    }
 	
 	// ============================================================
 	// SONDAGES POST-ÉVÉNEMENT

@@ -142,29 +142,63 @@ trait SpCalPro_Admin_Formulaires {
 
             if ( $bloc === 'notifs' ) {
                 update_option( 'sp_cal_notif_email',           sanitize_email( wp_unslash( $_POST['sp_cal_notif_email']           ?? get_option('admin_email' ) ) ) );
-                update_option( 'sp_cal_notif_anniv',           isset($_POST['sp_cal_notif_anniv'])    ? '1' : '0' );
-                update_option( 'sp_cal_notif_anniv_jours',     intval(          $_POST['sp_cal_notif_anniv_jours']     ?? 7 ) );
-                update_option( 'sp_cal_notif_absences',        isset($_POST['sp_cal_notif_absences']) ? '1' : '0' );
+                update_option( 'sp_cal_notif_absences',       isset($_POST['sp_cal_notif_absences']) ? '1' : '0' );
                 update_option( 'sp_cal_notif_absences_seuil',  intval(          $_POST['sp_cal_notif_absences_seuil']  ?? 3 ) );
                 wp_redirect( admin_url( 'admin.php?page=' . SP_Cal_Mail_Queue::PAGE . '&tab=notifications&notif_saved=1' ) ); exit;
             }
 
+            // Rappel des anniversaires aux encadrants (page Anniversaires)
+            if ( $bloc === 'notif_anniv' ) {
+                update_option( 'sp_cal_notif_anniv',       isset( $_POST['sp_cal_notif_anniv'] ) ? '1' : '0' );
+                update_option( 'sp_cal_notif_anniv_jours', max( 1, min( 30, intval( $_POST['sp_cal_notif_anniv_jours'] ?? 7 ) ) ) );
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-anniversaires&rappel_saved=1' ) ); exit;
+            }
+
             if ( $bloc !== 'couleurs' ) { wp_redirect( admin_url( 'admin.php?page=sp-cal-settings' ) ); exit; }
 
-            // Couleurs catégories
-            $colors = array();
-            if ( ! empty( $_POST['cat_color'] ) ) {
-                // cat_name[md5(cat)] = nom réel de la catégorie (champ caché dans le formulaire)
-                $cat_names = wp_unslash( (array) ( $_POST['cat_name'] ?? array() ) );
-                foreach ( $_POST['cat_color'] as $key => $color ) {
-                    $cat = sanitize_text_field( $cat_names[ $key ] ?? '' );
-                    if ( ! $cat ) continue;
-                    $colors[ $cat ] = array(
-                        'color' => sanitize_hex_color( $color ) ?: '#3B82F6',
-                        'icon'  => sanitize_text_field( wp_unslash( $_POST['cat_icon'][ $key ] ?? '' ) ),
-                    );
+            // Couleurs des cours : disciplines (noms fixes) et cours spéciaux (liste modifiable).
+            // Seuls ces noms sont gardés : les anciennes lignes en texte libre (TKD, Général…) disparaissent.
+            $noms    = wp_unslash( (array) ( $_POST['cat_name'] ?? array() ) );
+            $genres  = (array) ( $_POST['cat_genre'] ?? array() );
+            $origs   = wp_unslash( (array) ( $_POST['cat_orig'] ?? array() ) );
+            $icones  = wp_unslash( (array) ( $_POST['cat_icon'] ?? array() ) );
+            $anciens = get_option( 'sp_cal_cours_speciaux', null ) !== null ? SpCalPro_DB::cours_speciaux() : array();
+            $colors  = array();
+            $speciaux = array();
+            $gardes   = array();
+            $renommes = array();
+            foreach ( (array) ( $_POST['cat_color'] ?? array() ) as $key => $color ) {
+                $genre = sanitize_key( $genres[ $key ] ?? '' );
+                // Pas de virgule dans un nom : elle sépare les disciplines dans « categorie ».
+                $nom   = mb_substr( trim( str_replace( ',', ' ', sanitize_text_field( $noms[ $key ] ?? '' ) ) ), 0, 40 );
+                if ( $genre === 'discipline' ) {
+                    if ( ! in_array( $nom, SpCalPro_DB::DISCIPLINES_COLOREES, true ) ) continue;
+                } elseif ( $genre === 'special' ) {
+                    if ( $nom === '' || in_array( $nom, SpCalPro_DB::COURS_DISCIPLINES, true ) || isset( $colors[ $nom ] ) ) continue;
+                    $orig = sanitize_text_field( $origs[ $key ] ?? '' );
+                    if ( $orig !== '' ) {
+                        $gardes[] = $orig;
+                        if ( $orig !== $nom ) $renommes[ $orig ] = $nom;
+                    }
+                    $speciaux[] = $nom;
+                } else {
+                    continue;
+                }
+                $colors[ $nom ] = array(
+                    'color' => sanitize_hex_color( $color ) ?: SpCalPro_DB::COULEUR_COURS_DEFAUT,
+                    'icon'  => sanitize_text_field( $icones[ $key ] ?? '' ),
+                );
+            }
+            // Cours et créneaux qui portent un cours spécial renommé ou retiré.
+            foreach ( array( $this->db->table_events(), $tsl ) as $table ) {
+                foreach ( $renommes as $ancien => $nouveau ) {
+                    if ( in_array( $ancien, $anciens, true ) ) $wpdb->update( $table, array( 'categorie' => $nouveau ), array( 'categorie' => $ancien ) );
+                }
+                foreach ( array_diff( $anciens, $gardes ) as $retire ) {
+                    $wpdb->query( $wpdb->prepare( "UPDATE `$table` SET categorie = COALESCE(cours_discipline, '') WHERE categorie = %s", $retire ) );
                 }
             }
+            update_option( 'sp_cal_cours_speciaux', wp_json_encode( $speciaux ) );
             update_option( 'sp_cal_cat_colors', wp_json_encode( $colors ) );
             wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=cours&saved=1' ) ); exit;
         }
@@ -296,7 +330,7 @@ trait SpCalPro_Admin_Formulaires {
             $ages = $axe( 'slot_ages', SpCalPro_DB::COURS_AGES );
             $data['cours_discipline']     = implode( ',', $disc );
             $data['cours_age_categories'] = implode( ',', $ages );
-            $data['categorie']            = implode( ',', $disc );
+            $data['categorie']            = SpCalPro_DB::categorie_affichage( sanitize_text_field( wp_unslash( $_POST['slot_special'] ?? '' ) ), $disc );
             $id = intval( $_POST['slot_id'] ?? 0 );
             if ( $id ) $wpdb->update( $tsl, $data, array( 'id' => $id ) );
             else        $wpdb->insert( $tsl, $data );

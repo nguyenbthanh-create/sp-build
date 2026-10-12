@@ -566,6 +566,18 @@ trait SpCalPro_Admin_Equipe {
                         </td>
                     </tr>
                     <tr>
+                        <th>Cours spécial</th>
+                        <td>
+                            <select name="slot_special">
+                                <option value="">— Aucun (cours habituel) —</option>
+                                <?php foreach ( SpCalPro_DB::cours_speciaux() as $sp ) : ?>
+                                <option value="<?php echo esc_attr( $sp ); ?>" <?php selected( $ed['cat'], $sp ); ?>><?php echo esc_html( $sp ); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Un cours spécial a sa propre couleur dans le calendrier et le planning (liste et couleurs : Paramètres &gt; Cours &amp; couleurs). Cochez quand même sa discipline et son public.</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th>Pour qui</th>
                         <td>
                             <div class="sp-checks"><?php foreach ( SpCalPro_DB::COURS_AGES as $a ) : ?>

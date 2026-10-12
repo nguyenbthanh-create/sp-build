@@ -255,7 +255,8 @@ class SpCalPro_Ajax {
             'titre'                => sanitize_text_field( wp_unslash( $_POST['titre']       ?? ( $type === 'annulation' ? 'Annulation' : '' ) ) ),
             'cours_discipline'     => implode( ',', $disc_arr ),
             'cours_age_categories' => implode( ',', $age_arr ),
-            'categorie'            => implode( ',', $disc_arr ),
+            // Catégorie d'affichage : le cours spécial choisi (Paramètres > Cours & couleurs), sinon la discipline.
+            'categorie'            => SpCalPro_DB::categorie_affichage( sanitize_text_field( wp_unslash( $_POST['cours_special'] ?? '' ) ), $disc_arr ),
             'couleur'     => sanitize_hex_color(  $_POST['couleur']     ?? '#3B82F6' ) ?: '#3B82F6',
             'type'        => $type,
 			'niveau'      => in_array( $type, array('competition') ) ? sanitize_text_field( wp_unslash( $_POST['niveau'] ?? 'departemental' ) ) : 'departemental',

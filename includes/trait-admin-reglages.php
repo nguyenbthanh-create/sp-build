@@ -25,12 +25,6 @@ trait SpCalPro_Admin_Reglages {
         $cat_colors = json_decode( get_option( 'sp_cal_cat_colors', '{}' ), true ) ?: array();
 
         global $wpdb;
-        $cats = array_merge(
-            $this->db->get_categories_eleves(),
-            $wpdb->get_col( "SELECT DISTINCT categorie FROM {$this->db->table_events()} WHERE categorie != '' ORDER BY categorie" )
-        );
-        $cats = array_unique( $cats );
-        sort( $cats );
 
         $onglets = array(
             'cours'       => 'Cours & couleurs',
@@ -67,53 +61,116 @@ trait SpCalPro_Admin_Reglages {
 
         <?php if ( $onglet === 'cours' ) : ?>
 
-        <!-- COULEURS & ICÔNES DES CATÉGORIES -->
+        <!-- COULEURS DES COURS : disciplines + cours spéciaux (refonte du 12/10/2026, cf. SpCalPro_DB::style_categorie()) -->
+        <?php
+        // Tant que ce bloc n'a jamais été enregistré, on PROPOSE des couleurs (dont celles réglées autrefois
+        // sur « TKD » et « RENFO ») ; rien n'est appliqué au calendrier avant l'enregistrement.
+        $couleurs_enregistrees = get_option( 'sp_cal_cours_speciaux', null ) !== null;
+        $couleur_de = static function ( $nom, $proposee, $ancienne_cle = '' ) use ( $cat_colors, $couleurs_enregistrees ) {
+            if ( $couleurs_enregistrees ) return array( $cat_colors[ $nom ]['color'] ?? SpCalPro_DB::COULEUR_COURS_DEFAUT, $cat_colors[ $nom ]['icon'] ?? '' );
+            $ancienne = $ancienne_cle !== '' ? ( $cat_colors[ $ancienne_cle ]['color'] ?? '' ) : '';
+            return array( $ancienne !== '' ? $ancienne : $proposee, $cat_colors[ $ancienne_cle ]['icon'] ?? '' );
+        };
+        $lignes_couleur = array(
+            array( 'd0', 'discipline', 'Taekwondo',               $couleur_de( 'Taekwondo', '#1d4ed8', 'TKD' ) ),
+            array( 'd1', 'discipline', 'Renforcement musculaire', $couleur_de( 'Renforcement musculaire', '#7e22ce', 'RENFO' ) ),
+        );
+        $propositions = array( '#b91c1c', '#ea580c', '#0f766e', '#be185d', '#4d7c0f', '#0e7490' );
+        foreach ( SpCalPro_DB::cours_speciaux() as $i => $sp ) {
+            $lignes_couleur[] = array( 's' . $i, 'special', $sp, $couleur_de( $sp, $propositions[ $i % count( $propositions ) ] ) );
+        }
+        ?>
         <div class="sp-box">
-            <h2>🎨 Couleurs &amp; icônes des catégories</h2>
+            <h2>🎨 Couleurs des cours</h2>
+            <p class="description" style="margin-bottom:12px;">
+                Un cours prend la couleur de sa <strong>discipline</strong> ; un <strong>cours spécial</strong> a sa propre couleur, pour le repérer d'un coup d'œil
+                dans le calendrier et le planning public. Le public (Baby, Enfant, Ado/adulte, Tout âge) se choisit sur chaque cours et ne change pas la couleur.
+                Les examens, compétitions et autres événements gardent la couleur de leur type.
+            </p>
+            <?php if ( ! $couleurs_enregistrees ) : ?>
+            <div class="notice notice-info inline" style="margin:0 0 12px;"><p>Couleurs <strong>proposées</strong> — rien n'est appliqué tant que vous n'avez pas cliqué sur « Enregistrer les couleurs ».</p></div>
+            <?php endif; ?>
             <form method="post">
                 <?php wp_nonce_field( 'sp_cal_settings' ); ?>
                 <input type="hidden" name="sp_cal_bloc" value="couleurs">
-                <?php if ( empty($cats) ) : ?>
-                    <p class="sp-muted">Aucune catégorie trouvée (importez d'abord des élèves ou créez des événements).</p>
-                <?php else : ?>
-                <table class="wp-list-table widefat fixed striped" style="margin-bottom:16px;">
+                <table class="wp-list-table widefat fixed striped" id="sp-couleurs-table" style="max-width:900px;margin-bottom:10px;">
                     <thead><tr>
-                        <th style="width:200px;">Catégorie</th>
-                        <th style="width:120px;">Couleur</th>
-                        <th style="width:180px;">Icône</th>
+                        <th style="width:300px;">Cours</th>
+                        <th style="width:90px;">Couleur</th>
+                        <th style="width:120px;">Icône</th>
                         <th>Aperçu</th>
+                        <th style="width:50px;"></th>
                     </tr></thead>
                     <tbody>
-                    <?php foreach ( $cats as $cat ) :
-                        $key   = md5($cat);  // md5 = [0-9a-f] uniquement, safe pour ID HTML et jQuery
-                        $saved = $cat_colors[$cat] ?? array();
-                        $color = $saved['color'] ?? '#2271b1';
-                        $icon  = $saved['icon']  ?? '';
+                    <?php foreach ( $lignes_couleur as $l ) :
+                        list( $key, $genre, $nom, $style ) = $l;
+                        list( $color, $icon ) = $style;
                     ?>
-                    <tr>
-                        <td><strong><?php echo esc_html($cat); ?></strong></td>
-                        <!-- Champ caché pour retrouver le vrai nom de catégorie côté PHP -->
-                        <input type="hidden" name="cat_name[<?php echo esc_attr($key); ?>]" value="<?php echo esc_attr($cat); ?>">
-                        <td><input type="color" name="cat_color[<?php echo esc_attr($key); ?>]" value="<?php echo esc_attr($color); ?>"
-                            oninput="document.getElementById('prev_<?php echo esc_attr($key); ?>').style.background=this.value"></td>
+                    <tr class="sp-couleur-ligne">
                         <td>
-                            <input type="hidden" name="cat_icon[<?php echo esc_attr($key); ?>]" id="icon_input_<?php echo esc_attr($key); ?>" value="<?php echo esc_attr($icon); ?>">
-                            <button type="button" class="sp-emoji-btn button" data-key="<?php echo esc_attr($key); ?>" style="font-size:18px;min-width:44px;"><?php echo esc_html($icon ?: '＋'); ?></button>
-                            <?php if ($icon) echo '<button type="button" class="sp-emoji-clear button" data-key="' . esc_attr($key) . '" style="margin-left:4px;color:#b91c1c;">✕</button>'; ?>
+                            <input type="hidden" name="cat_genre[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $genre ); ?>">
+                            <?php if ( $genre === 'special' ) : ?>
+                                <input type="hidden" name="cat_orig[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $nom ); ?>">
+                                <input type="text" class="sp-couleur-nom" name="cat_name[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $nom ); ?>" maxlength="40" style="width:100%;" data-key="<?php echo esc_attr( $key ); ?>">
+                            <?php else : ?>
+                                <input type="hidden" name="cat_name[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $nom ); ?>">
+                                <strong><?php echo esc_html( $nom ); ?></strong> <span class="sp-muted">— discipline</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><input type="color" name="cat_color[<?php echo esc_attr( $key ); ?>]" value="<?php echo esc_attr( $color ); ?>"
+                            oninput="document.getElementById('prev_<?php echo esc_attr( $key ); ?>').style.background=this.value"></td>
+                        <td>
+                            <input type="hidden" name="cat_icon[<?php echo esc_attr( $key ); ?>]" id="icon_input_<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $icon ); ?>">
+                            <button type="button" class="sp-emoji-btn button" data-key="<?php echo esc_attr( $key ); ?>" style="font-size:18px;min-width:44px;"><?php echo esc_html( $icon ?: '＋' ); ?></button>
+                            <?php if ( $icon ) echo '<button type="button" class="sp-emoji-clear button" data-key="' . esc_attr( $key ) . '" style="margin-left:4px;color:#b91c1c;">✕</button>'; ?>
                         </td>
                         <td>
-                            <span id="prev_<?php echo esc_attr($key); ?>" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:12px;color:#fff;background:<?php echo esc_attr($color); ?>;">
-                                <span id="prev_icon_<?php echo esc_attr($key); ?>"><?php echo $icon ? esc_html($icon) . ' ' : ''; ?></span><?php echo esc_html($cat); ?>
+                            <span id="prev_<?php echo esc_attr( $key ); ?>" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:12px;color:#fff;background:<?php echo esc_attr( $color ); ?>;">
+                                <span id="prev_icon_<?php echo esc_attr( $key ); ?>"><?php echo $icon ? esc_html( $icon ) . ' ' : ''; ?></span><span class="sp-couleur-libelle"><?php echo esc_html( $nom ); ?></span>
                             </span>
                         </td>
+                        <td><?php if ( $genre === 'special' ) : ?><button type="button" class="button sp-couleur-suppr" title="Retirer ce cours spécial" style="color:#dc2626;padding:2px 6px;">✕</button><?php endif; ?></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
-                <?php endif; ?>
+                <button type="button" id="sp-couleur-ajouter" class="button" style="margin-bottom:6px;">+ Ajouter un cours spécial</button>
+                <p class="description" style="margin-bottom:14px;">
+                    Pour qu'un cours prenne la couleur d'un cours spécial, choisissez-le dans « Cours spécial » en modifiant le cours (calendrier) ou le créneau (page Créneaux).
+                    Renommer un cours spécial renomme aussi les cours qui le portent ; le retirer les fait revenir à la couleur de leur discipline.
+                </p>
 
                 <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les couleurs">
             </form>
+            <script>
+            (function($){
+                var n = 0, couleurs = <?php echo wp_json_encode( $propositions ); ?>;
+                $('#sp-couleur-ajouter').on('click', function(){
+                    var key = 'n' + (n++), color = couleurs[ $('#sp-couleurs-table tbody tr').length % couleurs.length ];
+                    var $tr = $(
+                        '<tr class="sp-couleur-ligne"><td>'
+                        + '<input type="hidden" name="cat_genre[' + key + ']" value="special">'
+                        + '<input type="hidden" name="cat_orig[' + key + ']" value="">'
+                        + '<input type="text" class="sp-couleur-nom" name="cat_name[' + key + ']" maxlength="40" style="width:100%;" data-key="' + key + '" placeholder="Nom du cours spécial">'
+                        + '</td><td><input type="color" name="cat_color[' + key + ']" value="' + color + '"></td>'
+                        + '<td><input type="hidden" name="cat_icon[' + key + ']" id="icon_input_' + key + '" value="">'
+                        + '<button type="button" class="sp-emoji-btn button" data-key="' + key + '" style="font-size:18px;min-width:44px;">＋</button></td>'
+                        + '<td><span id="prev_' + key + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:12px;color:#fff;background:' + color + ';">'
+                        + '<span id="prev_icon_' + key + '"></span><span class="sp-couleur-libelle"></span></span></td>'
+                        + '<td><button type="button" class="button sp-couleur-suppr" title="Retirer ce cours spécial" style="color:#dc2626;padding:2px 6px;">✕</button></td></tr>'
+                    );
+                    $tr.find('input[type=color]').on('input', function(){ $('#prev_' + key).css('background', this.value); });
+                    $('#sp-couleurs-table tbody').append($tr);
+                    $tr.find('.sp-couleur-nom').trigger('focus');
+                });
+                $(document).on('input', '.sp-couleur-nom', function(){
+                    $('#prev_' + $(this).data('key')).find('.sp-couleur-libelle').text( this.value );
+                });
+                $(document).on('click', '.sp-couleur-suppr', function(){
+                    $(this).closest('tr').remove();
+                });
+            })(jQuery);
+            </script>
         </div>
 
         <!-- MIGRATION DISCIPLINE / POUR QUI DES ÉVÉNEMENTS -->
@@ -811,23 +868,7 @@ trait SpCalPro_Admin_Reglages {
                         <td>
                             <input type="email" name="sp_cal_notif_email" class="regular-text"
                                    value="<?php echo esc_attr($notif_email); ?>">
-                            <p class="description">Reçoit toutes les notifications du club.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>🎂 Anniversaires</th>
-                        <td>
-                            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                                <input type="checkbox" name="sp_cal_notif_anniv" value="1" <?php checked($notif_anniv); ?>>
-                                Activer les rappels d'anniversaires
-                            </label>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span>Prévenir</span>
-                                <input type="number" name="sp_cal_notif_anniv_jours" min="1" max="30"
-                                       value="<?php echo esc_attr($notif_anniv_jours); ?>"
-                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
-                                <span>jours à l'avance</span>
-                            </div>
+                            <p class="description">Reçoit les alertes d'absences. Sert aussi d'adresse de secours au rappel d'anniversaires (page Anniversaires) si aucun encadrant n'a d'email.</p>
                         </td>
                     </tr>
                     <tr>
@@ -849,10 +890,6 @@ trait SpCalPro_Admin_Reglages {
                 </table>
                 <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
                     <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
-                    <button type="button" id="sp-notif-test-anniv" class="button"
-                            data-type="anniv" <?php echo !$notif_anniv ? 'disabled title="Activez d\'abord les anniversaires"' : ''; ?>>
-                        🎂 Tester anniversaires
-                    </button>
                     <button type="button" id="sp-notif-test-absences" class="button"
                             data-type="absences" <?php echo !$notif_absences ? 'disabled title="Activez d\'abord les absences"' : ''; ?>>
                         ⚠️ Tester absences
@@ -873,6 +910,43 @@ trait SpCalPro_Admin_Reglages {
                 ?>
             </p>
             <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Rappel des anniversaires à venir, envoyé aux entraîneurs et au bureau — page « Anniversaires »,
+     * sous les vœux personnels (deux envois différents : les vœux vont à l'adhérent le jour J).
+     */
+    public static function bloc_rappel_anniversaires() {
+        $actif = get_option( 'sp_cal_notif_anniv', '0' ) === '1';
+        $jours = intval( get_option( 'sp_cal_notif_anniv_jours', 7 ) );
+        ?>
+        <div class="sp-box">
+            <h2>Rappel aux entraîneurs et au bureau</h2>
+            <?php if ( isset( $_GET['rappel_saved'] ) ) echo '<div class="notice notice-success is-dismissible"><p>✅ Rappel enregistré.</p></div>'; ?>
+            <p class="description">
+                À ne pas confondre avec les vœux ci-dessus : ce rappel n'est pas envoyé aux adhérents. Chaque matin à 8 h,
+                les entraîneurs et les membres du bureau reçoivent la liste des anniversaires des jours à venir.
+            </p>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_settings' ); ?>
+                <input type="hidden" name="sp_cal_bloc" value="notif_anniv">
+                <p>
+                    <label><input type="checkbox" name="sp_cal_notif_anniv" value="1" <?php checked( $actif ); ?>> Envoyer le rappel</label>
+                    &nbsp;—&nbsp; prévenir
+                    <input type="number" name="sp_cal_notif_anniv_jours" min="1" max="30" value="<?php echo esc_attr( $jours ); ?>" style="width:60px;">
+                    jours à l'avance
+                </p>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
+                    <button type="button" id="sp-notif-test-anniv" class="button"
+                            data-type="anniv" <?php echo ! $actif ? 'disabled title="Activez d\'abord le rappel"' : ''; ?>>
+                        Envoyer le rappel maintenant
+                    </button>
+                    <span id="sp-notif-result" style="font-size:13px;color:#15803d;display:none;"></span>
+                </div>
+            </form>
         </div>
         <?php
     }

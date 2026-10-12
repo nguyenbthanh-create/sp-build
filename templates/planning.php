@@ -263,9 +263,9 @@ for ($w=0;$w<6;$w++) {
                         foreach ($occ_by_date[$ds] as $item) {
                             if ($item['heure_debut'] !== $h_debut || $item['heure_fin'] !== $h_fin) continue;
                             $cat   = $item['categorie'] ?? '';
-                            $saved = isset($cat_colors[$cat]) ? $cat_colors[$cat] : array();
-                            $color = $saved['color'] ?? '#3B82F6';
-                            $icon  = $saved['icon']  ?? '';
+                            $saved = SpCalPro_DB::style_categorie( $cat, $cat_colors );
+                            $color = $saved['color'];
+                            $icon  = $saved['icon'];
                             $is_annule = !empty($item['annul_id']);
                             $is_ponct  = !empty($item['ponctuel']);
                             $class = $is_annule ? 'sp-plan-event sp-plan-annule' : ($is_ponct ? 'sp-plan-event sp-plan-ponctuel' : 'sp-plan-event');
@@ -327,9 +327,9 @@ for ($w=0;$w<6;$w++) {
         if ($cats_week): ?>
         <div class="sp-planning-legend">
             <?php foreach (array_keys($cats_week) as $cat):
-                $saved = isset($cat_colors[$cat]) ? $cat_colors[$cat] : array();
-                $color = $saved['color'] ?? '#3B82F6';
-                $icon  = $saved['icon']  ?? '';
+                $saved = SpCalPro_DB::style_categorie( $cat, $cat_colors );
+                $color = $saved['color'];
+                $icon  = $saved['icon'];
             ?>
             <span class="sp-legend-item">
                 <span class="sp-legend-dot" style="background:<?php echo esc_attr($color); ?>;"></span>

@@ -50,6 +50,7 @@ class SpCalPro_Calendar {
             'nonce'       => wp_create_nonce( 'sp_cal_admin_nonce' ),
             'isAdmin'     => current_user_can( 'manage_options' ) ? '1' : '0',
             'catColors'   => get_option( 'sp_cal_cat_colors', '{}' ),
+            'coursSpeciaux' => SpCalPro_DB::cours_speciaux(),
             'palmaresUrl' => class_exists('SpCalPro_PalmaresFront')
                              ? SpCalPro_PalmaresFront::get_page_url()
                              : get_option( 'sp_cal_palmares_url', '' ),
