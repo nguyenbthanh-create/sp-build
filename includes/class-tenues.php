@@ -262,6 +262,12 @@ class SP_Cal_Tenues {
 
 	private function tailles(): array { return $this->reglages()['tailles']; }
 
+	/** Tailles réglées, pour les autres modules (liste du formulaire d'adhésion au renforcement). */
+	public static function tailles_reglees(): array {
+		$r = get_option( 'sp_tenue_reglages', [] );
+		return self::tailles_depuis_texte( is_array( $r ) ? ( $r['tailles'] ?? '' ) : '' );
+	}
+
 	private static function label( string $modele ): string {
 		return self::MODELES[ $modele ]['label'] ?? $modele;
 	}
