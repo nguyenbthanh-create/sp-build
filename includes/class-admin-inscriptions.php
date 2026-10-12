@@ -352,6 +352,7 @@ class SP_Cal_Inscriptions {
             );
             $ti = $this->db->table_event_inscriptions();
             echo '<div class="wrap"><h1>📋 Inscriptions aux événements</h1>';
+            SP_Cal_Menu::onglets_evenements( 'inscriptions' );
             if ( empty( $events ) ) {
                 echo '<p>Aucun événement avec inscriptions activées. Ouvrez un événement dans le calendrier et cochez "Inscriptions actives".</p>';
             } else {

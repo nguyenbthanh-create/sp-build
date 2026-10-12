@@ -147,7 +147,9 @@ class SP_Cal_Exam {
         }
         ?>
         <div class="wrap">
-            <h1>📅 Dates des grades — Import / Export</h1>
+            <h1>🥋 Passages de grade</h1>
+            <?php SP_Cal_Menu::onglets_grades( 'dates' ); ?>
+            <h2>📅 Dates des grades — Import / Export</h2>
             <?php if ( $msg ) : ?>
             <div class="<?php echo $nb_err ? 'notice notice-warning' : 'updated'; ?> is-dismissible"><p><?php echo esc_html( $msg ); ?></p>
                 <?php if ( ! empty( $details ) ) : ?>

@@ -296,7 +296,7 @@ class SP_Cal_Renouvellement {
 		$body .= "\nVous pouvez les relancer directement (téléphone, au club...), ou désactiver leurs "
 		       . "comptes — individuellement ou en une fois — depuis la page Adhésions : ça leur envoie "
 		       . "automatiquement le lien de renouvellement pré-rempli.\n\n";
-		$body .= "Voir la page Adhésions : " . admin_url( 'admin.php?page=sp-cal-licences' ) . "\n\n";
+		$body .= "Voir la page « Fin de saison & certificats » :" . admin_url( 'admin.php?page=sp-cal-licences' ) . "\n\n";
 		$body .= "-- \n{$club} (notification manuelle)";
 
 		foreach ( $bureau as $m ) {

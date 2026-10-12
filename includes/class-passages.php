@@ -647,10 +647,7 @@ class SP_Cal_Passages {
 			$this->page_passage( $p );
 		} else {
 			echo '<h1>🥋 Passages de grade</h1>';
-			echo '<nav class="nav-tab-wrapper">'
-				. '<a class="nav-tab' . ( $tab !== 'epreuves' ? ' nav-tab-active' : '' ) . '" href="' . esc_url( self::url() ) . '">Passages</a>'
-				. '<a class="nav-tab' . ( $tab === 'epreuves' ? ' nav-tab-active' : '' ) . '" href="' . esc_url( self::url( [ 'tab' => 'epreuves' ] ) ) . '">Épreuves transverses</a>'
-				. '</nav>';
+			SP_Cal_Menu::onglets_grades( $tab === 'epreuves' ? 'epreuves' : 'passages' );
 			$tab === 'epreuves' ? $this->page_epreuves() : $this->page_liste();
 		}
 		echo '</div>';

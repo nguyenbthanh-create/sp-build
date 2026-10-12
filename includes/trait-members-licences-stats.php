@@ -40,7 +40,7 @@ trait SP_Cal_Members_Licences_Stats {
         );
         ?>
         <div class="wrap sp-cal-wrap">
-        <h1>🪪 Adhésions</h1>
+        <h1>🪪 Fin de saison &amp; certificats</h1>
         <?php $this->notice_flash('saved', 'Date de fin de saison enregistrée.'); ?>
 
         <!-- Date fin de saison -->

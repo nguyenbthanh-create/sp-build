@@ -104,11 +104,7 @@ trait SpCalPro_Admin_Reglages {
                     <tr>
                         <th>Shortcodes</th>
                         <td>
-                            Planning hebdo : <code>[sp_cal_planning]</code><br>
-                            Prochains événements : <code>[sp_cal_evenements]</code><br>
-                            Fiche membre : <code>[sp_cal_fiche_membre]</code><br>
-                            Liste des élèves : <code>[sp_cal_eleves]</code><br>
-                            Palmarès public : <code>[sp_cal_palmares]</code>
+                            <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-shortcodes' ) ); ?>">Voir la page « Shortcodes »</a> : liste complète, options et pages qui les utilisent.
                         </td>
                     </tr>
                 </table>

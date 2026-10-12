@@ -18,6 +18,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-mail-queue.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-sondage-front.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-docs-adhesion.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-adherents-a-trier.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-menu.php';
 
 
 if ( ! function_exists( 'ordinal_fr' ) ) {
@@ -106,12 +107,14 @@ class SpCalPro_Admin {
         SP_Cal_IK_Cloture::get_instance( $this->db );
         SP_Cal_Mail_Queue::get_instance();
         SP_Cal_Sondage_Front::get_instance( $this->db );
+        SP_Cal_Menu::init();
     }
 
     /* ══════════════════════════════════════════════════════════
        MENU
     ══════════════════════════════════════════════════════════ */
 
+    // L'ordre d'affichage, les libellés et les intertitres du menu sont fixés dans class-menu.php.
     public function add_menu() {
         add_menu_page(
             'SP Calendar PRO', 'SP Calendar', SP_Cal_Roles::CAP_VOIR_PLANNING,
@@ -126,13 +129,14 @@ class SpCalPro_Admin {
         add_submenu_page( 'sp-cal-pro', 'Statistiques',   '📊 Statistiques','manage_options', 'sp-cal-stats',       array( $this, 'page_stats' ) );
         add_submenu_page( 'sp-cal-pro', 'Palmarès',       '🏆 Palmarès',    'manage_options', 'sp-cal-palmares',    array( $this, 'page_palmares' ) );
         add_submenu_page( 'sp-cal-pro', 'Paramètres',     'Paramètres',     'manage_options', 'sp-cal-settings',    array( $this, 'page_settings' ) );
-        add_submenu_page( 'sp-cal-pro', '📅 Dates grades','📅 Dates grades','manage_options', 'sp-cal-dates-grades',array( $this, 'page_dates_grades' ) );
+        // Dates des grades : hors menu, ouverte par un onglet de « Passages de grade » (class-menu.php)
+        add_submenu_page( null, 'Dates des grades', 'Dates des grades', 'manage_options', 'sp-cal-dates-grades', array( $this, 'page_dates_grades' ) );
         add_submenu_page( 'sp-cal-pro', '📡 Pointage QR','📡 Pointage QR', 'manage_options', 'sp-cal-pointage',    array( $this, 'page_pointage' ) );
         // Fiche élève : sous-page masquée (pas dans le menu, accessible via URL)
         add_submenu_page( null, 'Fiche élève', 'Fiche élève', SP_Cal_Roles::CAP_GESTION_ADHESIONS, 'sp-cal-fiche-eleve', array( $this, 'page_fiche_eleve' ) );
         // Impression en lot des cartes : accessible via menu Élèves
-        // Inscriptions événements : sous-page masquée
         add_submenu_page( 'sp-cal-pro', 'Inscriptions', '📋 Inscriptions', 'manage_options', 'sp-cal-inscriptions', array( $this, 'page_inscriptions' ) );
+        // Sondages : hors menu, ouverte par un onglet de « Inscriptions & sondages » (class-menu.php)
         add_submenu_page( null, 'Sondages', 'Sondages', 'manage_options', 'sp-cal-sondages', array( $this, 'page_sondages' ) );
     }
 

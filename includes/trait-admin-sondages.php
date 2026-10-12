@@ -40,6 +40,7 @@ trait SpCalPro_Admin_Sondages {
             );
 
             echo '<div class="wrap"><h1>🗳️ Sondages post-événement</h1>';
+            SP_Cal_Menu::onglets_evenements( 'sondages' );
 
             if ( empty( $sondages ) ) {
                 echo '<p>Aucun sondage créé. Ouvrez un événement dans le calendrier et créez des questions dans l\'onglet Sondage.</p>';
