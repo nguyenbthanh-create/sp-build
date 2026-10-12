@@ -245,6 +245,60 @@ trait SpCalPro_DB_Calendrier {
         return $dates;
     }
 
+    /** Fréquence d'un créneau en toutes lettres ('' pour un cours hebdomadaire : c'est le cas normal, on ne l'écrit pas). */
+    public static function libelle_frequence( $recurrence ) {
+        $recurrence = (string) $recurrence;
+        if ( $recurrence === 'biweekly' ) return '1 semaine sur 2';
+        if ( $recurrence === '3weekly' )  return '1 semaine sur 3';
+        if ( strpos( $recurrence, 'monthly_' ) === 0 ) {
+            $n = max( 1, intval( substr( $recurrence, 8 ) ) );
+            return $n === 1 ? '1 fois par mois' : 'tous les ' . $n . ' mois';
+        }
+        return '';
+    }
+
+    /**
+     * Prochaines séances des créneaux NON hebdomadaires (planning public : fréquence sur la
+     * pastille, fenêtre « prochaines dates », bloc sous le planning — 12/10/2026).
+     *
+     * @param string $depuis AAAA-MM-JJ, première date retenue (aujourd'hui).
+     * @param int    $jours  Profondeur de recherche.
+     * @param int    $max    Nombre de séances gardées par créneau (annulées comprises).
+     * @return array<int,array{slot_id:int,titre:string,horaire:string,categorie:string,public:string,frequence:string,seances:array<int,array{date:string,annule:bool}>}>
+     *         Triés par date de la prochaine séance maintenue.
+     */
+    public function prochaines_seances_creneaux( $depuis, $jours = 200, $max = 6 ) {
+        $fin  = gmdate( 'Y-m-d', strtotime( $depuis . ' 12:00:00 UTC' ) + intval( $jours ) * DAY_IN_SECONDS );
+        $liste = array();
+        foreach ( $this->get_slot_occurrences( $depuis, $fin ) as $o ) {
+            $frequence = self::libelle_frequence( $o['recurrence'] ?? 'weekly' );
+            if ( $frequence === '' ) continue;
+            $id = intval( $o['slot_id'] );
+            if ( ! isset( $liste[ $id ] ) ) {
+                $liste[ $id ] = array(
+                    'slot_id'   => $id,
+                    'titre'     => (string) $o['titre'],
+                    'horaire'   => trim( (string) $o['heure_debut'] . ( $o['heure_fin'] ? ' – ' . $o['heure_fin'] : '' ) ),
+                    'categorie' => (string) $o['categorie'],
+                    'public'    => str_replace( ',', ', ', (string) ( $o['cours_age_categories'] ?? '' ) ),
+                    'frequence' => $frequence,
+                    'seances'   => array(),
+                );
+            }
+            if ( count( $liste[ $id ]['seances'] ) < $max ) {
+                $liste[ $id ]['seances'][] = array( 'date' => (string) $o['date'], 'annule' => ! empty( $o['annul_id'] ) );
+            }
+        }
+        $prochaine = static function ( $c ) {
+            foreach ( $c['seances'] as $s ) if ( ! $s['annule'] ) return $s['date'];
+            return '9999-12-31';
+        };
+        usort( $liste, static function ( $a, $b ) use ( $prochaine ) {
+            return strcmp( $prochaine( $a ) . $a['horaire'], $prochaine( $b ) . $b['horaire'] );
+        } );
+        return array_values( $liste );
+    }
+
     private function build_occ( $slot, $date_str, $annul_id, $mat_id = null ) {
         return array(
             'slot_id'     => intval( $slot->id ),

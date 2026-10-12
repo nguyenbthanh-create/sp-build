@@ -58,6 +58,21 @@ endif;
 
 $all_occ = $sp_cal_db->get_slot_occurrences($start_m, $end_m);
 
+// Cours NON hebdomadaires (1 fois par mois, 1 semaine sur 2…) : leur fréquence est écrite sur la
+// pastille, un clic ouvre leurs prochaines dates, et un bloc sous le planning les rappelle même les
+// semaines où ils n'ont pas lieu (12/10/2026). Toujours calculé à partir d'aujourd'hui, quel que
+// soit le mois affiché.
+$sp_seances = array();
+foreach ( $sp_cal_db->prochaines_seances_creneaux( $today ) as $sp_c ) {
+    $sp_c['couleur']   = SpCalPro_DB::style_categorie( $sp_c['categorie'], $cat_colors )['color'];
+    $sp_c['prochaine'] = '';
+    foreach ( $sp_c['seances'] as $sp_i => $sp_s ) {
+        $sp_c['seances'][ $sp_i ]['libelle'] = date_i18n( 'l j F Y', strtotime( $sp_s['date'] . ' 12:00:00' ) );
+        if ( $sp_c['prochaine'] === '' && ! $sp_s['annule'] ) $sp_c['prochaine'] = $sp_c['seances'][ $sp_i ]['libelle'];
+    }
+    $sp_seances[ $sp_c['slot_id'] ] = $sp_c;
+}
+
 global $wpdb;
 $te       = $sp_cal_db->table_events();
 // Ponctuels VRAIS uniquement (slot_id IS NULL = pas une matérialisation de créneau récurrent)
@@ -275,8 +290,16 @@ for ($w=0;$w<6;$w++) {
                             // Couleur de catégorie exposée en variable CSS : le style sobre (teinte claire +
                             // liseré coloré) est défini dans la feuille du template ci-dessous.
                             $style = $is_annule ? '' : '--c:' . $color . ';';
+                            // Cours non hebdomadaire : fréquence affichée, et pastille cliquable s'il a des séances à venir.
+                            $freq  = ( $is_ponct || $is_annule ) ? '' : SpCalPro_DB::libelle_frequence( $item['recurrence'] ?? '' );
+                            $attrs = '';
+                            $id_cr = intval( $item['slot_id'] ?? 0 );
+                            if ( $freq !== '' && isset( $sp_seances[ $id_cr ] ) ) {
+                                $class .= ' sp-plan-cliquable';
+                                $attrs  = ' role="button" tabindex="0" data-sp-seances="' . $id_cr . '" title="Voir les prochaines dates"';
+                            }
                     ?>
-                    <div class="<?php echo $class; ?>" style="<?php echo esc_attr($style); ?>">
+                    <div class="<?php echo $class; ?>" style="<?php echo esc_attr($style); ?>"<?php echo $attrs; ?>>
                         <?php if ($is_annule): ?>
                             <span class="sp-plan-annule-tag">🚫 Annulé</span>
                             <span class="sp-plan-annule-titre"><?php echo esc_html($item['titre']); ?></span>
@@ -286,6 +309,7 @@ for ($w=0;$w<6;$w++) {
                                 <span class="sp-plan-label">⚡ <?php echo esc_html($item['titre']); ?></span>
                             <?php else: ?>
                                 <span class="sp-plan-label"><?php echo esc_html($item['titre']); ?></span>
+                                <?php if ( $freq !== '' ) echo '<span class="sp-plan-freq">' . esc_html( $freq ) . '</span>'; ?>
                             <?php endif; ?>
                             <?php if ( ! empty($item['document_url']) ) :
                                 // Compétition passée avec résultats → lien palmarès
@@ -369,6 +393,34 @@ for ($w=0;$w<6;$w++) {
 
     </div><!-- .sp-week-block -->
     <?php endforeach; // weeks ?>
+    <?php endif; ?>
+
+    <?php if ( $sp_seances ) : ?>
+    <!-- Cours non hebdomadaires : prochaine séance de chacun, toujours visible -->
+    <div class="sp-plan-speciaux">
+        <h3 class="sp-plan-speciaux-titre">Cours qui n'ont pas lieu chaque semaine</h3>
+        <ul class="sp-plan-speciaux-liste">
+        <?php foreach ( $sp_seances as $sp_c ) : ?>
+            <li style="--c:<?php echo esc_attr( $sp_c['couleur'] ); ?>;">
+                <span class="sp-plan-speciaux-nom"><?php echo esc_html( $sp_c['titre'] ); ?></span>
+                <span class="sp-plan-speciaux-info"><?php echo esc_html( $sp_c['frequence'] . ( $sp_c['horaire'] !== '' ? ' · ' . $sp_c['horaire'] : '' ) ); ?></span>
+                <span class="sp-plan-speciaux-date"><?php echo $sp_c['prochaine'] !== '' ? 'Prochaine séance : <strong>' . esc_html( $sp_c['prochaine'] ) . '</strong>' : 'Aucune séance maintenue à venir'; ?></span>
+                <button type="button" class="sp-plan-speciaux-btn" data-sp-seances="<?php echo intval( $sp_c['slot_id'] ); ?>">Toutes les dates</button>
+            </li>
+        <?php endforeach; ?>
+        </ul>
+    </div>
+
+    <div id="sp-plan-modal" hidden>
+        <div class="sp-plan-modal-boite" role="dialog" aria-modal="true" aria-labelledby="sp-plan-modal-titre">
+            <button type="button" class="sp-plan-modal-fermer" aria-label="Fermer">&times;</button>
+            <h3 id="sp-plan-modal-titre"></h3>
+            <p class="sp-plan-modal-info"></p>
+            <ul class="sp-plan-modal-dates"></ul>
+            <p class="sp-plan-modal-note">Dates données à titre indicatif : une séance peut être annulée ou déplacée, le planning fait foi.</p>
+        </div>
+    </div>
+    <script type="application/json" id="sp-plan-seances"><?php echo wp_json_encode( $sp_seances, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE ); ?></script>
     <?php endif; ?>
 
 </div><!-- #sp-planning-wrapper -->
@@ -457,6 +509,33 @@ for ($w=0;$w<6;$w++) {
 #sp-planning-wrapper .sp-legend-swatch { width:14px; height:14px; border-radius:2px; border:1px solid #d9d5d1; }
 #sp-planning-wrapper .sp-legend-sep { margin-left:6px; padding-left:18px; border-left:1px solid var(--sp-line); }
 
+/* Cours non hebdomadaires : fréquence sur la pastille, bloc sous le planning, fenêtre des dates */
+#sp-planning-wrapper .sp-plan-freq { display:block; font-size:10px; font-weight:400; color:var(--sp-muted); letter-spacing:.02em; margin-top:1px; }
+#sp-planning-wrapper .sp-plan-cliquable { cursor:pointer; }
+#sp-planning-wrapper .sp-plan-cliquable:hover,
+#sp-planning-wrapper .sp-plan-cliquable:focus { outline:1px solid var(--c); outline-offset:1px; }
+#sp-planning-wrapper .sp-plan-speciaux { border:1px solid var(--sp-line); border-radius:6px; background:#fff; padding:16px 18px; margin-bottom:26px; }
+#sp-planning-wrapper .sp-plan-speciaux-titre { font-family:Lato,sans-serif; font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--sp-ink); margin:0 0 10px; }
+#sp-planning-wrapper .sp-plan-speciaux-liste { list-style:none; margin:0; padding:0; }
+#sp-planning-wrapper .sp-plan-speciaux-liste li { --c:#8a8a8a; display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; border-left:3px solid var(--c); padding:8px 0 8px 12px; margin:0 0 6px; font-size:13px; }
+#sp-planning-wrapper .sp-plan-speciaux-nom { font-weight:700; }
+#sp-planning-wrapper .sp-plan-speciaux-info { color:var(--sp-muted); font-size:12px; }
+#sp-planning-wrapper .sp-plan-speciaux-date { flex:1 1 220px; }
+#sp-planning-wrapper .sp-plan-speciaux-btn { background:transparent; color:var(--sp-muted); border:1px solid #d9d5d1; border-radius:20px; padding:5px 12px; font-size:12px; cursor:pointer; }
+#sp-planning-wrapper .sp-plan-speciaux-btn:hover { border-color:var(--sp-red); color:var(--sp-red); background:transparent; }
+#sp-plan-modal { position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+#sp-plan-modal[hidden] { display:none; }
+#sp-plan-modal .sp-plan-modal-boite { position:relative; background:#fff; color:#222; border-radius:8px; width:420px; max-width:100%; max-height:88vh; overflow:auto; padding:22px 24px; box-shadow:0 8px 40px rgba(0,0,0,.25); border-top:4px solid var(--c,#D4000F); }
+#sp-plan-modal h3 { margin:0 28px 4px 0; font-size:18px; }
+#sp-plan-modal .sp-plan-modal-info { margin:0 0 14px; font-size:13px; color:#6b6b6b; }
+#sp-plan-modal .sp-plan-modal-dates { list-style:none; margin:0 0 14px; padding:0; }
+#sp-plan-modal .sp-plan-modal-dates li { padding:8px 0; border-bottom:1px solid #eeebe8; font-size:14px; }
+#sp-plan-modal .sp-plan-modal-dates li::first-letter { text-transform:uppercase; }
+#sp-plan-modal .sp-plan-modal-dates li.sp-annulee { color:#8a1c1c; }
+#sp-plan-modal .sp-plan-modal-dates li.sp-annulee span { text-decoration:line-through; opacity:.6; }
+#sp-plan-modal .sp-plan-modal-note { margin:0; font-size:11px; color:#6b6b6b; }
+#sp-plan-modal .sp-plan-modal-fermer { position:absolute; top:10px; right:12px; background:none; border:0; font-size:26px; line-height:1; color:#6b6b6b; cursor:pointer; padding:4px 8px; }
+
 @media (max-width:640px) {
     #sp-planning-wrapper .sp-planning-title { font-size:17px; letter-spacing:.1em; }
     #sp-planning-wrapper .sp-week-header { padding:10px 14px; }
@@ -474,4 +553,46 @@ function spTogglePast(btn){
 }
 // Toutes les semaines du mois sont visibles par défaut — le bouton permet de
 // masquer les semaines déjà passées pour qui préfère un affichage plus court.
+
+// Fenêtre « prochaines dates » d'un cours non hebdomadaire (pastille ou bouton du bloc).
+(function(){
+    var source = document.getElementById('sp-plan-seances'), modal = document.getElementById('sp-plan-modal');
+    if (!source || !modal) return;
+    var cours = {};
+    try { cours = JSON.parse(source.textContent || '{}'); } catch (e) { return; }
+    document.body.appendChild(modal); // hors des blocs du thème, pour que la fenêtre couvre bien tout l'écran
+    var dernier = null;
+    function ouvrir(id, origine) {
+        var c = cours[id];
+        if (!c) return;
+        dernier = origine || null;
+        modal.querySelector('.sp-plan-modal-boite').style.setProperty('--c', c.couleur || '#D4000F');
+        modal.querySelector('#sp-plan-modal-titre').textContent = c.titre;
+        modal.querySelector('.sp-plan-modal-info').textContent = [c.frequence, c.horaire, c.public ? 'Pour : ' + c.public : ''].filter(Boolean).join(' · ');
+        var ul = modal.querySelector('.sp-plan-modal-dates');
+        ul.textContent = '';
+        (c.seances || []).forEach(function(s){
+            var li = document.createElement('li'), sp = document.createElement('span');
+            sp.textContent = s.libelle || s.date;
+            li.appendChild(sp);
+            if (s.annule) { li.className = 'sp-annulee'; li.appendChild(document.createTextNode(' — annulée')); }
+            ul.appendChild(li);
+        });
+        modal.hidden = false;
+        modal.querySelector('.sp-plan-modal-fermer').focus();
+    }
+    function fermer() { modal.hidden = true; if (dernier && dernier.focus) dernier.focus(); }
+    document.addEventListener('click', function(e){
+        if (!e.target.closest) return;
+        if (e.target.closest('.sp-plan-doc-link')) return; // lien du document : comportement normal
+        var el = e.target.closest('[data-sp-seances]');
+        if (el) { ouvrir(el.getAttribute('data-sp-seances'), el); return; }
+        if (e.target === modal || e.target.closest('.sp-plan-modal-fermer')) fermer();
+    });
+    document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && !modal.hidden) { fermer(); return; }
+        var el = e.target.closest ? e.target.closest('.sp-plan-cliquable') : null;
+        if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ouvrir(el.getAttribute('data-sp-seances'), el); }
+    });
+})();
 </script>

@@ -381,6 +381,14 @@ Demande de l'utilisateur : « supprime ce qui ne sert à rien ».
 - **Décisions de l'utilisateur** : pas de rappel d'anniversaires aux encadrants (ils ont la liste dans leur application) — laissé décoché ; ancien créneau « TKD combat » supprimé par lui ; menu vu par un compte secrétaire et personnalisation des vœux en attente.
 - **Pas supprimé, faute d'être sûr que c'est inutile** : extension « SP Pointage QR » (désactivée ; à supprimer depuis Extensions une fois un vrai scan de carte réussi avec sp_build seul).
 
+## 12/10/2026 — Planning public : fréquence des cours non hebdomadaires et prochaines dates (codé, À TESTER sur le site de test)
+
+Demande de l'utilisateur : sur `[sp_cal_planning]`, rien ne distinguait un cours mensuel (prépa Dan, Combat, Démo/Freestyle le samedi) d'un cours hebdomadaire.
+- **Sur la pastille** d'un créneau non hebdomadaire : sa fréquence en toutes lettres (`SpCalPro_DB::libelle_frequence()` — « 1 fois par mois », « 1 semaine sur 2 », « tous les 2 mois » ; rien pour un cours hebdomadaire). Le mot « bi-mensuel », ambigu, est évité.
+- **Au clic** (ou Entrée) sur cette pastille : fenêtre avec les 6 prochaines séances, celles annulées barrées (`prochaines_seances_creneaux()`, `trait-db-calendrier.php` ; données dans un bloc JSON, aucune requête supplémentaire au clic).
+- **Sous le planning**, toujours visible quel que soit le mois affiché : bloc « Cours qui n'ont pas lieu chaque semaine » — une ligne par créneau (couleur, fréquence, horaire, prochaine séance maintenue, bouton « Toutes les dates »). C'est lui qui rend l'information trouvable les semaines sans pastille.
+- Concerne tous les créneaux non hebdomadaires, donc aussi « TKD enfants confirmés » (1 semaine sur 2). Tout est dans `templates/planning.php` ; `/app/` et le calendrier de gestion ne changent pas.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
