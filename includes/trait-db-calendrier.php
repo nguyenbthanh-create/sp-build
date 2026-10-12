@@ -169,7 +169,12 @@ trait SpCalPro_DB_Calendrier {
 
                 // Référence fixe pour bi/3weekly : date_debut si dispo,
                 // sinon la première occurrence du slot dans la fenêtre courante
-                $ref_biweekly = $dd ?: clone $d;
+                $ref_biweekly = $dd ? clone $dd : clone $d;
+                // La première séance est le premier jour du créneau à partir de la date de début : si
+                // celle-ci tombe un autre jour (début saisi un lundi pour un cours du samedi), compter
+                // depuis elle ne tombait jamais sur un multiple de 14 jours et le cours n'apparaissait nulle part.
+                $decalage_ref = ( $jour - intval( $ref_biweekly->format( 'N' ) ) + 7 ) % 7;
+                if ( $decalage_ref ) $ref_biweekly->modify( "+{$decalage_ref} days" );
 
                 while ( $d <= $e_dt ) {
                     if ( $dd && $d < $dd ) { $d->modify( '+7 days' ); continue; }
