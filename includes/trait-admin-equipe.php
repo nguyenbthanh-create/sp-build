@@ -598,7 +598,7 @@ trait SpCalPro_Admin_Equipe {
                         <th>Date de début</th>
                         <td>
                             <input type="date" name="slot_date_debut" id="slot-date-debut" value="<?php echo esc_attr($ed['dd']); ?>" class="sp-input" style="width:160px;">
-                            <p class="description">Requise pour biweekly, 3weekly et mensuel. Définit la semaine de référence.</p>
+                            <p class="description">Requise pour « 1 semaine / 2 », « 1 semaine / 3 » et les récurrences mensuelles : c'est la première séance. Un créneau mensuel revient le même jour de la semaine, au même rang dans le mois (première séance le 1<sup>er</sup> samedi d'octobre → le 1<sup>er</sup> samedi de chaque mois).</p>
                         </td>
                     </tr>
                     <tr>

@@ -360,6 +360,12 @@ Principe retenu par l'utilisateur : Paramètres = la pratique du sport ; l'admin
 - **Rappel d'anniversaires aux encadrants** (`sp_cal_notif_anniv`, liste des anniversaires à venir envoyée aux entraîneurs et au bureau) : déplacé de « Notifications automatiques » vers la page **Anniversaires**, sous les vœux personnels (`SpCalPro_Admin::bloc_rappel_anniversaires()`, bloc `notif_anniv`). Il était confondu avec les vœux (envoyés à l'adhérent le jour J, actifs en prod) ; lui est décoché en prod. « Notifications automatiques » ne garde que l'alerte d'absences.
 - **Reporté à la demande de l'utilisateur** : personnalisation des 4 messages de vœux (mineur / majeur × jour J / en retard, textes en dur dans `SP_Cal_Anniversaires::message_voeux()`) — petit chantier, zones de texte + mots-clés `{prenom}` `{age}` `{date}` `{club}`.
 
+## 12/10/2026 — Créneaux mensuels : même jour de la semaine, plus le même numéro de jour (codé, À DÉPLOYER)
+
+- **Signalé par l'utilisateur** : le créneau « TKD prépa Dan » (samedi, « chaque mois », début 03/10/2026) n'apparaissait pas. **Cause** : `get_slot_occurrences()` répétait le numéro du jour (`+1 month` depuis la date de début) → mardi 03/11, jeudi 03/12, dimanche 03/01 : jamais un samedi. Rien à voir avec le chevauchement de deux mois dans la grille.
+- **Correction** : `SpCalPro_DB::dates_mensuelles()` (`trait-db-calendrier.php`) — même jour de la semaine (celui du créneau) et même rang dans le mois que la première séance : 1er samedi → 07/11, 05/12, 02/01… ; un mois sans 5e samedi prend le dernier. 6 tests (`outils/tests/CreneauxMensuelsTest.php`). Concerne en prod les 3 créneaux mensuels créés le 12/10 (prépa Dan, Combat, Démo/Freestyle) ; la séance du 03/10 ne bouge pas.
+- Page Créneaux : pastille de chaque créneau à la couleur du cours + nom du cours spécial (`4236aa8`, en prod).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

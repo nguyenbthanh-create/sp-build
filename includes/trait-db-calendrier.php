@@ -156,15 +156,10 @@ trait SpCalPro_DB_Calendrier {
             if ( strpos( $rec, 'monthly_' ) === 0 ) {
                 // ── Mensuel ──────────────────────────────────────────
                 if ( ! $dd ) continue;
-                $n = max( 1, intval( substr( $rec, 8 ) ) );
-                $d = clone $dd;
-                while ( $d <= $e_dt ) {
-                    if ( $d >= $s_dt && ( ! $df || $d <= $df ) ) {
-                        $ds  = $d->format( 'Y-m-d' );
-                        $key = $ds . '_' . $slot->id;
-                        $out[] = $this->build_occ( $slot, $ds, $annul_map[$key] ?? null, $mat_map[$key] ?? null );
-                    }
-                    $d->modify( "+{$n} months" );
+                $dates = self::dates_mensuelles( $dd->format( 'Y-m-d' ), $jour, intval( substr( $rec, 8 ) ), $start_str, $end_str, $df ? $df->format( 'Y-m-d' ) : '' );
+                foreach ( $dates as $ds ) {
+                    $key   = $ds . '_' . $slot->id;
+                    $out[] = $this->build_occ( $slot, $ds, $annul_map[$key] ?? null, $mat_map[$key] ?? null );
                 }
             } else {
                 // ── Hebdo / bihebdo / 3 semaines ─────────────────────
@@ -206,6 +201,48 @@ trait SpCalPro_DB_Calendrier {
             return $c !== 0 ? $c : strcmp( $a['heure_debut'], $b['heure_debut'] );
         } );
         return $out;
+    }
+
+    /**
+     * Dates d'un créneau mensuel comprises entre $du et $au (incluses).
+     *
+     * Règle (12/10/2026) : même JOUR DE LA SEMAINE et même RANG dans le mois que la première
+     * séance — un créneau du samedi commencé le 03/10/2026 (1er samedi) revient le 1er samedi
+     * de chaque mois (07/11, 05/12…). Avant, on répétait le numéro du jour (le 3 de chaque
+     * mois), qui tombait un mardi, un jeudi, un dimanche… La première séance est le premier
+     * jour $jour à partir de $date_debut ; un mois sans 5e samedi prend le dernier.
+     *
+     * @param string $date_debut AAAA-MM-JJ, début du créneau.
+     * @param int    $jour       Jour de la semaine du créneau, 1 (lundi) à 7 (dimanche).
+     * @param int    $pas        Tous les $pas mois.
+     * @param string $date_fin   AAAA-MM-JJ, fin du créneau ('' = sans fin).
+     * @return string[] Dates AAAA-MM-JJ croissantes.
+     */
+    public static function dates_mensuelles( $date_debut, $jour, $pas, $du, $au, $date_fin = '' ) {
+        $premiere = new DateTime( substr( (string) $date_debut, 0, 10 ) );
+        $jour     = intval( $jour );
+        if ( $jour < 1 || $jour > 7 ) $jour = intval( $premiere->format( 'N' ) );
+        $decalage = ( $jour - intval( $premiere->format( 'N' ) ) + 7 ) % 7;
+        if ( $decalage ) $premiere->modify( "+{$decalage} days" );
+
+        $rang     = intdiv( intval( $premiere->format( 'j' ) ) - 1, 7 ) + 1;   // 1 = premier … 5 = cinquième
+        $pas      = max( 1, intval( $pas ) );
+        $date_fin = substr( (string) $date_fin, 0, 10 );
+        $a        = intval( $premiere->format( 'Y' ) );
+        $m        = intval( $premiere->format( 'n' ) );
+        $dates    = array();
+
+        for ( $i = 0; $i < 1200; $i++ ) {
+            $premier_du_mois = new DateTime( sprintf( '%04d-%02d-01', $a, $m ) );
+            $j = 1 + ( ( $jour - intval( $premier_du_mois->format( 'N' ) ) + 7 ) % 7 ) + 7 * ( $rang - 1 );
+            if ( $j > intval( $premier_du_mois->format( 't' ) ) ) $j -= 7;
+            $ds = sprintf( '%04d-%02d-%02d', $a, $m, $j );
+            if ( $ds > $au || ( $date_fin !== '' && $ds > $date_fin ) ) break;
+            if ( $ds >= $du ) $dates[] = $ds;
+            $m += $pas;
+            while ( $m > 12 ) { $m -= 12; $a++; }
+        }
+        return $dates;
     }
 
     private function build_occ( $slot, $date_str, $annul_id, $mat_id = null ) {
