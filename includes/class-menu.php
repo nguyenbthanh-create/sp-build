@@ -128,7 +128,7 @@ class SP_Cal_Menu {
 	public static function styles(): void {
 		echo '<style>'
 			. '#adminmenu .wp-submenu li.sp-cal-menu-titre a,#adminmenu .wp-submenu li.sp-cal-menu-titre a:hover,#adminmenu .wp-submenu li.sp-cal-menu-titre a:focus{'
-			. 'pointer-events:none;cursor:default;box-shadow:none;color:inherit;opacity:.55;font-size:11px;font-weight:600;'
+			. 'pointer-events:none;cursor:default;box-shadow:none;color:#72aee6 !important;font-size:11px;font-weight:600;'
 			. 'text-transform:uppercase;letter-spacing:.06em;margin-top:6px;padding-top:9px;padding-bottom:2px;'
 			. 'border-top:1px solid rgba(255,255,255,.12);}'
 			. '</style>';
@@ -224,13 +224,9 @@ class SP_Cal_Menu {
 				. '</tr></thead><tbody>';
 			foreach ( $shortcodes as $tag => [ $role, $options ] ) {
 				$code  = '[' . $tag . ']';
-				$actif = shortcode_exists( $tag );
+				// Pas de test shortcode_exists() : certains ne sont déclarés que sur les pages publiques.
 				echo '<tr><td><code>' . esc_html( $code ) . '</code>';
-				if ( $actif ) {
-					echo ' <button type="button" class="button button-small sp-sc-copier" data-code="' . esc_attr( $code ) . '">Copier</button>';
-				} else {
-					echo '<br><em style="color:#b45309;">Extension inactive</em>';
-				}
+				echo ' <button type="button" class="button button-small sp-sc-copier" data-code="' . esc_attr( $code ) . '">Copier</button>';
 				echo '</td><td>' . esc_html( $role ) . '</td><td>' . ( $options !== '' ? esc_html( $options ) : '—' ) . '</td><td>';
 				$pages = self::pages_utilisant( $tag );
 				if ( ! $pages ) echo '—';
