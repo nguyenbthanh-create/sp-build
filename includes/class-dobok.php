@@ -233,6 +233,8 @@ class SP_Cal_Dobok {
 	public function add_menu(): void {
 		// Pastille du menu : demandes réservées / retours attendus, à traiter au club.
 		$n     = $this->front_pret() && current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ? $this->nb_demandes_a_traiter() : 0;
+		// Même pastille pour les demandes de tenues du renforcement musculaire (class-tenues.php).
+		if ( current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) $n += SP_Cal_Tenues::get_instance( $this->db )->nb_demandes_a_traiter();
 		$titre = '🥋 Doboks' . ( $n ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '' );
 		add_submenu_page( 'sp-cal-pro', 'Doboks', $titre, SP_Cal_Roles::CAP_GESTION_ADHESIONS, self::PAGE, [ $this, 'render_page' ] );
 	}

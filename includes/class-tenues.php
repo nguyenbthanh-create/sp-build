@@ -1,8 +1,11 @@
 <?php
 /**
- * Tenues du renforcement musculaire prêtées par le club — étape 1 (12/10/2026) : côté bureau.
- * Besoin de commande, stock, réception des commandes, remise, restitution, journal.
- * Étape 2 (à venir) : bloc « Ma tenue » sur la fiche de l'adhérent, avec ses demandes.
+ * Tenues du renforcement musculaire prêtées par le club (12/10/2026).
+ * Étape 1, côté bureau : besoin de commande, stock, réception des commandes, remise, restitution, journal.
+ * Étape 2, côté adhérent : bloc « Ma tenue » sur sa fiche (lien ?token=) — demande de changement de
+ * taille, de remplacement ou de restitution ; la pièce souhaitée est aussitôt RÉSERVÉE si le stock
+ * le permet, sinon la demande attend et sera réservée à l'arrivée d'une commande ou d'un retour.
+ * Le bureau traite les demandes dans l'onglet « Demandes » (échange enregistré en une seule fois).
  *
  * Même principe que les doboks (class-dobok.php) : AUCUN compteur n'est stocké, tout est déduit
  * d'un journal de mouvements — chaque ligne porte son effet sur le stock du club (mvt_stock) et
@@ -32,7 +35,7 @@ class SP_Cal_Tenues {
 	private static ?self $instance = null;
 	private $db;
 
-	const SCHEMA_VERSION = '1';
+	const SCHEMA_VERSION = '2';
 	const OBJET          = 'tenues';   // ?page=sp-cal-dobok&objet=tenues
 
 	const MODELES = [
@@ -67,6 +70,21 @@ class SP_Cal_Tenues {
 
 	const TAILLES_DEFAUT = [ 'XS', 'S', 'M', 'L', 'XL', 'XXL' ];
 
+	// Nature d'une demande d'adhérent → motif de la restitution qui la solde.
+	const NATURES = [
+		'taille'       => [ 'label' => 'Changement de taille', 'motif' => 'taille' ],
+		'remplacement' => [ 'label' => 'Remplacement (abîmé)', 'motif' => 'remplacement' ],
+		'restitution'  => [ 'label' => 'Restitution',          'motif' => 'retour' ],
+	];
+
+	const STATUTS = [
+		'ouverte'    => 'Réservée / à traiter',
+		'en_attente' => 'En attente de stock',
+		'terminee'   => 'Terminée',
+		'refusee'    => 'Refusée',
+		'annulee'    => 'Annulée',
+	];
+
 	public static function get_instance( $db = null ): self {
 		if ( self::$instance === null ) self::$instance = new self( $db );
 		return self::$instance;
@@ -77,9 +95,15 @@ class SP_Cal_Tenues {
 
 		SP_Cal_Schema::enregistrer( 'Tenues renfo', [ $this, 'maybe_create_tables' ] );
 
-		foreach ( [ 'remise', 'restitution', 'perte', 'commande', 'supprimer_lot', 'inventaire', 'reforme', 'supprimer_mvt', 'reglages' ] as $a ) {
+		foreach ( [ 'remise', 'restitution', 'perte', 'commande', 'supprimer_lot', 'inventaire', 'reforme', 'supprimer_mvt', 'reglages',
+		            'dem_terminer', 'dem_refuser', 'dem_annuler' ] as $a ) {
 			add_action( 'admin_post_sp_tenue_' . $a, [ $this, 'handle_' . $a ] );
 		}
+
+		// Fiche adhérent (lien ?token=) : bloc « Ma tenue », après « Mes doboks » (priorité 20), et
+		// traitement de ses formulaires avant l'affichage de la fiche (comme les doboks).
+		add_action( 'template_redirect',               [ $this, 'handle_front' ], 5 );
+		add_action( 'sp_cal_fiche_membre_apres_grade', [ $this, 'render_bloc_adherent' ], 20 );
 	}
 
 	// ══════════════════════════════════════════════════════════════
@@ -87,6 +111,7 @@ class SP_Cal_Tenues {
 	// ══════════════════════════════════════════════════════════════
 	private function t_lots(): string { global $wpdb; return $wpdb->prefix . 'sp_cal_tenue_lots'; }
 	private function t_mvt(): string  { global $wpdb; return $wpdb->prefix . 'sp_cal_tenue_mouvements'; }
+	private function t_dem(): string  { global $wpdb; return $wpdb->prefix . 'sp_cal_tenue_demandes'; }
 
 	private function table_eleves(): string {
 		global $wpdb;
@@ -96,7 +121,13 @@ class SP_Cal_Tenues {
 	private function tables_ok(): bool {
 		global $wpdb;
 		return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_mvt() ) ) === $this->t_mvt()
-			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_lots() ) ) === $this->t_lots();
+			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_lots() ) ) === $this->t_lots()
+			&& $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $this->t_dem() ) ) === $this->t_dem();
+	}
+
+	/** Les tables existent dans la version attendue : le bloc de la fiche adhérent peut s'afficher. */
+	private function front_pret(): bool {
+		return get_option( 'sp_tenue_schema_version' ) === self::SCHEMA_VERSION;
 	}
 
 	/** Même garde de version que les doboks : la version n'est notée que si les tables existent vraiment. */
@@ -140,6 +171,27 @@ class SP_Cal_Tenues {
 			PRIMARY KEY  (id),
 			KEY eleve_id (eleve_id),
 			KEY ref (modele,taille)
+		) $charset;" );
+
+		dbDelta( "CREATE TABLE {$this->t_dem()} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			eleve_id mediumint(9) NOT NULL DEFAULT 0,
+			piece varchar(10) NOT NULL DEFAULT '',
+			nature varchar(20) NOT NULL DEFAULT '',
+			rendu_modele varchar(20) NOT NULL DEFAULT '',
+			rendu_taille varchar(8) NOT NULL DEFAULT '',
+			souhait_modele varchar(20) NOT NULL DEFAULT '',
+			souhait_taille varchar(8) NOT NULL DEFAULT '',
+			statut varchar(20) NOT NULL DEFAULT 'ouverte',
+			note_adherent varchar(255) NOT NULL DEFAULT '',
+			note_bureau varchar(255) NOT NULL DEFAULT '',
+			saison varchar(20) NOT NULL DEFAULT '',
+			created_at datetime NOT NULL,
+			updated_at datetime DEFAULT NULL,
+			traite_par bigint(20) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			KEY eleve_id (eleve_id),
+			KEY statut (statut)
 		) $charset;" );
 
 		if ( $this->tables_ok() ) {
@@ -194,6 +246,25 @@ class SP_Cal_Tenues {
 			case 'reforme':     return [ -$qte, 0 ];
 		}
 		return [ 0, 0 ];
+	}
+
+	/**
+	 * Statut d'une nouvelle demande : une restitution est toujours « à traiter » ; une pièce
+	 * souhaitée est réservée s'il en reste une de disponible, sinon la demande attend le stock.
+	 */
+	public static function statut_initial( string $nature, int $disponible ): string {
+		if ( $nature === 'restitution' ) return 'ouverte';
+		return $disponible > 0 ? 'ouverte' : 'en_attente';
+	}
+
+	/** « Changement de taille : Haut femme M → Haut femme L ». */
+	public static function libelle_demande( $d ): string {
+		$nature = self::NATURES[ $d->nature ]['label'] ?? (string) $d->nature;
+		$rendu  = $d->rendu_modele !== ''   ? self::label( $d->rendu_modele ) . ' ' . $d->rendu_taille : '';
+		$voulu  = $d->souhait_modele !== '' ? self::label( $d->souhait_modele ) . ' ' . $d->souhait_taille : '';
+		if ( $d->nature === 'restitution' ) return $nature . ' : ' . $rendu;
+		if ( $d->nature === 'remplacement' ) return $nature . ' : ' . $rendu;
+		return $nature . ' : ' . $rendu . ' → ' . $voulu;
 	}
 
 	/** Les adhérents du renforcement musculaire (colonne categorie_saisie : « RENFO » ou ancien libellé libre). */
@@ -257,6 +328,10 @@ class SP_Cal_Tenues {
 		return [
 			'tailles'      => self::tailles_depuis_texte( $r['tailles'] ?? implode( ',', self::TAILLES_DEFAUT ) ),
 			'seuil_alerte' => max( 0, (int) ( $r['seuil_alerte'] ?? 1 ) ),
+			'demandes_on'  => (int) ( $r['demandes_on'] ?? 1 ),
+			'mail_bureau'  => (int) ( $r['mail_bureau'] ?? 1 ),
+			'email_bureau' => (string) ( $r['email_bureau'] ?? '' ),
+			'mail_famille' => (int) ( $r['mail_famille'] ?? 1 ),
 		];
 	}
 
@@ -423,7 +498,18 @@ class SP_Cal_Tenues {
 		if ( ! $id || $modele === '' || $taille === '' || ! isset( self::ETATS[ $etat ] ) || ! isset( self::MOTIFS[ $motif ] ) ) $this->retour( 'err_saisie', [ 'open' => $id ] );
 		if ( ! $this->detient( $id, $modele, $taille ) ) $this->retour( 'err_detenu', [ 'open' => $id ] );
 		$ok = $this->ajouter_mouvement( 'restitution', $modele, $taille, 1, [ 'eleve_id' => $id, 'etat' => $etat, 'motif' => $motif, 'note' => $this->post_note() ] );
-		$this->retour( $ok ? 'ok_restitution' : 'err_bdd', [ 'open' => $id ] );
+		if ( ! $ok ) $this->retour( 'err_bdd', [ 'open' => $id ] );
+
+		// Échange en une seule saisie : la même pièce, dans une autre taille, remise aussitôt.
+		$echange = $this->post_taille( 'echange_taille' );
+		if ( $echange !== '' && $echange !== $taille ) {
+			if ( ! $this->ajouter_mouvement( 'remise', $modele, $echange, 1, [ 'eleve_id' => $id, 'note' => $this->post_note() ] ) ) $this->retour( 'err_bdd', [ 'open' => $id ] );
+			$negatif = $this->stock_de( $modele, $echange ) < 0;
+			$this->promouvoir_attentes();
+			$this->retour( $negatif ? 'ok_echange_negatif' : 'ok_echange', [ 'open' => $id ] );
+		}
+		$this->promouvoir_attentes();
+		$this->retour( 'ok_restitution', [ 'open' => $id ] );
 	}
 
 	public function handle_perte(): void {
@@ -464,7 +550,8 @@ class SP_Cal_Tenues {
 				$nb += $q;
 			}
 		}
-		$this->retour( $nb ? 'ok_commande' : 'err_rien', [ 'n' => $nb ] );
+		$reservees = $nb ? $this->promouvoir_attentes() : 0;
+		$this->retour( $nb ? 'ok_commande' : 'err_rien', [ 'n' => $nb, 'n2' => $reservees ] );
 	}
 
 	public function handle_supprimer_lot(): void {
@@ -492,6 +579,7 @@ class SP_Cal_Tenues {
 				if ( $this->ajouter_mouvement( 'inventaire', $modele, $taille, abs( $ecart ), [ 'sens' => $ecart > 0 ? 1 : -1, 'note' => $this->post_note() ] ) ) $n++;
 			}
 		}
+		$this->promouvoir_attentes();
 		$this->retour( 'ok_inventaire', [ 'n' => $n ] );
 	}
 
@@ -516,6 +604,7 @@ class SP_Cal_Tenues {
 		// Une réception se supprime par son lot (onglet Achats), pour ne pas laisser un lot sans mouvement.
 		if ( $mvt->type === 'achat' && $mvt->lot_id ) $this->retour( 'err_lot' );
 		$wpdb->delete( $this->t_mvt(), [ 'id' => $id ] );
+		$this->promouvoir_attentes();
 		$this->retour( 'ok_supprime' );
 	}
 
@@ -524,6 +613,10 @@ class SP_Cal_Tenues {
 		update_option( 'sp_tenue_reglages', [
 			'tailles'      => implode( ',', self::tailles_depuis_texte( sanitize_text_field( wp_unslash( $_POST['tailles'] ?? '' ) ) ) ),
 			'seuil_alerte' => max( 0, min( 50, (int) ( $_POST['seuil_alerte'] ?? 1 ) ) ),
+			'demandes_on'  => empty( $_POST['demandes_on'] ) ? 0 : 1,
+			'mail_bureau'  => empty( $_POST['mail_bureau'] ) ? 0 : 1,
+			'email_bureau' => sanitize_email( wp_unslash( $_POST['email_bureau'] ?? '' ) ),
+			'mail_famille' => empty( $_POST['mail_famille'] ) ? 0 : 1,
 		], false );
 		$this->retour( 'ok_reglages' );
 	}
@@ -538,6 +631,8 @@ class SP_Cal_Tenues {
 			'doboks' => [ '🥋 Doboks (taekwondo)', admin_url( 'admin.php?page=' . SP_Cal_Dobok::PAGE ) ],
 			'tenues' => [ '👕 Tenues (renforcement musculaire)', self::url() ],
 		];
+		$nb = self::get_instance()->nb_demandes_a_traiter();
+		if ( $nb ) $liens['tenues'][0] .= ' — ' . $nb . ' demande' . ( $nb > 1 ? 's' : '' );
 		echo '<p class="spd-objets" style="margin:10px 0 14px;display:flex;gap:8px;flex-wrap:wrap;">';
 		foreach ( $liens as $k => [ $libelle, $url ] ) {
 			printf( '<a href="%s" class="button%s">%s</a>', esc_url( $url ), $k === $actif ? ' button-primary' : '', esc_html( $libelle ) );
@@ -549,7 +644,8 @@ class SP_Cal_Tenues {
 	public function render_page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
-		$onglets = [ 'besoin' => 'Besoin de commande', 'stock' => 'Stock', 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
+		$nb_dem  = $this->tables_ok() ? $this->nb_demandes_a_traiter() : 0;
+		$onglets = [ 'besoin' => 'Besoin de commande', 'stock' => 'Stock', 'demandes' => 'Demandes' . ( $nb_dem ? " ($nb_dem)" : '' ), 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
 		$tab     = sanitize_key( $_GET['tab'] ?? 'besoin' );
 		if ( ! isset( $onglets[ $tab ] ) ) $tab = 'besoin';
 
@@ -573,6 +669,7 @@ class SP_Cal_Tenues {
 
 		switch ( $tab ) {
 			case 'stock':     $this->render_stock();     break;
+			case 'demandes':  $this->render_demandes();  break;
 			case 'adherents': $this->render_adherents(); break;
 			case 'achats':    $this->render_achats();    break;
 			case 'journal':   $this->render_journal();   break;
@@ -586,13 +683,21 @@ class SP_Cal_Tenues {
 		$msg = sanitize_key( $_GET['msg'] ?? '' );
 		if ( ! $msg ) return;
 		$n       = (int) ( $_GET['n'] ?? 0 );
+		$n2      = (int) ( $_GET['n2'] ?? 0 );
 		$negatif = ' Attention : le stock calculé de cette taille est maintenant négatif — un inventaire permettra de le recaler.';
 		$textes  = [
 			'ok_remise'         => [ 'success', sprintf( '%d pièce(s) remise(s).', max( 1, $n ) ) ],
 			'ok_remise_negatif' => [ 'warning', sprintf( '%d pièce(s) remise(s).', max( 1, $n ) ) . $negatif ],
 			'ok_restitution'    => [ 'success', 'Restitution enregistrée.' ],
 			'ok_perte'          => [ 'success', 'Pièce déclarée non rendue / perdue.' ],
-			'ok_commande'       => [ 'success', sprintf( 'Commande reçue : %d pièce(s) ajoutée(s) au stock.', $n ) ],
+			'ok_commande'       => [ 'success', sprintf( 'Commande reçue : %d pièce(s) ajoutée(s) au stock.', $n ) . ( $n2 ? sprintf( ' %d demande(s) en attente maintenant réservée(s).', $n2 ) : '' ) ],
+			'ok_echange'        => [ 'success', 'Échange enregistré (restitution + remise).' ],
+			'ok_echange_negatif' => [ 'warning', 'Échange enregistré.' . $negatif ],
+			'ok_dem_terminee'   => [ 'success', 'Demande terminée : mouvements enregistrés.' ],
+			'ok_dem_terminee_negatif' => [ 'warning', 'Demande terminée.' . $negatif ],
+			'ok_dem_annulee'    => [ 'success', 'Demande close : l\'adhérent garde sa pièce actuelle.' ],
+			'ok_dem_refusee'    => [ 'success', 'Demande refusée (adhérent prévenu par mail si activé).' ],
+			'err_dem'           => [ 'error',   'Cette demande n\'existe pas ou a déjà été traitée.' ],
 			'ok_supprime'       => [ 'success', 'Suppression effectuée.' ],
 			'ok_inventaire'     => [ 'success', sprintf( 'Inventaire enregistré : %d ajustement(s).', $n ) ],
 			'ok_reforme'        => [ 'success', 'Sortie du stock enregistrée.' ],
@@ -664,8 +769,8 @@ class SP_Cal_Tenues {
 		$tailles = $this->tailles();
 		$renfo   = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'est_renfo' ] ) );
 		$calc    = self::besoin( $renfo, $this->detenus(), $tailles );
-		$stock   = $this->stock_par_ref();
-		$besoin  = $calc['besoin'];
+		$stock   = $this->stock_promettable();
+		$besoin  = $this->avec_demandes_en_attente( $calc['besoin'] );
 
 		$a_commander = [];
 		$total_cmd   = 0;
@@ -678,7 +783,8 @@ class SP_Cal_Tenues {
 
 		printf( '<p class="spd-compte"><strong>%d</strong> adhérent(s) actif(s) au renforcement musculaire — <strong>%d</strong> déjà équipé(s) d\'un haut et d\'un bas.</p>', count( $renfo ), (int) $calc['equipes'] );
 		echo '<p class="description" style="max-width:900px;">Pour chaque adhérent du renforcement qui n\'a pas encore sa tenue : un haut et un bas, dans la coupe de son sexe et à la taille notée sur sa fiche (« T-shirt » pour le haut, « Pantalon » pour le bas). '
-			. 'Les adhérents du taekwondo, qui ont aussi accès au renforcement, ne sont pas comptés : ajoutez leurs pièces à la main dans la commande si besoin.</p>';
+			. 'Les adhérents du taekwondo, qui ont aussi accès au renforcement, ne sont pas comptés : ajoutez leurs pièces à la main dans la commande si besoin. '
+			. 'Les demandes d\'adhérents en attente de stock sont ajoutées au besoin ; les pièces déjà réservées ne comptent plus dans le stock.</p>';
 
 		echo '<h2>À commander</h2>';
 		if ( ! $total_cmd ) {
@@ -714,8 +820,8 @@ class SP_Cal_Tenues {
 	/** Quantités « à commander » de l'onglet Besoin, pour préremplir la grille de réception. */
 	private function quantites_a_commander(): array {
 		$renfo  = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'est_renfo' ] ) );
-		$besoin = self::besoin( $renfo, $this->detenus(), $this->tailles() )['besoin'];
-		$stock  = $this->stock_par_ref();
+		$besoin = $this->avec_demandes_en_attente( self::besoin( $renfo, $this->detenus(), $this->tailles() )['besoin'] );
+		$stock  = $this->stock_promettable();
 		$out    = [];
 		foreach ( $besoin as $modele => $par_taille ) {
 			foreach ( $par_taille as $taille => $n ) {
@@ -728,17 +834,19 @@ class SP_Cal_Tenues {
 
 	// ── Onglet Stock ─────────────────────────────────────────────────────
 	private function render_stock(): void {
-		$stock = $this->stock_par_ref();
-		$seuil = $this->reglages()['seuil_alerte'];
+		$stock   = $this->stock_par_ref();
+		$seuil   = $this->reglages()['seuil_alerte'];
+		$reserve = $this->reserve_par_ref();
 
-		echo '<p class="description">En grand : les pièces disponibles dans la réserve du club. En petit : celles qui sont chez les adhérents.'
+		echo '<p class="description">En grand : les pièces dans la réserve du club. En petit : celles qui sont chez les adhérents, et celles de la réserve déjà réservées pour une demande.'
 			. ' <span class="spd-leg spd-bas">stock bas</span><span class="spd-leg spd-neg">stock négatif</span></p>';
-		$this->grille( static function ( $modele, $taille ) use ( $stock, $seuil ) {
+		$this->grille( static function ( $modele, $taille ) use ( $stock, $seuil, $reserve ) {
 			$s = (int) ( $stock[ $modele ][ $taille ]['stock'] ?? 0 );
 			$p = (int) ( $stock[ $modele ][ $taille ]['pret'] ?? 0 );
+			$r = (int) ( $reserve[ $modele ][ $taille ]['reserve'] ?? 0 );
 			if ( ! isset( $stock[ $modele ][ $taille ] ) ) return [ '<td class="spd-vide">—</td>', 0 ];
 			$classe = $s < 0 ? 'spd-neg' : ( $s <= $seuil ? 'spd-bas' : '' );
-			return [ '<td class="' . $classe . '"><strong>' . $s . '</strong><small>' . $p . ' prêté' . ( $p > 1 ? 's' : '' ) . '</small></td>', $s ];
+			return [ '<td class="' . $classe . '"><strong>' . $s . '</strong><small>' . $p . ' prêté' . ( $p > 1 ? 's' : '' ) . ( $r ? ' · ' . $r . ' réservé' . ( $r > 1 ? 's' : '' ) : '' ) . '</small></td>', $s ];
 		}, true );
 
 		echo '<details style="margin-top:18px;"><summary><strong>Faire un inventaire</strong> (corriger le stock d\'après un comptage)</summary>';
@@ -784,7 +892,7 @@ class SP_Cal_Tenues {
 		echo '<label>Afficher <select name="vue" onchange="this.form.submit()">';
 		foreach ( $vues as $k => $l ) printf( '<option value="%s"%s>%s</option>', esc_attr( $k ), selected( $k, $vue, false ), esc_html( $l ) );
 		echo '</select></label><label>Nom <input type="search" name="q" value="' . esc_attr( $q ) . '"></label><button class="button">Filtrer</button></form>';
-		printf( '<p class="spd-compte">%d adhérent(s). Changement de taille : enregistrez la restitution de l\'ancienne pièce, puis la remise de la nouvelle.</p>', count( $liste ) );
+		printf( '<p class="spd-compte">%d adhérent(s). Changement de taille : dans « Reprendre », choisissez la taille à remettre en échange avant de cliquer sur « Rendu ».</p>', count( $liste ) );
 
 		if ( ! $liste ) { echo '<p>Aucun adhérent à afficher.</p>'; return; }
 
@@ -828,7 +936,10 @@ class SP_Cal_Tenues {
 				echo '<div class="spd-detenu"><strong>' . esc_html( self::label( $d['modele'] ) . ' ' . $d['taille'] ) . '</strong><br>';
 				$this->form_open( 'restitution', $retour, 'spd-inline' );
 				echo '<input type="hidden" name="eleve_id" value="' . $id . '"><input type="hidden" name="modele" value="' . esc_attr( $d['modele'] ) . '"><input type="hidden" name="taille" value="' . esc_attr( $d['taille'] ) . '">';
-				echo self::select_liste( 'motif', self::MOTIFS ) . self::select_liste( 'etat', self::ETATS ) . '<button type="submit" class="button">Rendu</button></form>';
+				echo self::select_liste( 'motif', self::MOTIFS ) . self::select_liste( 'etat', self::ETATS );
+				echo '<select name="echange_taille" title="Pour un échange : la taille remise à la place"><option value="">sans échange</option>';
+				foreach ( $tailles as $t ) { if ( $t !== $d['taille'] ) echo '<option value="' . esc_attr( $t ) . '">remettre ' . esc_html( $t ) . '</option>'; }
+				echo '</select><button type="submit" class="button">Rendu</button></form>';
 				$this->form_open( 'perte', $retour, 'spd-inline', 'Déclarer cette pièce non rendue / perdue ?' );
 				echo '<input type="hidden" name="eleve_id" value="' . $id . '"><input type="hidden" name="modele" value="' . esc_attr( $d['modele'] ) . '"><input type="hidden" name="taille" value="' . esc_attr( $d['taille'] ) . '">';
 				echo '<button type="submit" class="button-link" style="color:#b91c1c;">Non rendu / perdu</button></form></div>';
@@ -918,6 +1029,473 @@ class SP_Cal_Tenues {
 			. '<p class="description">De la plus petite à la plus grande, séparées par des virgules. Les mêmes pour le haut et le bas.</p></td></tr>';
 		echo '<tr><th>Alerte de stock bas</th><td><input type="number" name="seuil_alerte" min="0" max="50" value="' . (int) $r['seuil_alerte'] . '" style="width:70px;"> pièce(s) ou moins'
 			. '<p class="description">Les cases du stock passent en orange à ce niveau.</p></td></tr>';
+		echo '<tr><th>Demandes des adhérents</th><td><label><input type="checkbox" name="demandes_on" value="1"' . checked( $r['demandes_on'], 1, false ) . '> Permettre aux adhérents de demander un changement de taille, un remplacement ou une restitution depuis leur fiche</label></td></tr>';
+		echo '<tr><th>Mails</th><td><label><input type="checkbox" name="mail_bureau" value="1"' . checked( $r['mail_bureau'], 1, false ) . '> Prévenir le bureau à chaque demande</label><br>'
+			. '<input type="email" name="email_bureau" class="regular-text" value="' . esc_attr( $r['email_bureau'] ) . '" placeholder="Adresse du bureau (vide : celle des notifications du club)"><br>'
+			. '<label><input type="checkbox" name="mail_famille" value="1"' . checked( $r['mail_famille'], 1, false ) . '> Prévenir l\'adhérent (demande enregistrée, pièce réservée, demande refusée)</label></td></tr>';
 		echo '</table><p><button type="submit" class="button button-primary">Enregistrer</button></p></form>';
+	}
+
+	// ══════════════════════════════════════════════════════════════
+	// DEMANDES DES ADHÉRENTS (étape 2)
+	// ══════════════════════════════════════════════════════════════
+
+	/** [modele][taille] => ['reserve' => n, 'attente' => n] : pièces promises et demandes en attente de stock. */
+	private function reserve_par_ref(): array {
+		global $wpdb;
+		$out = [];
+		foreach ( (array) $wpdb->get_results( "SELECT souhait_modele AS m, souhait_taille AS t, statut, COUNT(*) AS n FROM {$this->t_dem()} WHERE statut IN ('ouverte','en_attente') AND souhait_modele != '' GROUP BY souhait_modele, souhait_taille, statut" ) as $r ) {
+			$out[ $r->m ][ $r->t ][ $r->statut === 'ouverte' ? 'reserve' : 'attente' ] = (int) $r->n;
+		}
+		return $out;
+	}
+
+	/** Stock par référence, diminué des pièces déjà réservées : ce qu'on peut encore promettre. */
+	private function stock_promettable(): array {
+		$stock = $this->stock_par_ref();
+		foreach ( $this->reserve_par_ref() as $modele => $par_taille ) {
+			foreach ( $par_taille as $taille => $r ) {
+				if ( ! empty( $r['reserve'] ) ) $stock[ $modele ][ $taille ]['stock'] = (int) ( $stock[ $modele ][ $taille ]['stock'] ?? 0 ) - (int) $r['reserve'];
+			}
+		}
+		return $stock;
+	}
+
+	/** Ajoute au besoin de commande les pièces des demandes en attente de stock. */
+	private function avec_demandes_en_attente( array $besoin ): array {
+		foreach ( $this->reserve_par_ref() as $modele => $par_taille ) {
+			foreach ( $par_taille as $taille => $r ) {
+				if ( ! empty( $r['attente'] ) ) $besoin[ $modele ][ $taille ] = (int) ( $besoin[ $modele ][ $taille ] ?? 0 ) + (int) $r['attente'];
+			}
+		}
+		return $besoin;
+	}
+
+	/** Stock effectif moins ce qui est déjà réservé. */
+	private function disponible( string $modele, string $taille ): int {
+		global $wpdb;
+		$reserve = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$this->t_dem()} WHERE statut = 'ouverte' AND souhait_modele = %s AND souhait_taille = %s", $modele, $taille ) );
+		return $this->stock_de( $modele, $taille ) - $reserve;
+	}
+
+	private function demande( int $id ): ?object {
+		global $wpdb;
+		return $id ? ( $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->t_dem()} WHERE id = %d", $id ) ) ?: null ) : null;
+	}
+
+	/** Demandes non closes d'un adhérent : [ pièce => demande ] (une seule par pièce). */
+	private function demandes_ouvertes_de( int $eleve_id ): array {
+		global $wpdb;
+		$out = [];
+		foreach ( (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$this->t_dem()} WHERE eleve_id = %d AND statut IN ('ouverte','en_attente') ORDER BY id", $eleve_id ) ) as $d ) {
+			$out[ $d->piece ] = $d;
+		}
+		return $out;
+	}
+
+	/** Demandes à traiter par le bureau (réservées ou restitutions attendues) — pastille du menu et de l'onglet. */
+	public function nb_demandes_a_traiter(): int {
+		if ( ! $this->front_pret() ) return 0;
+		global $wpdb;
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$this->t_dem()} WHERE statut = 'ouverte'" );
+	}
+
+	private function maj_demande( int $id, array $data ): void {
+		global $wpdb;
+		$data['updated_at'] = current_time( 'mysql' );
+		$data['traite_par'] = get_current_user_id();
+		$wpdb->update( $this->t_dem(), $data, [ 'id' => $id ] );
+	}
+
+	/**
+	 * Les demandes en attente sont réservées, dans l'ordre d'arrivée, dès que leur pièce est
+	 * disponible (commande reçue, retour, inventaire, demande close). @return int nombre réservé
+	 */
+	private function promouvoir_attentes(): int {
+		if ( ! $this->front_pret() ) return 0;
+		global $wpdb;
+		$n = 0;
+		foreach ( (array) $wpdb->get_results( "SELECT * FROM {$this->t_dem()} WHERE statut = 'en_attente' ORDER BY id" ) as $d ) {
+			if ( $d->souhait_modele === '' || $this->disponible( $d->souhait_modele, $d->souhait_taille ) < 1 ) continue;
+			$wpdb->update( $this->t_dem(), [ 'statut' => 'ouverte', 'updated_at' => current_time( 'mysql' ) ], [ 'id' => (int) $d->id ] );
+			$d->statut = 'ouverte';
+			if ( $el = $this->eleve( (int) $d->eleve_id ) ) $this->mail_famille( $el, $d, 'reservee' );
+			$n++;
+		}
+		return $n;
+	}
+
+	// ── Mails ────────────────────────────────────────────────────────────
+	private function email_bureau(): string {
+		$e = trim( (string) $this->reglages()['email_bureau'] );
+		return $e !== '' ? $e : (string) get_option( 'sp_cal_notif_email', get_option( 'admin_email' ) );
+	}
+
+	/** Même logique que SpCalPro_Token::get_fiche_url() (instance non accessible d'ici). */
+	private function fiche_url( string $token ): string {
+		$page_url = (string) get_option( 'sp_cal_fiche_membre_url', '' );
+		if ( ! $page_url ) {
+			global $wpdb;
+			$page = $wpdb->get_row( "SELECT ID FROM {$wpdb->posts} WHERE post_status='publish' AND post_type='page' AND post_content LIKE '%sp_cal_fiche_membre%' LIMIT 1" );
+			$page_url = $page ? get_permalink( $page->ID ) : home_url( '/' );
+		}
+		return add_query_arg( 'token', $token, trailingslashit( $page_url ) );
+	}
+
+	private function envoyer( string $dest, string $sujet, string $corps ): void {
+		if ( $dest === '' ) return;
+		$club = get_option( 'blogname', 'Club' );
+		wp_mail( $dest, '[' . $club . '] ' . $sujet, $corps . "\n\n-- \n" . $club, [ 'Content-Type: text/plain; charset=UTF-8' ] );
+	}
+
+	private function mail_bureau( object $el, object $d, string $evenement ): void {
+		if ( ! $this->reglages()['mail_bureau'] ) return;
+		$qui = $el->prenom . ' ' . mb_strtoupper( $el->nom );
+		if ( $evenement === 'annulee' ) {
+			$this->envoyer( $this->email_bureau(), 'Tenue : demande annulée par ' . $qui, $qui . " a annulé sa demande :\n" . self::libelle_demande( $d ) );
+			return;
+		}
+		$corps  = "Nouvelle demande de $qui (tenue du renforcement musculaire) :\n" . self::libelle_demande( $d ) . "\n";
+		$corps .= 'Statut : ' . ( self::STATUTS[ $d->statut ] ?? $d->statut ) . "\n";
+		if ( $d->note_adherent ) $corps .= 'Précisions : ' . $d->note_adherent . "\n";
+		if ( $d->statut === 'en_attente' ) $corps .= "\n⚠ Pas de stock disponible : demande en attente (ajoutée au besoin de commande).\n";
+		$corps .= "\nÀ traiter : " . self::url( [ 'tab' => 'demandes' ] );
+		$this->envoyer( $this->email_bureau(), ( $d->statut === 'en_attente' ? '⚠ ' : '' ) . 'Tenue : demande de ' . $qui, $corps );
+	}
+
+	private function mail_famille( object $el, object $d, string $evenement ): void {
+		if ( ! $this->reglages()['mail_famille'] ) return;
+		$dest = ( $el->email_parent ?? '' ) ?: ( $el->email ?? '' );
+		if ( ! $dest || ! is_email( $dest ) ) return;
+		$qui = $el->prenom . ' ' . mb_strtoupper( $el->nom );
+		$lib = self::libelle_demande( $d );
+		switch ( $evenement ) {
+			case 'recue':
+				$sujet = 'Demande de tenue enregistrée';
+				$corps = "Bonjour,\n\nLa demande pour $qui est bien enregistrée : $lib.\n"
+					. ( $d->souhait_modele !== '' ? 'La pièce est réservée : elle vous sera remise au club, en échange de l\'ancienne.' : 'Pensez à rapporter la pièce au club.' );
+				break;
+			case 'attente':
+				$sujet = 'Demande de tenue en attente';
+				$corps = "Bonjour,\n\nLa demande pour $qui est enregistrée : $lib.\n"
+					. 'Cette taille n\'est pas disponible pour le moment : la demande est en liste d\'attente. En attendant, gardez la pièce actuelle. Vous serez prévenu(e) dès qu\'elle sera réservée.';
+				break;
+			case 'reservee':
+				$sujet = 'Votre tenue est réservée';
+				$corps = "Bonjour,\n\nBonne nouvelle : la pièce demandée pour $qui est maintenant réservée ($lib).\nElle vous sera remise au club, en échange de l'ancienne.";
+				break;
+			case 'refusee':
+				$sujet = 'Demande de tenue non retenue';
+				$corps = "Bonjour,\n\nLa demande pour $qui ($lib) n'a pas été retenue par le bureau." . ( $d->note_bureau ? "\nMotif : " . $d->note_bureau : '' );
+				break;
+			default:
+				return;
+		}
+		if ( ! empty( $el->token ) ) $corps .= "\n\nSuivre la demande : " . $this->fiche_url( $el->token );
+		$this->envoyer( $dest, $sujet, $corps );
+	}
+
+	// ── Fiche de l'adhérent (lien ?token=) ───────────────────────────────
+	private function eleve_par_token( string $token ): ?object {
+		global $wpdb;
+		if ( $token === '' ) return null;
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$this->table_eleves()} WHERE token = %s", $token ) ) ?: null;
+	}
+
+	/** Pièces qu'un adhérent détient, par pièce : [ 'haut' => ['modele','taille','nb'], … ] (la première s'il en a deux). */
+	private function pieces_de( int $eleve_id ): array {
+		$out = [];
+		foreach ( $this->detenus( [ $eleve_id ] )[ $eleve_id ] ?? [] as $d ) {
+			$piece = self::MODELES[ $d['modele'] ]['piece'] ?? '';
+			if ( $piece !== '' && ! isset( $out[ $piece ] ) ) $out[ $piece ] = $d;
+		}
+		return $out;
+	}
+
+	/**
+	 * Formulaires du bloc « Ma tenue ». Le lien personnel (token) fait office d'authentification,
+	 * comme pour le reste de la fiche ; le nonce protège contre l'envoi depuis un autre site.
+	 */
+	public function handle_front(): void {
+		if ( is_admin() || empty( $_POST['sp_tenue_front'] ) || ! $this->front_pret() ) return;
+		$el = $this->eleve_par_token( sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) ) );
+		if ( ! $el ) return;
+
+		$retour = function ( string $msg ): void {
+			wp_safe_redirect( add_query_arg( 'tenue_msg', $msg, remove_query_arg( 'tenue_msg' ) ) . '#spt-front' );
+			exit;
+		};
+
+		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_spt_nonce'] ?? '' ) ), 'sp_tenue_front_' . $el->id ) ) $retour( 'expire' );
+		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
+
+		$action = sanitize_key( $_POST['sp_tenue_front'] );
+		$id     = (int) $el->id;
+
+		if ( $action === 'annuler' ) {
+			$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
+			if ( ! $d || (int) $d->eleve_id !== $id || ! in_array( $d->statut, [ 'ouverte', 'en_attente' ], true ) ) $retour( 'erreur' );
+			global $wpdb;
+			$wpdb->update( $this->t_dem(), [ 'statut' => 'annulee', 'updated_at' => current_time( 'mysql' ), 'note_bureau' => 'Annulée par l\'adhérent' ], [ 'id' => (int) $d->id ] );
+			$this->mail_bureau( $el, $d, 'annulee' );
+			$this->promouvoir_attentes();
+			$retour( 'annulee' );
+		}
+
+		if ( $action !== 'demande' ) $retour( 'erreur' );
+
+		$piece = sanitize_key( $_POST['piece'] ?? '' );
+		if ( ! isset( self::PIECES[ $piece ] ) ) $retour( 'erreur' );
+		if ( isset( $this->demandes_ouvertes_de( $id )[ $piece ] ) ) $retour( 'deja' );
+		if ( empty( $_POST['confirme'] ) ) $retour( 'confirme' );
+
+		$detenue = $this->pieces_de( $id )[ $piece ] ?? null;
+		if ( ! $detenue ) $retour( 'erreur' );   // on ne demande que pour une pièce qu'on a
+
+		$choix = sanitize_key( $_POST['choix'] ?? '' );
+		$dem   = [
+			'piece' => $piece, 'rendu_modele' => $detenue['modele'], 'rendu_taille' => $detenue['taille'],
+			'souhait_modele' => '', 'souhait_taille' => '',
+			'note_adherent' => mb_substr( sanitize_textarea_field( wp_unslash( $_POST['note'] ?? '' ) ), 0, 255 ),
+		];
+		if ( $choix === 'taille' ) {
+			$taille = $this->post_taille();
+			if ( $taille === '' ) $retour( 'erreur' );
+			if ( $taille === $detenue['taille'] ) $retour( 'identique' );
+			$dem += [ 'nature' => 'taille' ];
+			$dem['souhait_modele'] = $detenue['modele'];
+			$dem['souhait_taille'] = $taille;
+		} elseif ( $choix === 'abime' ) {
+			$dem += [ 'nature' => 'remplacement' ];
+			$dem['souhait_modele'] = $detenue['modele'];
+			$dem['souhait_taille'] = $detenue['taille'];
+		} elseif ( $choix === 'rendre' ) {
+			$dem += [ 'nature' => 'restitution' ];
+		} else {
+			$retour( 'erreur' );
+		}
+
+		$dem['statut']     = self::statut_initial( $dem['nature'], $dem['souhait_modele'] !== '' ? $this->disponible( $dem['souhait_modele'], $dem['souhait_taille'] ) : 0 );
+		$dem['eleve_id']   = $id;
+		$dem['saison']     = $this->saison_courante();
+		$dem['created_at'] = current_time( 'mysql' );
+		global $wpdb;
+		if ( ! $wpdb->insert( $this->t_dem(), $dem ) ) $retour( 'erreur' );
+		$d = $this->demande( (int) $wpdb->insert_id );
+		if ( ! $d ) $retour( 'erreur' );
+
+		$this->mail_bureau( $el, $d, 'nouvelle' );
+		$this->mail_famille( $el, $d, $d->statut === 'en_attente' ? 'attente' : 'recue' );
+		$retour( $d->nature === 'restitution' ? 'ok_rendre' : ( $d->statut === 'en_attente' ? 'ok_attente' : 'ok_reservee' ) );
+	}
+
+	private function champs_front( object $el ): void {
+		echo '<input type="hidden" name="_spt_nonce" value="' . esc_attr( wp_create_nonce( 'sp_tenue_front_' . $el->id ) ) . '">';
+	}
+
+	/** Bloc « Ma tenue » de la fiche de l'adhérent (action sp_cal_fiche_membre_apres_grade). */
+	public function render_bloc_adherent( $el ): void {
+		if ( ! is_object( $el ) || ! $this->front_pret() ) return;
+
+		$id       = (int) $el->id;
+		$pieces   = $this->pieces_de( $id );
+		$ouvertes = $this->demandes_ouvertes_de( $id );
+		$renfo    = self::est_renfo( $el );
+		// Adhérent du taekwondo : le bloc n'apparaît que s'il a une tenue du club.
+		if ( ! $renfo && ! $pieces && ! $ouvertes ) return;
+
+		$peut    = (int) $el->actif && $this->reglages()['demandes_on'];
+		$tailles = $this->tailles();
+		$messages = [
+			'ok_reservee' => [ 'ok',   'Demande enregistrée : la pièce est réservée. Elle vous sera remise au club, en échange de l\'ancienne.' ],
+			'ok_attente'  => [ 'info', 'Demande enregistrée. Cette taille n\'est pas disponible pour le moment : vous êtes en liste d\'attente et serez prévenu(e) par mail. Gardez votre pièce actuelle en attendant.' ],
+			'ok_rendre'   => [ 'ok',   'Demande enregistrée : merci de rapporter la pièce au club.' ],
+			'annulee'     => [ 'ok',   'Votre demande est annulée.' ],
+			'deja'        => [ 'err',  'Une demande est déjà en cours pour cette pièce.' ],
+			'confirme'    => [ 'err',  'Cochez « Je confirme ma demande » pour l\'envoyer.' ],
+			'identique'   => [ 'err',  'La taille demandée est celle que vous avez déjà : choisissez-en une autre, ou « Elle est abîmée ».' ],
+			'ferme'       => [ 'err',  'Les demandes ne sont pas possibles pour le moment : contactez le bureau.' ],
+			'expire'      => [ 'err',  'La page a expiré : rechargez-la puis recommencez.' ],
+			'erreur'      => [ 'err',  'La demande n\'a pas pu être enregistrée : vérifiez vos choix.' ],
+		];
+		$msg = sanitize_key( $_GET['tenue_msg'] ?? '' );
+		?>
+		<div class="sp-membre-section spt-front" id="spt-front">
+			<style>
+				.spt-front .spt-msg{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}
+				.spt-front .spt-ok{background:#f0fdf4;border:1px solid #86efac;color:#166534}
+				.spt-front .spt-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+				.spt-front .spt-err{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+				.spt-front .spt-cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px}
+				.spt-front .spt-carte{border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff}
+				.spt-front .spt-carte h3{margin:0 0 8px;font-size:16px}
+				.spt-front .spt-piece{font-size:15px;font-weight:700}
+				.spt-front .spt-vide{font-size:14px;color:#6b7280}
+				.spt-front .spt-demande{background:#f9fafb;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:14px}
+				.spt-front details{margin-top:10px}
+				.spt-front summary{cursor:pointer;font-weight:600;color:#D4000F}
+				.spt-front form{margin:8px 0 0}
+				.spt-front form label{display:block;margin:6px 0;font-size:14px}
+				.spt-front form select,.spt-front form textarea{max-width:100%}
+				.spt-front form textarea{width:100%;min-height:54px}
+				.spt-front .spt-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:6px;background:#D4000F;color:#fff;font-weight:600;cursor:pointer}
+				.spt-front .spt-lien{background:none;border:0;padding:0;color:#b91c1c;text-decoration:underline;cursor:pointer;font-size:13px}
+				.spt-front .spt-note{font-size:12px;color:#6b7280;margin-top:12px}
+			</style>
+			<h2>👕 Ma tenue de renforcement musculaire</h2>
+
+			<?php if ( isset( $messages[ $msg ] ) ) : ?>
+				<div class="spt-msg spt-<?php echo esc_attr( $messages[ $msg ][0] ); ?>"><?php echo esc_html( $messages[ $msg ][1] ); ?></div>
+			<?php endif; ?>
+
+			<?php if ( ! $pieces ) : ?>
+				<p>Votre tenue (un haut et un bas) est prêtée par le club : elle vous sera remise lors d'une distribution.</p>
+			<?php else : ?>
+				<p>Cette tenue est prêtée par le club : elle est à rendre si vous arrêtez l'activité.</p>
+			<?php endif; ?>
+
+			<div class="spt-cartes">
+			<?php foreach ( self::PIECES as $piece => $lib ) :
+				$a   = $pieces[ $piece ] ?? null;
+				$dem = $ouvertes[ $piece ] ?? null;
+				if ( ! $a && ! $dem && ! $renfo ) continue;
+			?>
+				<div class="spt-carte">
+					<h3><?php echo esc_html( $lib ); ?></h3>
+					<?php if ( $a ) : ?>
+						<div class="spt-piece"><?php echo esc_html( self::label( $a['modele'] ) . ' — taille ' . $a['taille'] ); ?></div>
+					<?php else : ?>
+						<div class="spt-vide">Pas encore remis.</div>
+					<?php endif; ?>
+
+					<?php if ( $dem ) : ?>
+						<div class="spt-demande">
+							<strong>Demande en cours</strong> (<?php echo esc_html( mysql2date( 'd/m/Y', $dem->created_at ) ); ?>) :
+							<?php echo esc_html( self::libelle_demande( $dem ) ); ?><br>
+							<?php if ( $dem->nature === 'restitution' ) : ?>
+								À rapporter au club.
+							<?php elseif ( $dem->statut === 'ouverte' ) : ?>
+								✅ Réservé — remis au club, en échange de l'ancienne pièce.
+							<?php else : ?>
+								⏳ En attente de stock — gardez votre pièce actuelle, vous serez prévenu(e) par mail.
+							<?php endif; ?>
+							<?php if ( $peut ) : ?>
+								<form method="post">
+									<?php $this->champs_front( $el ); ?>
+									<input type="hidden" name="sp_tenue_front" value="annuler">
+									<input type="hidden" name="dem_id" value="<?php echo (int) $dem->id; ?>">
+									<button type="submit" class="spt-lien" onclick="return confirm('Annuler cette demande ?');">Annuler ma demande</button>
+								</form>
+							<?php endif; ?>
+						</div>
+					<?php elseif ( $a && $peut ) : ?>
+						<details<?php echo in_array( $msg, [ 'confirme', 'identique', 'erreur' ], true ) ? ' open' : ''; ?>>
+							<summary>Faire une demande</summary>
+							<form method="post">
+								<?php $this->champs_front( $el ); ?>
+								<input type="hidden" name="sp_tenue_front" value="demande">
+								<input type="hidden" name="piece" value="<?php echo esc_attr( $piece ); ?>">
+								<label><input type="radio" name="choix" value="taille" checked> Changer de taille :
+									<select name="taille">
+										<?php foreach ( $tailles as $t ) { if ( $t !== $a['taille'] ) echo '<option value="' . esc_attr( $t ) . '">' . esc_html( $t ) . '</option>'; } ?>
+									</select>
+								</label>
+								<label><input type="radio" name="choix" value="abime"> Elle est abîmée : je demande son remplacement</label>
+								<label><input type="radio" name="choix" value="rendre"> Je la rends au club (arrêt de l'activité)</label>
+								<label>Précisions (facultatif)
+									<textarea name="note" maxlength="255"></textarea>
+								</label>
+								<label><input type="checkbox" name="confirme" value="1"> Je confirme ma demande</label>
+								<button type="submit" class="spt-btn">Envoyer la demande</button>
+							</form>
+						</details>
+					<?php endif; ?>
+				</div>
+			<?php endforeach; ?>
+			</div>
+			<p class="spt-note">Une demande à la fois par pièce. Le bureau est prévenu et vous tient informé(e) par mail.</p>
+		</div>
+		<?php
+	}
+
+	// ── Onglet Demandes (bureau) ─────────────────────────────────────────
+	private function render_demandes(): void {
+		global $wpdb;
+		$tel  = $this->table_eleves();
+		$rows = (array) $wpdb->get_results( "SELECT d.*, e.nom, e.prenom FROM {$this->t_dem()} d LEFT JOIN $tel e ON e.id = d.eleve_id WHERE d.statut IN ('ouverte','en_attente') ORDER BY d.statut DESC, e.nom, e.prenom, d.id" );
+		if ( ! $this->reglages()['demandes_on'] ) echo '<div class="notice notice-warning inline"><p>Les demandes depuis la fiche des adhérents sont désactivées (onglet Réglages).</p></div>';
+		if ( ! $rows ) { echo '<p>Aucune demande en cours.</p>'; return; }
+
+		$retour = [ 'tab' => 'demandes' ];
+		echo '<p class="description" style="max-width:900px;">« Terminer » enregistre en une fois le retour de l\'ancienne pièce et la remise de la nouvelle, à faire quand l\'adhérent est au club. Une demande en attente de stock sera réservée automatiquement à la réception d\'une commande ou au retour d\'une pièce.</p>';
+		echo '<table class="widefat striped"><thead><tr><th style="width:90px;">Date</th><th style="width:20%;">Adhérent</th><th>Demande</th><th style="width:150px;">État</th><th style="width:36%;">Traiter</th></tr></thead><tbody>';
+		foreach ( $rows as $d ) {
+			$id_el = (int) $d->eleve_id;
+			echo '<tr><td>' . esc_html( mysql2date( 'd/m/Y', $d->created_at ) ) . '</td>';
+			echo '<td><strong><a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . $id_el ) ) . '">' . esc_html( trim( $d->nom . ' ' . $d->prenom ) ) . '</a></strong></td>';
+			echo '<td>' . esc_html( self::libelle_demande( $d ) ) . ( $d->note_adherent !== '' ? '<div class="spd-meta">« ' . esc_html( $d->note_adherent ) . ' »</div>' : '' ) . '</td>';
+			echo '<td>' . ( $d->statut === 'ouverte' ? '<span class="spd-alerte spd-info">' . ( $d->nature === 'restitution' ? 'Retour attendu' : 'Réservée' ) . '</span>' : '<span class="spd-alerte spd-warn">En attente de stock</span>' ) . '</td><td>';
+
+			if ( $d->statut === 'ouverte' ) {
+				$this->form_open( 'dem_terminer', $retour, 'spd-inline' );
+				echo '<input type="hidden" name="dem_id" value="' . (int) $d->id . '">';
+				echo 'Pièce rendue : ' . self::select_liste( 'etat', self::ETATS );
+				echo '<button type="submit" class="button button-primary">' . ( $d->nature === 'restitution' ? 'Terminer (pièce rendue)' : 'Terminer (échange fait)' ) . '</button></form>';
+			}
+			$this->form_open( 'dem_refuser', $retour, 'spd-inline', 'Refuser cette demande ? L\'adhérent sera prévenu par mail.' );
+			echo '<input type="hidden" name="dem_id" value="' . (int) $d->id . '"><input type="text" name="note" placeholder="Motif du refus" style="width:170px;"><button type="submit" class="button">Refuser</button></form>';
+			$this->form_open( 'dem_annuler', $retour, 'spd-inline', 'Clore cette demande sans suite ?' );
+			echo '<input type="hidden" name="dem_id" value="' . (int) $d->id . '"><button type="submit" class="button-link">Clore sans suite</button></form>';
+			echo '</td></tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	private function post_demande( string $action ): object {
+		$this->verifier( $action );
+		$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
+		if ( ! $d || ! in_array( $d->statut, [ 'ouverte', 'en_attente' ], true ) ) $this->retour( 'err_dem' );
+		return $d;
+	}
+
+	/** Demande réservée traitée au club : retour de l'ancienne pièce et remise de la nouvelle en une fois. */
+	public function handle_dem_terminer(): void {
+		$d  = $this->post_demande( 'dem_terminer' );
+		$id = (int) $d->eleve_id;
+		if ( $d->statut !== 'ouverte' ) $this->retour( 'err_dem' );
+		$etat = sanitize_key( $_POST['etat'] ?? 'bon' );
+		if ( ! isset( self::ETATS[ $etat ] ) ) $etat = 'bon';
+		$note = 'Demande n° ' . (int) $d->id;
+
+		if ( $d->rendu_modele !== '' ) {
+			if ( ! $this->detient( $id, $d->rendu_modele, $d->rendu_taille ) ) $this->retour( 'err_detenu' );
+			$motif = self::NATURES[ $d->nature ]['motif'] ?? 'retour';
+			if ( ! $this->ajouter_mouvement( 'restitution', $d->rendu_modele, $d->rendu_taille, 1, [ 'eleve_id' => $id, 'etat' => $etat, 'motif' => $motif, 'note' => $note ] ) ) $this->retour( 'err_bdd' );
+		}
+		$negatif = false;
+		if ( $d->souhait_modele !== '' ) {
+			if ( ! $this->ajouter_mouvement( 'remise', $d->souhait_modele, $d->souhait_taille, 1, [ 'eleve_id' => $id, 'note' => $note ] ) ) $this->retour( 'err_bdd' );
+			$negatif = $this->stock_de( $d->souhait_modele, $d->souhait_taille ) < 0;
+		}
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'terminee' ] );
+		$this->promouvoir_attentes();
+		$this->retour( $negatif ? 'ok_dem_terminee_negatif' : 'ok_dem_terminee' );
+	}
+
+	public function handle_dem_refuser(): void {
+		$d = $this->post_demande( 'dem_refuser' );
+		$d->note_bureau = mb_substr( $this->post_note(), 0, 255 );
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'refusee', 'note_bureau' => $d->note_bureau ] );
+		if ( $el = $this->eleve( (int) $d->eleve_id ) ) $this->mail_famille( $el, $d, 'refusee' );
+		$this->promouvoir_attentes();
+		$this->retour( 'ok_dem_refusee' );
+	}
+
+	/** Clôture sans suite (réglé de vive voix, demande faite par erreur…) : aucun mail. */
+	public function handle_dem_annuler(): void {
+		$d = $this->post_demande( 'dem_annuler' );
+		$this->maj_demande( (int) $d->id, [ 'statut' => 'annulee', 'note_bureau' => 'Close par le bureau' ] );
+		$this->promouvoir_attentes();
+		$this->retour( 'ok_dem_annulee' );
 	}
 }
