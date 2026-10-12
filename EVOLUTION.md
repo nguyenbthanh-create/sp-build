@@ -390,7 +390,7 @@ Demande de l'utilisateur : sur `[sp_cal_planning]`, rien ne distinguait un cours
 - **Correction liée (`6bfba95`)** : un créneau « 1 semaine sur 2 / 3 » dont la date de début ne tombait pas le jour du cours n'apparaissait jamais ; la première séance est désormais le premier jour du cours à partir de cette date. **À savoir** : le planning ignore les jours fériés (une séance du 11 novembre est proposée) — à annuler à la main.
 - Concerne tous les créneaux non hebdomadaires, donc aussi « TKD enfants confirmés » (1 semaine sur 2). Tout est dans `templates/planning.php` ; `/app/` et le calendrier de gestion ne changent pas.
 
-## 12/10/2026 — Tenues du renforcement musculaire, étape 1 : côté bureau (codé, À TESTER sur le site de test)
+## 12/10/2026 — Tenues du renforcement musculaire, étape 1 : côté bureau (FAIT, en prod et vérifié le 12/10/2026)
 
 Demande de l'utilisateur : étendre le principe des doboks (validés en prod) aux tenues prêtées aux adhérents du renforcement musculaire.
 - **Réponses de l'utilisateur** : un haut et un bas ; coupes homme et femme ; tailles XS → XXL, les mêmes pour les deux pièces ; **prêt** (rendu au départ) ; aucune tenue distribuée à ce jour — elles seront commandées puis distribuées pour la première saison. Une adhésion taekwondo donne accès au renforcement (pas l'inverse), sans que rien ne l'enregistre.
