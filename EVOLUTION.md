@@ -372,6 +372,15 @@ Principe retenu par l'utilisateur : Paramètres = la pratique du sport ; l'admin
 - **Règle d'usage confirmée à l'utilisateur** : sur une fête ou une sortie, on continue de cocher la discipline et le public — ces cases servent au ciblage (qui est prévenu, qui le voit dans son application), plus à la couleur.
 - Rattachement des créneaux spéciaux fait par l'utilisateur et vérifié en prod (prépa Dan, Combat, Démo/Freestyle, enfants confirmés).
 
+## 12/10/2026 — Ménage : public « Adulte », anciennes tables du jury, page « Horaires d'entraînement » (codé, À DÉPLOYER)
+
+Demande de l'utilisateur : « supprime ce qui ne sert à rien ».
+- **Public « Adulte » retiré** de `COURS_AGES` (`class-db.php`, `calendar.js`) : plus coché nulle part dans les formulaires de cours et de créneaux. `maybe_upgrade()` convertit une fois les cours et créneaux qui le portaient (« Enfant,Ado/adulte,Adulte » → « Enfant,Ado/adulte » ; « Adulte » seul → « Ado/adulte ») ; les anciens textes « adulte(s) » sont traduits en « Ado/adulte » (`trait-db-membres.php`). Le code de compatibilité qui lit encore « Adulte » (ciblage, fiche, grades) est laissé : sans effet, il protège les 6 fiches inactives restées dans cette catégorie. **Non touché** : TKD Parcours (ses tranches « Adolescent » / « Adulte » sont celles du programme des grades) et la liste des tarifs de TKD Cotisations (« Adulte » y reste proposé, sans tarif).
+- **Anciennes tables du jury** : `class-db.php` ne crée plus que `sp_cal_exam_passages` et `sp_cal_exam_grade_progression` (189 lignes retirées : sessions, tables, juges, affectations, épreuves, contenu des grades, ZEMITA, notes). **À faire par l'utilisateur dans phpMyAdmin, après déploiement** : `../outils/supprimer-tables-jury.sql` (test puis prod, sauvegarde OVH avant).
+- **Page « Horaires d'entraînement »** (prod) : publiée mais liée nulle part, elle affichait le texte brut `[table id=7 /]` (TablePress absent) → **mise à la corbeille le 12/10/2026** (récupérable 30 jours). Restent en base les 12 tableaux TablePress, sans utilité tant que l'extension est absente.
+- **Décisions de l'utilisateur** : pas de rappel d'anniversaires aux encadrants (ils ont la liste dans leur application) — laissé décoché ; ancien créneau « TKD combat » supprimé par lui ; menu vu par un compte secrétaire et personnalisation des vœux en attente.
+- **Pas supprimé, faute d'être sûr que c'est inutile** : extension « SP Pointage QR » (désactivée ; à supprimer depuis Extensions une fois un vrai scan de carte réussi avec sp_build seul).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

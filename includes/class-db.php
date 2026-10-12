@@ -35,12 +35,7 @@ class SpCalPro_DB {
 
     public function table( $name ) { global $wpdb; return $wpdb->prefix . self::PREFIX . $name; }
     public function table_trainer_dispos()         { return $this->table( 'trainer_dispos' ); }
-    public function table_exam_epreuves()           { return $this->table( 'exam_epreuves' ); }
     public function table_exam_passages()            { return $this->table( 'exam_passages' ); }
-    public function table_jury_notes()               { return $this->table( 'jury_notes' ); }
-    public function table_exam_sessions()            { return $this->table( 'exam_sessions' ); }
-    public function table_exam_tables()              { return $this->table( 'exam_tables' ); }
-    public function table_exam_juges()               { return $this->table( 'exam_juges' ); }
     public function table_exam_grade_progression()   { return $this->table( 'exam_grade_progression' ); }
 
     /* ══════════════════════════════════════════════════════════
@@ -82,10 +77,6 @@ class SpCalPro_DB {
         [ 'tiers' => '1e keup',  'plugin' => '1e rouge***',       'cat' => 'Ado/adulte' ],  // corrigé : *** pas **
         [ 'tiers' => '1e dan',   'plugin' => '1e Dan',            'cat' => 'Ado/adulte' ],
     ];
-    public function table_exam_affectations()         { return $this->table( 'exam_affectations' ); }
-    public function table_exam_grade_contenu()         { return $this->table( 'exam_grade_contenu' ); }
-    public function table_exam_zemita_seuils()          { return $this->table( 'exam_zemita_seuils' ); }
-    public function table_exam_zemita_mapping()         { return $this->table( 'exam_zemita_mapping' ); }
     public function table_comp_epreuves()           { return $this->table( 'comp_epreuves' ); }
     public function table_comp_resultats()          { return $this->table( 'comp_resultats' ); }
     public function table_comp_participations()     { return $this->table( 'comp_participations' ); }
@@ -258,18 +249,6 @@ class SpCalPro_DB {
     private function create_exam_tables() {
         global $wpdb;
         $charset = $wpdb->get_charset_collate();
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '{$this->table_exam_epreuves()}'" ) ) {
-            $wpdb->query( "CREATE TABLE {$this->table_exam_epreuves()} (
-                id mediumint(9) NOT NULL AUTO_INCREMENT,
-                nom varchar(200) NOT NULL DEFAULT '',
-                categorie_age varchar(150) NOT NULL DEFAULT '',
-                description text DEFAULT NULL,
-                ordre int(11) NOT NULL DEFAULT 0,
-                actif tinyint(1) NOT NULL DEFAULT 1,
-                PRIMARY KEY (id),
-                KEY categorie_age (categorie_age)
-            ) $charset" );
-        }
         if ( ! $wpdb->get_var( "SHOW TABLES LIKE '{$this->table_exam_passages()}'" ) ) {
             $wpdb->query( "CREATE TABLE {$this->table_exam_passages()} (
                 id mediumint(9) NOT NULL AUTO_INCREMENT,
@@ -283,24 +262,6 @@ class SpCalPro_DB {
                 UNIQUE KEY event_eleve (event_id, eleve_id),
                 KEY event_id (event_id),
                 KEY eleve_id (eleve_id)
-            ) $charset" );
-        }
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '{$this->table_jury_notes()}'" ) ) {
-            $wpdb->query( "CREATE TABLE {$this->table_jury_notes()} (
-                id mediumint(9) NOT NULL AUTO_INCREMENT,
-                event_id mediumint(9) NOT NULL,
-                eleve_id mediumint(9) NOT NULL,
-                epreuve_id mediumint(9) NOT NULL,
-                table_id tinyint(3) NOT NULL DEFAULT 1,
-                juge_id mediumint(9) DEFAULT NULL,
-                juge_nom varchar(150) NOT NULL DEFAULT '',
-                note decimal(4,2) DEFAULT NULL,
-                reussi tinyint(1) DEFAULT NULL,
-                created_at bigint(20) NOT NULL DEFAULT 0,
-                PRIMARY KEY (id),
-                KEY event_id (event_id),
-                KEY eleve_id (eleve_id),
-                KEY idx_note (event_id, eleve_id, epreuve_id, table_id)
             ) $charset" );
         }
     }
@@ -626,25 +587,9 @@ class SpCalPro_DB {
             }
         }
 
-        // Migration categorie → categorie_age
-        $texe = $this->table_exam_epreuves();
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$texe'" ) ) {
-            if ( $wpdb->get_var( "SHOW COLUMNS FROM `$texe` LIKE 'categorie'" ) &&
-                 ! $wpdb->get_var( "SHOW COLUMNS FROM `$texe` LIKE 'categorie_age'" ) ) {
-                $wpdb->query( "ALTER TABLE `$texe` CHANGE `categorie` `categorie_age` varchar(150) NOT NULL DEFAULT ''" );
-            }
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$texe` LIKE 'actif'" ) )
-                $wpdb->query( "ALTER TABLE `$texe` ADD COLUMN `actif` tinyint(1) NOT NULL DEFAULT 1" );
-        }
-        // v10.17c : jury d'examen — sessions, tables, juges, grade progression
+        // Enchaînement des grades (table de secours quand TKD Parcours est inactif). Les autres tables de
+        // l'ancien module jury (retiré le 03/10/2026) ne sont plus créées depuis le 12/10/2026.
         $this->create_jury_tables();
-
-        // v10.18 : support de notation (numérique / papier) sur exam_sessions
-        $ts18 = $this->table_exam_sessions();
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$ts18'" ) ) {
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$ts18` LIKE 'support_notation'" ) )
-                $wpdb->query( "ALTER TABLE `$ts18` ADD COLUMN `support_notation` varchar(20) NOT NULL DEFAULT 'numerique' AFTER mode" );
-        }
 
         // photo_url + nb_licences + eligible_dan sur eleves
         $tel3 = $this->table_eleves();
@@ -697,66 +642,29 @@ class SpCalPro_DB {
             $wpdb->query( "ALTER TABLE `$tsl_axes` ADD COLUMN `cours_discipline` text DEFAULT NULL" );
         if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tsl_axes` LIKE 'cours_age_categories'" ) )
             $wpdb->query( "ALTER TABLE `$tsl_axes` ADD COLUMN `cours_age_categories` text DEFAULT NULL" );
+
+        // 12/10/2026 : le public « Adulte » n'existe plus (fusionné dans « Ado/adulte »). Les cours et
+        // créneaux qui le portaient sont convertis ; sans effet une fois fait.
+        foreach ( array( $te, $tsl_axes ) as $table_ages ) {
+            $lignes = $wpdb->get_results( "SELECT id, cours_age_categories FROM `$table_ages` WHERE cours_age_categories LIKE '%Adulte%'" );
+            foreach ( (array) $lignes as $l ) {
+                $ages = array_map( 'trim', explode( ',', (string) $l->cours_age_categories ) );
+                if ( ! in_array( 'Adulte', $ages, true ) ) continue;
+                $ages = array_values( array_unique( array_map( static function ( $a ) { return $a === 'Adulte' ? 'Ado/adulte' : $a; }, $ages ) ) );
+                $wpdb->update( $table_ages, array( 'cours_age_categories' => implode( ',', $ages ) ), array( 'id' => $l->id ) );
+            }
+        }
     }
 
     /* ══════════════════════════════════════════════════════════
-       JURY — CREATE TABLES (v10.17c)
+       ENCHAÎNEMENT DES GRADES — seule table gardée de l'ancien module jury
     ══════════════════════════════════════════════════════════ */
 
     public function create_jury_tables() {
         global $wpdb;
         $charset = $wpdb->get_charset_collate();
 
-        $ts  = $this->table_exam_sessions();
-        $tt  = $this->table_exam_tables();
-        $tj  = $this->table_exam_juges();
         $tgp = $this->table_exam_grade_progression();
-
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$ts'" ) ) {
-$wpdb->query( "CREATE TABLE $ts (
-    id          mediumint(9)    NOT NULL AUTO_INCREMENT,
-    event_id    mediumint(9)    NOT NULL,
-    mode        varchar(20)     NOT NULL DEFAULT 'par_epreuve',
-    note_min    tinyint(3)      NOT NULL DEFAULT 0,
-    note_max    tinyint(3)      NOT NULL DEFAULT 10,
-    seuil_admission decimal(6,2) NOT NULL DEFAULT 0,
-    zemita_mode tinyint(1)      NOT NULL DEFAULT 0,
-    statut      varchar(20)     NOT NULL DEFAULT 'preparation',
-    created_at  datetime        DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id),
-    UNIQUE KEY event_id (event_id)
-) $charset" );
-        }
-
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tt'" ) ) {
-            $wpdb->query( "CREATE TABLE $tt (
-                id          mediumint(9)    NOT NULL AUTO_INCREMENT,
-                event_id    mediumint(9)    NOT NULL,
-                numero      tinyint(3)      NOT NULL DEFAULT 1,
-                epreuve_id  mediumint(9)    DEFAULT NULL,
-                label       varchar(200)    NOT NULL DEFAULT '',
-                PRIMARY KEY (id),
-                KEY event_id (event_id)
-            ) $charset" );
-        }
-
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tj'" ) ) {
-            $wpdb->query( "CREATE TABLE $tj (
-                id           mediumint(9)   NOT NULL AUTO_INCREMENT,
-                event_id     mediumint(9)   NOT NULL,
-                table_id     mediumint(9)   NOT NULL,
-                nom          varchar(150)   NOT NULL DEFAULT '',
-                prenom       varchar(150)   NOT NULL DEFAULT '',
-                trainer_id   mediumint(9)   DEFAULT NULL,
-                token        varchar(64)    DEFAULT NULL,
-                token_sent_at datetime      DEFAULT NULL,
-                PRIMARY KEY (id),
-                KEY event_id (event_id),
-                KEY table_id (table_id),
-                UNIQUE KEY token (token)
-            ) $charset" );
-        }
-
         if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tgp'" ) ) {
             $wpdb->query( "CREATE TABLE $tgp (
                 id            mediumint(9)  NOT NULL AUTO_INCREMENT,
@@ -779,89 +687,6 @@ $wpdb->query( "CREATE TABLE $ts (
                 $wpdb->query( "ALTER TABLE `$tgp` ADD UNIQUE KEY cat_grade (categorie_age, grade_actuel)" );
             }
         }
-
-        // Table exam_grade_contenu : ressources pédagogiques par grade
-        $tgc = $this->table_exam_grade_contenu();
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tgc'" ) ) {
-            $wpdb->query( "CREATE TABLE $tgc (
-                id           mediumint(9)  NOT NULL AUTO_INCREMENT,
-                grade_actuel varchar(100)  NOT NULL DEFAULT '',
-                description  text          DEFAULT NULL,
-                liens        longtext      DEFAULT NULL,
-                updated_at   datetime      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                UNIQUE KEY grade_actuel (grade_actuel)
-            ) $charset" );
-        }
-
-        // Table exam_affectations : affectation explicite candidat → aire
-        $ta = $this->table_exam_affectations();
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$ta'" ) ) {
-            $wpdb->query( "CREATE TABLE $ta (
-                id          mediumint(9)  NOT NULL AUTO_INCREMENT,
-                event_id    mediumint(9)  NOT NULL,
-                eleve_id    mediumint(9)  NOT NULL,
-                aire_id     mediumint(9)  NOT NULL,
-                ordre       smallint(5)   NOT NULL DEFAULT 0,
-                PRIMARY KEY (id),
-                UNIQUE KEY event_eleve (event_id, eleve_id),
-                KEY event_aire (event_id, aire_id)
-            ) $charset" );
-        }
-
-        // Colonne table_id sur jury_notes si manquante (rétrocompat)
-        $tn = $this->table_jury_notes();
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$tn'" ) ) {
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tn` LIKE 'exam_table_id'" ) )
-                $wpdb->query( "ALTER TABLE `$tn` ADD COLUMN `exam_table_id` mediumint(9) DEFAULT NULL AFTER table_id" );
-        }
-
-        // ── ZEMITA : tables et migrations ─────────────────────────────────────
-
-        // Mode ZEMITA sur exam_sessions
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$ts'" ) ) {
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$ts` LIKE 'zemita_mode'" ) ) {
-                $wpdb->query( "ALTER TABLE `$ts` ADD COLUMN `zemita_mode` TINYINT(1) NOT NULL DEFAULT 0" );
-            }
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$ts` LIKE 'support_notation'" ) ) {
-                $wpdb->query( "ALTER TABLE `$ts` ADD COLUMN `support_notation` VARCHAR(20) NOT NULL DEFAULT 'numerique'" );
-            }
-        }
-
-        // Groupe ZEMITA sur exam_affectations
-        $ta = $this->table_exam_affectations();
-        if ( $wpdb->get_var( "SHOW TABLES LIKE '$ta'" ) ) {
-            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$ta` LIKE 'zemita_groupe'" ) ) {
-                $wpdb->query( "ALTER TABLE `$ta` ADD COLUMN `zemita_groupe` VARCHAR(50) NOT NULL DEFAULT ''" );
-            }
-        }
-
-        // Table grille seuils ZEMITA par examen (9 cases : 3 groupes × 3 catégories)
-        $tzs = $this->table_exam_zemita_seuils();
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tzs'" ) ) {
-            $wpdb->query( "CREATE TABLE $tzs (
-                id                 mediumint(9)   NOT NULL AUTO_INCREMENT,
-                event_id           mediumint(9)   NOT NULL,
-                groupe             varchar(50)    NOT NULL DEFAULT '',
-                categorie_age      varchar(50)    NOT NULL DEFAULT '',
-                seuil_moyen        decimal(6,2)   NOT NULL DEFAULT 0,
-                seuil_performance  decimal(6,2)   NOT NULL DEFAULT 0,
-                PRIMARY KEY (id),
-                UNIQUE KEY event_groupe_cat (event_id, groupe(30), categorie_age(30))
-            ) $charset" );
-        }
-
-        // Table mapping global grade → groupe ZEMITA
-        $tzm = $this->table_exam_zemita_mapping();
-        if ( ! $wpdb->get_var( "SHOW TABLES LIKE '$tzm'" ) ) {
-            $wpdb->query( "CREATE TABLE $tzm (
-                id      mediumint(9)  NOT NULL AUTO_INCREMENT,
-                grade   varchar(100)  NOT NULL DEFAULT '',
-                groupe  varchar(50)   NOT NULL DEFAULT '',
-                PRIMARY KEY (id),
-                UNIQUE KEY grade (grade(80))
-            ) $charset" );
-        }
     }
 
 
@@ -875,7 +700,9 @@ $wpdb->query( "CREATE TABLE $ts (
 
     /** Valeurs des deux axes d'un cours (mêmes listes que CAL.COURS_DISCIPLINES / CAL.COURS_AGES). */
     const COURS_DISCIPLINES = array( 'Taekwondo', 'Renforcement musculaire', 'Autre' );
-    const COURS_AGES        = array( 'Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge' );
+    // « Adulte » retiré le 12/10/2026 : depuis la règle du 08/10 (classe scolaire), plus personne n'y est
+    // classé — fusionné dans « Ado/adulte » (cours et créneaux existants convertis par maybe_upgrade()).
+    const COURS_AGES        = array( 'Baby', 'Enfant', 'Ado/adulte', 'Tout âge' );
 
     /* ── Couleurs des cours (refonte du 12/10/2026) ─────────────────────────────────────────
        Une couleur par DISCIPLINE (Taekwondo, Renforcement musculaire) et une par COURS SPÉCIAL

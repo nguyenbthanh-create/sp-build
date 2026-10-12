@@ -1941,7 +1941,7 @@
         // libre (cf. échange du 18/09/2026). "Autre" couvre les sorties/fêtes qui ne relèvent pas
         // de l'objet sportif du club.
         COURS_DISCIPLINES: ['Taekwondo', 'Renforcement musculaire', 'Autre'],
-        COURS_AGES:        ['Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge'],
+        COURS_AGES:        ['Baby', 'Enfant', 'Ado/adulte', 'Tout âge'],
 
         renderCoursCategorieWrap: function (selectedDiscipline, selectedAge, categorie) {
             var html = '';

@@ -124,7 +124,7 @@ trait SpCalPro_DB_Membres {
             'enfant'                  => array( 'age' => 'Enfant' ),
             'ado/adulte'              => array( 'age' => 'Ado/adulte' ),
             'ado/adultes'             => array( 'age' => 'Ado/adulte' ),
-            'adulte'                  => array( 'age' => 'Adulte' ),
+            'adulte'                  => array( 'age' => 'Ado/adulte' ),
             'tout age'                => array( 'age' => 'Tout âge' ),
             'tout âge'                => array( 'age' => 'Tout âge' ),
         );
@@ -445,8 +445,8 @@ trait SpCalPro_DB_Membres {
             'ados'         => 'Ado/adulte',
             'adolescent'   => 'Ado/adulte',
             'adolescents'  => 'Ado/adulte',
-            'adulte'       => 'Adulte',
-            'adultes'      => 'Adulte',
+            'adulte'       => 'Ado/adulte',
+            'adultes'      => 'Ado/adulte',
             // "Tout âge" : catégorie propre au Renforcement musculaire, qui n'est pas subdivisé
             // par âge contrairement au Taekwondo (Baby/Enfant/Ado-adulte/Adulte) — cf. échange
             // du 18/09/2026. "RENFO" trouvé dans categorie_age n'est pas une erreur de saisie,
