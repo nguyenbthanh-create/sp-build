@@ -648,7 +648,13 @@ trait SpCalPro_Admin_Equipe {
                         <?php
                         $lib_cr = $this->db->libelle_creneau( $s );
                         $a_recl = trim( (string) ( $s->cours_discipline ?? '' ) ) === '' && trim( (string) ( $s->cours_age_categories ?? '' ) ) === '' && trim( (string) $s->categorie ) !== '';
-                        if ( $lib_cr !== '' ) echo '<span class="sp-badge-blue"' . ( $a_recl ? ' style="background:#fef3c7;color:#92400e" title="Ancienne catégorie en texte libre : à reclasser"' : '' ) . '>' . ( $a_recl ? '⚠️ ' : '' ) . esc_html( $lib_cr ) . '</span>';
+                        // Même couleur que dans le calendrier et le planning (Paramètres > Cours & couleurs) ;
+                        // un cours spécial est affiché par son nom, au-dessus de sa discipline et de son public.
+                        $style_cr   = SpCalPro_DB::style_categorie( $s->categorie );
+                        $special_cr = in_array( (string) $s->categorie, SpCalPro_DB::cours_speciaux(), true ) ? (string) $s->categorie : '';
+                        $pastille   = ' style="background:' . esc_attr( $style_cr['color'] ) . ';color:#fff"';
+                        if ( $special_cr !== '' ) echo '<span class="sp-badge-blue"' . $pastille . '>' . esc_html( trim( $style_cr['icon'] . ' ' . $special_cr ) ) . '</span><br>';
+                        if ( $lib_cr !== '' ) echo '<span class="sp-badge-blue"' . ( $a_recl ? ' style="background:#fef3c7;color:#92400e" title="Ancienne catégorie en texte libre : à reclasser"' : ( $special_cr === '' ? $pastille : '' ) ) . '>' . ( $a_recl ? '⚠️ ' : '' ) . esc_html( $lib_cr ) . '</span>';
                         ?>
                         <div style="margin-top:4px;font-size:10px;color:#6b7280;"><?php echo esc_html($rec_label); ?></div>
                         <?php if($s->date_debut) echo '<div style="font-size:10px;color:#888;">Du '. esc_html($s->date_debut) . ($s->date_fin ? ' au '. esc_html($s->date_fin) : '') .'</div>'; ?>
