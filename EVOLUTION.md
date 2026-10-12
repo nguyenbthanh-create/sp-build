@@ -372,7 +372,7 @@ Principe retenu par l'utilisateur : Paramètres = la pratique du sport ; l'admin
 - **Règle d'usage confirmée à l'utilisateur** : sur une fête ou une sortie, on continue de cocher la discipline et le public — ces cases servent au ciblage (qui est prévenu, qui le voit dans son application), plus à la couleur.
 - Rattachement des créneaux spéciaux fait par l'utilisateur et vérifié en prod (prépa Dan, Combat, Démo/Freestyle, enfants confirmés).
 
-## 12/10/2026 — Ménage : public « Adulte », anciennes tables du jury, page « Horaires d'entraînement » (codé, À DÉPLOYER)
+## 12/10/2026 — Ménage : public « Adulte », anciennes tables du jury, page « Horaires d'entraînement » (FAIT : en prod et vérifié le 12/10/2026, tables du jury supprimées sur le test et la prod par l'utilisateur)
 
 Demande de l'utilisateur : « supprime ce qui ne sert à rien ».
 - **Public « Adulte » retiré** de `COURS_AGES` (`class-db.php`, `calendar.js`) : plus coché nulle part dans les formulaires de cours et de créneaux. `maybe_upgrade()` convertit une fois les cours et créneaux qui le portaient (« Enfant,Ado/adulte,Adulte » → « Enfant,Ado/adulte » ; « Adulte » seul → « Ado/adulte ») ; les anciens textes « adulte(s) » sont traduits en « Ado/adulte » (`trait-db-membres.php`). Le code de compatibilité qui lit encore « Adulte » (ciblage, fiche, grades) est laissé : sans effet, il protège les 6 fiches inactives restées dans cette catégorie. **Non touché** : TKD Parcours (ses tranches « Adolescent » / « Adulte » sont celles du programme des grades) et la liste des tarifs de TKD Cotisations (« Adulte » y reste proposé, sans tarif).
