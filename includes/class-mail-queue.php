@@ -385,6 +385,22 @@ class SP_Cal_Mail_Queue {
 
 		echo '<div class="wrap"><h1>📨 Envois d\'emails</h1>';
 
+		// Onglet « Notifications » : envois automatiques du matin (venus de Paramètres, 12/10/2026).
+		// Leur enregistrement (handle_requests) est réservé aux administrateurs.
+		if ( current_user_can( 'manage_options' ) ) {
+			$notifs = sanitize_key( $_GET['tab'] ?? '' ) === 'notifications';
+			SP_Cal_Menu::onglets( [
+				'file'          => [ 'File d\'envoi', admin_url( 'admin.php?page=' . self::PAGE ) ],
+				'notifications' => [ 'Notifications automatiques', admin_url( 'admin.php?page=' . self::PAGE . '&tab=notifications' ) ],
+			], $notifs ? 'notifications' : 'file' );
+			if ( $notifs ) {
+				if ( isset( $_GET['notif_saved'] ) ) echo '<div class="notice notice-success is-dismissible"><p>✅ Notifications enregistrées.</p></div>';
+				SpCalPro_Admin::bloc_notifications();
+				echo '</div>';
+				return;
+			}
+		}
+
 		$msg = sanitize_key( $_GET['msg'] ?? '' );
 		if ( $msg !== '' ) {
 			[ $quoi, $n ] = array_pad( explode( '_', $msg, 2 ), 2, '0' );

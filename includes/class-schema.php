@@ -140,7 +140,7 @@ class SP_Cal_Schema {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
 		check_admin_referer( 'sp_cal_schema_reverifier' );
 		$ok = self::executer( self::signature(), 'manuelle' );
-		wp_safe_redirect( add_query_arg( [ 'page' => 'sp-cal-settings', 'schema' => $ok ? 'ok' : 'ko' ], admin_url( 'admin.php' ) ) );
+		wp_safe_redirect( add_query_arg( [ 'page' => 'sp-cal-settings', 'onglet' => 'maintenance', 'schema' => $ok ? 'ok' : 'ko' ], admin_url( 'admin.php' ) ) );
 		exit;
 	}
 

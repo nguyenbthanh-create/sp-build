@@ -153,7 +153,8 @@ class SP_Cal_Menu {
 		], $actif );
 	}
 
-	private static function onglets( array $onglets, string $actif ): void {
+	/** Barre d'onglets : [ clé => [ libellé, adresse ] ]. */
+	public static function onglets( array $onglets, string $actif ): void {
 		echo '<nav class="nav-tab-wrapper" style="margin-bottom:16px;">';
 		foreach ( $onglets as $cle => [ $libelle, $url ] ) {
 			printf( '<a class="nav-tab%s" href="%s">%s</a>', $cle === $actif ? ' nav-tab-active' : '', esc_url( $url ), esc_html( $libelle ) );

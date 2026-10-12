@@ -1,6 +1,10 @@
 <?php
 /**
- * Page d'administration « Paramètres » de SP Calendar PRO (réglages du club, couleurs, convention de points, règlement intérieur, réinitialisations…).
+ * Page d'administration « Paramètres » de SP Calendar PRO, en onglets (12/10/2026) : Cours & couleurs,
+ * Calendrier & vacances, Compétition, Club, Maintenance. Trois blocs administratifs en sont sortis et
+ * sont affichés par d'autres pages (méthodes statiques en fin de fichier) : notifications automatiques
+ * (« Envois d'emails »), récapitulatif mensuel des entraîneurs (« Indemnités km ») et veille
+ * réglementaire (« Fin de saison & certificats »).
  *
  * Méthodes de SpCalPro_Admin déplacées telles quelles depuis class-admin.php (restructuration,
  * étape 3 — 07/10/2026, outils/deplacer-methodes.php). La classe les réintègre par « use SpCalPro_Admin_Reglages; » :
@@ -28,9 +32,29 @@ trait SpCalPro_Admin_Reglages {
         );
         $cats = array_unique( $cats );
         sort( $cats );
+
+        $onglets = array(
+            'cours'       => 'Cours & couleurs',
+            'vacances'    => 'Calendrier & vacances',
+            'competition' => 'Compétition',
+            'club'        => 'Club',
+            'maintenance' => 'Maintenance',
+        );
+        $onglet = sanitize_key( $_GET['onglet'] ?? 'cours' );
+        if ( ! isset( $onglets[ $onglet ] ) ) $onglet = 'cours';
+        $liens = array();
+        foreach ( $onglets as $cle => $libelle ) $liens[ $cle ] = array( $libelle, admin_url( 'admin.php?page=sp-cal-settings&onglet=' . $cle ) );
+
+        global $wpdb;
+        $tel           = $this->db->table_eleves();
+        $nb_with_token = intval($wpdb->get_var("SELECT COUNT(*) FROM $tel WHERE actif=1 AND token IS NOT NULL AND token!=''"));
+        $nb_without    = intval($wpdb->get_var("SELECT COUNT(*) FROM $tel WHERE actif=1 AND (token IS NULL OR token='')"));
+        $fiche_url_ex    = '';
+        if ($this->token) $fiche_url_ex = $this->token->get_fiche_url('EXEMPLE');
+        $palmares_url    = get_option( 'sp_cal_palmares_url', '' );
         ?>
         <div class="wrap sp-cal-wrap">
-        <h1>Paramètres SP Calendar PRO</h1>
+        <h1>Paramètres</h1>
 
         <?php $this->notice_flash( 'saved', 'Paramètres enregistrés.' ); ?>
         <?php if (isset($_GET['vac_saved'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Couleurs calendrier enregistrées.</p></div>'; ?>
@@ -40,77 +64,16 @@ trait SpCalPro_Admin_Reglages {
         <?php if (isset($_GET['events_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Cours et événements réinitialisés.</p></div>'; ?>
         <?php if (isset($_GET['eleves_reset'])) echo '<div class="notice notice-success is-dismissible"><p>✅ Élèves et présences réinitialisés.</p></div>'; ?>
         <?php $medal_pts = $this->db->get_medal_points(); ?>
+        <?php SP_Cal_Menu::onglets( $liens, $onglet ); ?>
 
-        <!-- ÉTAT DE LA BASE DE DONNÉES (class-schema.php, 07/10/2026) -->
-        <?php SP_Cal_Schema::render_statut(); ?>
+        <?php if ( $onglet === 'cours' ) : ?>
 
-        <!-- INFORMATIONS CLUB -->
-        <div class="sp-box" style="margin-bottom:18px;">
-            <h2>🏛️ Informations du club</h2>
-            <form method="post">
-                <?php wp_nonce_field( 'sp_cal_settings' ); ?>
-                <input type="hidden" name="sp_cal_save_settings" value="1">
-                <table class="form-table">
-                    <tr>
-                        <th>N° de club</th>
-                        <td><input type="text" name="sp_cal_club_num" class="regular-text"
-                                   value="<?php echo esc_attr(get_option('sp_cal_club_num','')); ?>"
-                                   placeholder="Ex: 066001"></td>
-                    </tr>
-                    <tr>
-                        <th>N° d'affiliation FFTDA</th>
-                        <td><input type="text" name="sp_cal_club_affiliation" class="regular-text"
-                                   value="<?php echo esc_attr(get_option('sp_cal_club_affiliation','')); ?>"
-                                   placeholder="N° affiliation fédérale"></td>
-                    </tr>
-                    <tr>
-                        <th>Ligue</th>
-                        <td><input type="text" name="sp_cal_club_ligue" class="regular-text"
-                                   value="<?php echo esc_attr(get_option('sp_cal_club_ligue','')); ?>"
-                                   placeholder="Ex: Ligue Occitanie"></td>
-                    </tr>
-                    <tr>
-                        <th>Club labellisé</th>
-                        <td>
-                            <select name="sp_cal_club_labelise" style="padding:5px 8px;border:1px solid #ddd;border-radius:4px;">
-                                <?php
-                                $labelise = intval(get_option('sp_cal_club_labelise', 0));
-                                $options = array(0=>'Non labellisé', 1=>'⭐ 1 étoile', 2=>'⭐⭐ 2 étoiles', 3=>'⭐⭐⭐ 3 étoiles', 4=>'⭐⭐⭐⭐ 4 étoiles', 5=>'⭐⭐⭐⭐⭐ 5 étoiles');
-                                foreach ($options as $v => $l) echo '<option value="'.$v.'"'.selected($labelise,$v,false).'>'.$l.'</option>';
-                                ?>
-                            </select>
-                            <p class="description">Affiché discrètement sur la carte de membre.</p>
-                        </td>
-                    </tr>
-                </table>
-                <p class="submit"><input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les informations club"></p>
-            </form>
-        </div>
-
-        <!-- GÉNÉRAL -->
+        <!-- COULEURS & ICÔNES DES CATÉGORIES -->
         <div class="sp-box">
-            <h2>⚙️ Général</h2>
+            <h2>🎨 Couleurs &amp; icônes des catégories</h2>
             <form method="post">
                 <?php wp_nonce_field( 'sp_cal_settings' ); ?>
-                <table class="form-table">
-                    <tr>
-                        <th>URL planning public</th>
-                        <td><input type="url" name="sp_cal_public_link" class="large-text" value="<?php echo esc_attr($pub); ?>"></td>
-                    </tr>
-                    <tr>
-                        <th>Clé API</th>
-                        <td><code><?php echo esc_html($api_key); ?></code></td>
-                    </tr>
-                    <tr>
-                        <th>Shortcodes</th>
-                        <td>
-                            <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-shortcodes' ) ); ?>">Voir la page « Shortcodes »</a> : liste complète, options et pages qui les utilisent.
-                        </td>
-                    </tr>
-                </table>
-
-                <!-- Couleurs catégories -->
-                <h3>🎨 Couleurs &amp; icônes des catégories</h3>
+                <input type="hidden" name="sp_cal_bloc" value="couleurs">
                 <?php if ( empty($cats) ) : ?>
                     <p class="sp-muted">Aucune catégorie trouvée (importez d'abord des élèves ou créez des événements).</p>
                 <?php else : ?>
@@ -150,55 +113,75 @@ trait SpCalPro_Admin_Reglages {
                 </table>
                 <?php endif; ?>
 
-                <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les paramètres">
+                <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les couleurs">
             </form>
         </div>
 
-        <!-- RÈGLEMENT INTÉRIEUR (popup formulaire d'adhésion public) -->
-        <div class="sp-box" style="margin-top:18px;">
-            <h2>📄 Règlement intérieur</h2>
-            <p class="description" style="margin-bottom:12px;">
-                Ce texte est affiché dans la fenêtre popup du formulaire d'adhésion public (<code>[sp_inscription_adhesion]</code>)
-                lorsque l'adhérent clique sur « règlement intérieur ». Quelques balises HTML simples sont acceptées (paragraphes, gras, listes, liens).
-            </p>
-            <form method="post">
-                <?php wp_nonce_field( 'sp_cal_reglement' ); ?>
-                <input type="hidden" name="sp_cal_save_reglement" value="1">
-                <textarea name="sp_cal_reglement_interieur" rows="14" style="width:100%;max-width:900px;font-family:monospace;font-size:13px;"><?php
-                    echo esc_textarea( get_option( 'sp_cal_reglement_interieur', '' ) );
-                ?></textarea>
-                <p class="submit"><input type="submit" name="sp_cal_save_reglement" class="button button-primary" value="Enregistrer le règlement intérieur"></p>
-            </form>
-        </div>
-
-        <!-- VEILLE RÉGLEMENTAIRE (pense-bête, pas d'appel automatique) -->
-        <div class="sp-box" style="margin-top:18px;">
-            <h2>📋 Veille réglementaire</h2>
-            <?php if ( isset( $_GET['veille_demandee'] ) ) : ?>
-                <div class="notice notice-success is-dismissible"><p>✅ Demande de veille enregistrée. Pensez à ouvrir une conversation avec Claude Code et à lui demander de lancer la veille réglementaire pour ce plugin.</p></div>
+        <!-- MIGRATION DISCIPLINE / POUR QUI DES ÉVÉNEMENTS -->
+        <?php
+        if ( isset($_GET['migration_cours_done']) ) {
+            $nb_mig = intval($_GET['nb']);
+            echo '<div class="notice notice-success is-dismissible"><p>✅ Migration effectuée — <strong>' . $nb_mig . '</strong> événement(s) mis à jour.</p></div>';
+        }
+        if ( isset($_GET['migration_cours_preview']) ) {
+            $preview_mig = get_transient( 'sp_migrer_cours_cat_preview_' . get_current_user_id() );
+            if ( $preview_mig !== false ) :
+        ?>
+        <div class="notice notice-warning" style="padding:16px;">
+            <?php if ( empty($preview_mig) ) : ?>
+            <p><strong>👁️ Rien à migrer</strong> — tous les événements ont déjà une Discipline renseignée.</p>
+            <?php else : ?>
+            <p><strong>👁️ Aperçu de la migration — <?php echo count($preview_mig); ?> événement(s) concerné(s)</strong></p>
+            <table class="wp-list-table widefat fixed striped" style="max-width:800px;margin:10px 0;">
+                <thead><tr><th>Événement</th><th>Ancienne catégorie</th><th>Discipline</th><th>Pour qui</th></tr></thead>
+                <tbody>
+                <?php foreach ( array_slice($preview_mig, 0, 50) as $m ): ?>
+                <tr>
+                    <td><?php echo esc_html($m['titre']); ?></td>
+                    <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['ancienne']); ?></span></td>
+                    <td><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['discipline'] !== '' ? str_replace(',', ', ', $m['discipline']) : '—'); ?></span></td>
+                    <td><span style="background:#dbeafe;color:#1e3a8a;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['age'] !== '' ? str_replace(',', ', ', $m['age']) : '—'); ?></span></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if ( count($preview_mig) > 50 ): ?>
+            <p style="color:#64748b;font-size:12px;">… et <?php echo count($preview_mig) - 50; ?> de plus (non affichés, mais bien pris en compte à la confirmation).</p>
             <?php endif; ?>
-            <p class="description" style="margin-bottom:10px;">
-                Le plugin s'appuie sur 3 hypothèses réglementaires codées en dur, à revérifier de temps en temps auprès des sources officielles :
-            </p>
-            <ul style="margin:0 0 12px 20px;list-style:disc;font-size:13px;color:#374151;">
-                <li>Certificat médical Taekwondo (FFTDA) : renouvellement chaque année (12 mois par défaut, réglable ci-dessus dans 🪪 Adhésions).</li>
-                <li>Renforcement musculaire : certificat médical seulement en 1ère inscription adulte, sinon questionnaire de santé QS-Sport.</li>
-                <li>Pass'Sport : aide de 50€, code déclaratif, aucune API de vérification connue côté Compte Asso.</li>
-            </ul>
-            <p class="description" style="margin-bottom:10px;">
-                Ce bouton n'interroge rien automatiquement — il enregistre simplement la date de votre demande, comme un pense-bête. La vérification elle-même se fait en demandant à Claude Code de « lancer la veille réglementaire » dans une conversation : il consultera les sources officielles et vous fera un rapport.
-            </p>
-            <?php $veille_demandee_le = get_option( 'sp_cal_veille_reglementaire_demandee_le', '' ); ?>
-            <p style="margin-bottom:10px;font-size:13px;">
-                Dernière demande de veille :
-                <strong><?php echo $veille_demandee_le ? esc_html( date( 'd/m/Y', strtotime( $veille_demandee_le ) ) ) : 'jamais'; ?></strong>
-            </p>
-            <form method="post">
-                <?php wp_nonce_field( 'sp_cal_veille_reglementaire' ); ?>
-                <input type="hidden" name="sp_veille_reglementaire_demandee" value="1">
-                <input type="submit" class="button button-primary" value="🔍 Demander une veille réglementaire">
+            <form method="post" style="margin-top:8px;">
+                <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
+                <input type="hidden" name="sp_migrer_cours_categories" value="1">
+                <input type="submit" class="button button-primary" value="✅ Confirmer la migration">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=sp-cal-settings&onglet=cours')); ?>" class="button" style="margin-left:8px;">Annuler</a>
             </form>
+            <?php endif; ?>
         </div>
+        <?php endif; } ?>
+
+        <div class="sp-box" style="border-left:4px solid #e5e7eb;margin-bottom:18px;">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;">
+                    <strong>🎯 Migrer les événements vers Discipline / Pour qui</strong>
+                    <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
+                        Convertit l'ancien champ "Catégorie" en texte libre (TKD, RENFO, Général, Prépa CN, Sortie…)
+                        des événements existants vers les deux nouveaux menus du calendrier — <strong>Discipline</strong>
+                        (Taekwondo / Renforcement musculaire / Autre) et <strong>Pour qui</strong> (tranche d'âge).
+                        Les valeurs non reconnues (Général, Prépa CN, Sortie…) basculent en Discipline "Autre".
+                        Sans effet sur les événements déjà migrés.
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <form method="post" style="margin:0;">
+                        <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
+                        <input type="hidden" name="sp_migrer_cours_categories" value="1">
+                        <input type="hidden" name="sp_migrer_preview" value="1">
+                        <input type="submit" class="button" value="👁️ Prévisualiser">
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <?php elseif ( $onglet === 'vacances' ) : ?>
 
         <!-- COULEURS CALENDRIER — WEEKENDS & VACANCES ZONE C -->
         <div class="sp-box">
@@ -280,6 +263,8 @@ trait SpCalPro_Admin_Reglages {
             })(jQuery);
             </script>
         </div>
+
+        <?php elseif ( $onglet === 'competition' ) : ?>
 
         <!-- CONVENTION MÉDAILLE → POINTS -->
         <div class="sp-box">
@@ -418,225 +403,129 @@ trait SpCalPro_Admin_Reglages {
             </form>
         </div>
 
-        <!-- NOTIFICATIONS EMAIL -->
-        <?php
-        $notif_email          = get_option('sp_cal_notif_email',          get_option('admin_email'));
-        $notif_anniv          = get_option('sp_cal_notif_anniv',          '0') === '1';
-        $notif_anniv_jours    = intval(get_option('sp_cal_notif_anniv_jours',    7));
-        $notif_absences       = get_option('sp_cal_notif_absences',       '0') === '1';
-        $notif_absences_seuil = intval(get_option('sp_cal_notif_absences_seuil', 3));
-        $last_run             = get_option('sp_cal_notif_last_run', null);
-        ?>
+        <!-- URL PAGE PALMARÈS PUBLIC -->
         <div class="sp-box">
-            <h2>📧 Notifications email</h2>
-            <p class="description">Les notifications sont envoyées automatiquement chaque matin à 8h via le cron WordPress.</p>
-
-            <form method="post">
-                <?php wp_nonce_field('sp_cal_settings'); ?>
-                <table class="form-table" style="max-width:640px;">
-                    <tr>
-                        <th>Email destinataire</th>
-                        <td>
-                            <input type="email" name="sp_cal_notif_email" class="regular-text"
-                                   value="<?php echo esc_attr($notif_email); ?>">
-                            <p class="description">Reçoit toutes les notifications du club.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>🎂 Anniversaires</th>
-                        <td>
-                            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                                <input type="checkbox" name="sp_cal_notif_anniv" value="1" <?php checked($notif_anniv); ?>>
-                                Activer les rappels d'anniversaires
-                            </label>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span>Prévenir</span>
-                                <input type="number" name="sp_cal_notif_anniv_jours" min="1" max="30"
-                                       value="<?php echo esc_attr($notif_anniv_jours); ?>"
-                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
-                                <span>jours à l'avance</span>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th>⚠️ Absences répétées</th>
-                        <td>
-                            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-                                <input type="checkbox" name="sp_cal_notif_absences" value="1" <?php checked($notif_absences); ?>>
-                                Activer les alertes d'absences consécutives
-                            </label>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span>Alerter après</span>
-                                <input type="number" name="sp_cal_notif_absences_seuil" min="2" max="20"
-                                       value="<?php echo esc_attr($notif_absences_seuil); ?>"
-                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
-                                <span>absences consécutives</span>
-                            </div>
-                        </td>
-                    </tr>
-                </table>
-                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
-                    <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
-                    <button type="button" id="sp-notif-test-anniv" class="button"
-                            data-type="anniv" <?php echo !$notif_anniv ? 'disabled title="Activez d\'abord les anniversaires"' : ''; ?>>
-                        🎂 Tester anniversaires
-                    </button>
-                    <button type="button" id="sp-notif-test-absences" class="button"
-                            data-type="absences" <?php echo !$notif_absences ? 'disabled title="Activez d\'abord les absences"' : ''; ?>>
-                        ⚠️ Tester absences
-                    </button>
-                    <span id="sp-notif-result" style="font-size:13px;color:#15803d;display:none;"></span>
-                </div>
-            </form>
-
-            <?php if ($last_run): ?>
-            <p class="sp-muted" style="margin-top:12px;font-size:12px;">
-                Dernier envoi : <?php echo esc_html($last_run['date']); ?>
-                <?php
-                $s = $last_run['sent'] ?? array();
-                $parts = array();
-                if (isset($s['anniv']))    $parts[] = $s['anniv'] . ' anniv.';
-                if (isset($s['absences'])) $parts[] = $s['absences'] . ' absences';
-                if ($parts) echo '— ' . implode(', ', $parts) . ' email(s) envoyé(s)';
-                ?>
-            </p>
-            <?php endif; ?>
-        </div>
-
-        <!-- RÉCAPITULATIF MENSUEL ENTRAÎNEURS -->
-        <?php
-        $recap_actif = get_option('sp_cal_recap_actif', '0') === '1';
-        $recap_jour  = intval( get_option('sp_cal_recap_jour', 1) );
-        $tarif_km    = floatval( get_option('sp_cal_tarif_km', 0) );
-        $recap_last  = get_option('sp_cal_recap_last_run', null);
-        ?>
-        <div class="sp-box">
-            <h2>📊 Récapitulatif mensuel entraîneurs</h2>
+            <h2>🏆 Page palmarès public</h2>
             <p class="description">
-                Le <strong><?php echo esc_html(ordinal_fr($recap_jour)); ?> de chaque mois</strong>,
-                un email est envoyé aux membres du bureau avec les jours d'intervention, les allers-retours
-                et le montant calculé pour chaque entraîneur.<br>
-                <strong>Formule :</strong> tarif €/km &times; km aller-retour &times; nombre d'allers-retours (1 par jour d'intervention, 2 si l'entraîneur l'a déclaré).
-                Les km sont configurés sur la fiche de chaque entraîneur.
+                Indiquez l'URL de la page WordPress contenant le shortcode <code>[sp_cal_palmares]</code>.<br>
+                Cette URL est utilisée par le planning public pour rediriger vers les résultats d'une compétition passée.
             </p>
-            <?php $this->notice_flash('recap_saved', 'Paramètres du récapitulatif enregistrés.'); ?>
+            <form method="post" style="margin:12px 0 0;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">
+                <?php wp_nonce_field('sp_cal_palmares_url'); ?>
+                <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">
+                    URL de la page «&nbsp;Palmarès&nbsp;» <span style="color:#c00;">*</span>
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input type="url" name="sp_cal_palmares_url" class="large-text"
+                           value="<?php echo esc_attr($palmares_url); ?>"
+                           placeholder="https://votresite.fr/palmares/"
+                           style="max-width:400px;">
+                    <input type="submit" name="sp_save_palmares_url" class="button button-primary" value="Enregistrer l'URL">
+                    <?php if ($palmares_url): ?>
+                    <a href="<?php echo esc_url($palmares_url); ?>" target="_blank" class="button">🔗 Voir la page</a>
+                    <?php endif; ?>
+                </div>
+                <p class="description" style="margin-top:6px;">
+                    <?php if ( ! $palmares_url ): ?>
+                    <strong style="color:#b45309;">⚠️ Non configurée — le lien 🏆 sur le planning ne sera pas actif.</strong>
+                    <?php else: ?>
+                    ✅ URL enregistrée : <code><?php echo esc_html($palmares_url); ?></code>
+                    <?php endif; ?>
+                </p>
+            </form>
+        </div>
+
+        <?php elseif ( $onglet === 'club' ) : ?>
+
+        <!-- INFORMATIONS CLUB -->
+        <div class="sp-box" style="margin-bottom:18px;">
+            <h2>🏛️ Informations du club</h2>
             <form method="post">
-                <?php wp_nonce_field('sp_cal_recap_settings'); ?>
-                <table class="form-table" style="max-width:640px;">
+                <?php wp_nonce_field( 'sp_cal_settings' ); ?>
+                <input type="hidden" name="sp_cal_bloc" value="club">
+                <input type="hidden" name="sp_cal_save_settings" value="1">
+                <table class="form-table">
                     <tr>
-                        <th>Activer</th>
-                        <td>
-                            <label style="display:flex;align-items:center;gap:8px;">
-                                <input type="checkbox" name="sp_cal_recap_actif" value="1" <?php checked($recap_actif); ?>>
-                                Envoyer automatiquement le récapitulatif mensuel
-                            </label>
-                        </td>
+                        <th>N° de club</th>
+                        <td><input type="text" name="sp_cal_club_num" class="regular-text"
+                                   value="<?php echo esc_attr(get_option('sp_cal_club_num','')); ?>"
+                                   placeholder="Ex: 066001"></td>
                     </tr>
                     <tr>
-                        <th>Jour d'envoi</th>
-                        <td>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span>Le</span>
-                                <input type="number" name="sp_cal_recap_jour" min="1" max="28"
-                                       value="<?php echo esc_attr($recap_jour); ?>"
-                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
-                                <span>de chaque mois <em style="color:#888;">(max. 28 pour éviter les mois courts)</em></span>
-                            </div>
-                        </td>
+                        <th>N° d'affiliation FFTDA</th>
+                        <td><input type="text" name="sp_cal_club_affiliation" class="regular-text"
+                                   value="<?php echo esc_attr(get_option('sp_cal_club_affiliation','')); ?>"
+                                   placeholder="N° affiliation fédérale"></td>
                     </tr>
                     <tr>
-                        <th>💶 Tarif kilométrique</th>
+                        <th>Ligue</th>
+                        <td><input type="text" name="sp_cal_club_ligue" class="regular-text"
+                                   value="<?php echo esc_attr(get_option('sp_cal_club_ligue','')); ?>"
+                                   placeholder="Ex: Ligue Occitanie"></td>
+                    </tr>
+                    <tr>
+                        <th>Club labellisé</th>
                         <td>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <input type="number" name="sp_cal_tarif_km" min="0" max="5" step="0.01"
-                                       value="<?php echo esc_attr(number_format($tarif_km, 2, '.', '')); ?>"
-                                       style="width:80px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
-                                <span>€/km</span>
-                            </div>
-                            <p class="description" style="margin-top:4px;">
-                                Taux légal de remboursement kilométrique. Exemple : 0.42 €/km.
-                            </p>
+                            <select name="sp_cal_club_labelise" style="padding:5px 8px;border:1px solid #ddd;border-radius:4px;">
+                                <?php
+                                $labelise = intval(get_option('sp_cal_club_labelise', 0));
+                                $options = array(0=>'Non labellisé', 1=>'⭐ 1 étoile', 2=>'⭐⭐ 2 étoiles', 3=>'⭐⭐⭐ 3 étoiles', 4=>'⭐⭐⭐⭐ 4 étoiles', 5=>'⭐⭐⭐⭐⭐ 5 étoiles');
+                                foreach ($options as $v => $l) echo '<option value="'.$v.'"'.selected($labelise,$v,false).'>'.$l.'</option>';
+                                ?>
+                            </select>
+                            <p class="description">Affiché discrètement sur la carte de membre.</p>
                         </td>
                     </tr>
                 </table>
-                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
-                    <input type="submit" name="sp_cal_save_recap" class="button button-primary" value="Enregistrer">
-                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        <?php
-                        $mois_labels_fr = array(
-                            1=>'Janvier',2=>'Février',3=>'Mars',4=>'Avril',5=>'Mai',6=>'Juin',
-                            7=>'Juillet',8=>'Août',9=>'Septembre',10=>'Octobre',11=>'Novembre',12=>'Décembre',
-                        );
-                        $cur_year  = intval(date('Y'));
-                        $cur_month = intval(date('n'));
-                        // Mois proposés : les 12 derniers
-                        $prev_month = $cur_month - 1 ?: 12;
-                        $prev_year  = $cur_month - 1 ? $cur_year : $cur_year - 1;
-                        ?>
-                        <select id="sp-recap-month" style="height:30px;border:1px solid #8c8f94;border-radius:4px;padding:0 4px;">
-                            <?php foreach ( $mois_labels_fr as $num => $label ) :
-                                $y = ( $num <= $cur_month && $num >= 1 ) ? $cur_year : $cur_year - 1;
-                                // Ajuster : si num > cur_month c'est l'année précédente
-                                if ( $num > $cur_month ) $y = $cur_year - 1;
-                                else $y = $cur_year;
-                                $selected = ( $num === $prev_month ) ? ' selected' : '';
-                            ?>
-                            <option value="<?php echo $num; ?>" data-year="<?php echo ($num > $cur_month ? $cur_year - 1 : $cur_year); ?>"<?php echo $selected; ?>>
-                                <?php echo $label . ' ' . ($num > $cur_month ? $cur_year - 1 : $cur_year); ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="button" id="sp-recap-test-now" class="button"
-                                title="Envoie le récapitulatif du mois sélectionné aux membres bureau">
-                            📊 Envoyer maintenant
-                        </button>
-                    </div>
-                    <span id="sp-recap-result" style="font-size:13px;color:#15803d;display:none;"></span>
-                </div>
+                <p class="submit"><input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer les informations club"></p>
             </form>
-            <?php if ($recap_last): ?>
-            <p class="sp-muted" style="margin-top:12px;font-size:12px;">
-                Dernier envoi : <?php echo esc_html($recap_last['date']); ?>
-                — mois concerné : <?php echo esc_html($recap_last['mois'] ?? '—'); ?>
-                — <?php echo intval($recap_last['sent'] ?? 0); ?> email(s) envoyé(s)
-            </p>
-            <?php endif; ?>
-            <script>
-            (function($){
-                $('#sp-recap-test-now').on('click', function(){
-                    var btn   = $(this).prop('disabled', true).text('Envoi…');
-                    var sel   = $('#sp-recap-month option:selected');
-                    var month = parseInt(sel.val(), 10);
-                    var year  = parseInt(sel.data('year'), 10);
-                    $.post(ajaxurl, {
-                        action:       'sp_cal_send_recap_now',
-                        nonce:        '<?php echo wp_create_nonce("sp_cal_admin_nonce"); ?>',
-                        recap_month:  month,
-                        recap_year:   year
-                    }, function(res){
-                        btn.prop('disabled', false).text('📊 Envoyer maintenant');
-                        var $r = $('#sp-recap-result');
-                        $r.css('color', res.success ? '#15803d' : '#b91c1c').text(res.success ? res.data : '❌ ' + res.data).show();
-                        setTimeout(function(){ $r.fadeOut(); }, 8000);
-                    });
-                });
-            })(jQuery);
-            </script>
         </div>
 
-        <!-- IK : détail, clôture des mois payés et autorisations → page 💶 IK -->
-        <p class="sp-muted" style="margin:-6px 0 18px;">💶 Détail des IK par entraîneur, clôture des mois payés et régularisations : page <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . SP_Cal_IK_Cloture::PAGE ) ); ?>">💶 IK</a>.</p>
+        <!-- GÉNÉRAL -->
+        <div class="sp-box">
+            <h2>⚙️ Général</h2>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_settings' ); ?>
+                <input type="hidden" name="sp_cal_bloc" value="general">
+                <table class="form-table">
+                    <tr>
+                        <th>URL planning public</th>
+                        <td><input type="url" name="sp_cal_public_link" class="large-text" value="<?php echo esc_attr($pub); ?>"></td>
+                    </tr>
+                    <tr>
+                        <th>Clé API</th>
+                        <td><code><?php echo esc_html($api_key); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>Shortcodes</th>
+                        <td>
+                            <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-shortcodes' ) ); ?>">Voir la page « Shortcodes »</a> : liste complète, options et pages qui les utilisent.
+                        </td>
+                    </tr>
+                </table>
+
+                <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
+            </form>
+        </div>
+
+        <!-- RÈGLEMENT INTÉRIEUR (popup formulaire d'adhésion public) -->
+        <div class="sp-box" style="margin-top:18px;">
+            <h2>📄 Règlement intérieur</h2>
+            <p class="description" style="margin-bottom:12px;">
+                Ce texte est affiché dans la fenêtre popup du formulaire d'adhésion public (<code>[sp_inscription_adhesion]</code>)
+                lorsque l'adhérent clique sur « règlement intérieur ». Quelques balises HTML simples sont acceptées (paragraphes, gras, listes, liens).
+            </p>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_reglement' ); ?>
+                <input type="hidden" name="sp_cal_save_reglement" value="1">
+                <textarea name="sp_cal_reglement_interieur" rows="14" style="width:100%;max-width:900px;font-family:monospace;font-size:13px;"><?php
+                    echo esc_textarea( get_option( 'sp_cal_reglement_interieur', '' ) );
+                ?></textarea>
+                <p class="submit"><input type="submit" name="sp_cal_save_reglement" class="button button-primary" value="Enregistrer le règlement intérieur"></p>
+            </form>
+        </div>
 
         <!-- TOKENS FICHE MEMBRE -->
-        <?php
-        global $wpdb;
-        $tel           = $this->db->table_eleves();
-        $nb_with_token = intval($wpdb->get_var("SELECT COUNT(*) FROM $tel WHERE actif=1 AND token IS NOT NULL AND token!=''"));
-        $nb_without    = intval($wpdb->get_var("SELECT COUNT(*) FROM $tel WHERE actif=1 AND (token IS NULL OR token='')"));
-        $fiche_url_ex    = '';
-        if ($this->token) $fiche_url_ex = $this->token->get_fiche_url('EXEMPLE');
-        $palmares_url    = get_option( 'sp_cal_palmares_url', '' );
-        ?>
         <div class="sp-box">
             <h2>🔗 Fiche de suivi membre (accès par token)</h2>
             <p class="description">
@@ -713,101 +602,10 @@ trait SpCalPro_Admin_Reglages {
             <?php endif; ?>
         </div>
 
-        <!-- URL PAGE PALMARÈS PUBLIC -->
-        <div class="sp-box">
-            <h2>🏆 Page palmarès public</h2>
-            <p class="description">
-                Indiquez l'URL de la page WordPress contenant le shortcode <code>[sp_cal_palmares]</code>.<br>
-                Cette URL est utilisée par le planning public pour rediriger vers les résultats d'une compétition passée.
-            </p>
-            <form method="post" style="margin:12px 0 0;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">
-                <?php wp_nonce_field('sp_cal_palmares_url'); ?>
-                <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">
-                    URL de la page «&nbsp;Palmarès&nbsp;» <span style="color:#c00;">*</span>
-                </label>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    <input type="url" name="sp_cal_palmares_url" class="large-text"
-                           value="<?php echo esc_attr($palmares_url); ?>"
-                           placeholder="https://votresite.fr/palmares/"
-                           style="max-width:400px;">
-                    <input type="submit" name="sp_save_palmares_url" class="button button-primary" value="Enregistrer l'URL">
-                    <?php if ($palmares_url): ?>
-                    <a href="<?php echo esc_url($palmares_url); ?>" target="_blank" class="button">🔗 Voir la page</a>
-                    <?php endif; ?>
-                </div>
-                <p class="description" style="margin-top:6px;">
-                    <?php if ( ! $palmares_url ): ?>
-                    <strong style="color:#b45309;">⚠️ Non configurée — le lien 🏆 sur le planning ne sera pas actif.</strong>
-                    <?php else: ?>
-                    ✅ URL enregistrée : <code><?php echo esc_html($palmares_url); ?></code>
-                    <?php endif; ?>
-                </p>
-            </form>
-        </div>
+        <?php else : // maintenance ?>
 
-        <!-- MIGRATION DISCIPLINE / POUR QUI DES ÉVÉNEMENTS -->
-        <?php
-        if ( isset($_GET['migration_cours_done']) ) {
-            $nb_mig = intval($_GET['nb']);
-            echo '<div class="notice notice-success is-dismissible"><p>✅ Migration effectuée — <strong>' . $nb_mig . '</strong> événement(s) mis à jour.</p></div>';
-        }
-        if ( isset($_GET['migration_cours_preview']) ) {
-            $preview_mig = get_transient( 'sp_migrer_cours_cat_preview_' . get_current_user_id() );
-            if ( $preview_mig !== false ) :
-        ?>
-        <div class="notice notice-warning" style="padding:16px;">
-            <?php if ( empty($preview_mig) ) : ?>
-            <p><strong>👁️ Rien à migrer</strong> — tous les événements ont déjà une Discipline renseignée.</p>
-            <?php else : ?>
-            <p><strong>👁️ Aperçu de la migration — <?php echo count($preview_mig); ?> événement(s) concerné(s)</strong></p>
-            <table class="wp-list-table widefat fixed striped" style="max-width:800px;margin:10px 0;">
-                <thead><tr><th>Événement</th><th>Ancienne catégorie</th><th>Discipline</th><th>Pour qui</th></tr></thead>
-                <tbody>
-                <?php foreach ( array_slice($preview_mig, 0, 50) as $m ): ?>
-                <tr>
-                    <td><?php echo esc_html($m['titre']); ?></td>
-                    <td><span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['ancienne']); ?></span></td>
-                    <td><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['discipline'] !== '' ? str_replace(',', ', ', $m['discipline']) : '—'); ?></span></td>
-                    <td><span style="background:#dbeafe;color:#1e3a8a;padding:2px 8px;border-radius:4px;font-size:12px;"><?php echo esc_html($m['age'] !== '' ? str_replace(',', ', ', $m['age']) : '—'); ?></span></td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            <?php if ( count($preview_mig) > 50 ): ?>
-            <p style="color:#64748b;font-size:12px;">… et <?php echo count($preview_mig) - 50; ?> de plus (non affichés, mais bien pris en compte à la confirmation).</p>
-            <?php endif; ?>
-            <form method="post" style="margin-top:8px;">
-                <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
-                <input type="hidden" name="sp_migrer_cours_categories" value="1">
-                <input type="submit" class="button button-primary" value="✅ Confirmer la migration">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=sp-cal-settings')); ?>" class="button" style="margin-left:8px;">Annuler</a>
-            </form>
-            <?php endif; ?>
-        </div>
-        <?php endif; } ?>
-
-        <div class="sp-box" style="border-left:4px solid #e5e7eb;margin-bottom:18px;">
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-                <div style="flex:1;">
-                    <strong>🎯 Migrer les événements vers Discipline / Pour qui</strong>
-                    <p style="margin:4px 0 0;color:#64748b;font-size:13px;">
-                        Convertit l'ancien champ "Catégorie" en texte libre (TKD, RENFO, Général, Prépa CN, Sortie…)
-                        des événements existants vers les deux nouveaux menus du calendrier — <strong>Discipline</strong>
-                        (Taekwondo / Renforcement musculaire / Autre) et <strong>Pour qui</strong> (tranche d'âge).
-                        Les valeurs non reconnues (Général, Prépa CN, Sortie…) basculent en Discipline "Autre".
-                        Sans effet sur les événements déjà migrés.
-                    </p>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <form method="post" style="margin:0;">
-                        <?php wp_nonce_field('sp_migrer_cours_categories'); ?>
-                        <input type="hidden" name="sp_migrer_cours_categories" value="1">
-                        <input type="hidden" name="sp_migrer_preview" value="1">
-                        <input type="submit" class="button" value="👁️ Prévisualiser">
-                    </form>
-                </div>
-            </div>
-        </div>
+        <!-- ÉTAT DE LA BASE DE DONNÉES (class-schema.php, 07/10/2026) -->
+        <?php SP_Cal_Schema::render_statut(); ?>
 
         <!-- NETTOYAGE DOUBLONS -->
         <div class="sp-box" style="border-left:4px solid #f59e0b;">
@@ -911,6 +709,256 @@ trait SpCalPro_Admin_Reglages {
         });
         </script>
 
+        <?php endif; ?>
+
+        </div>
+        <?php
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       BLOCS AFFICHÉS PAR D'AUTRES PAGES (enregistrés par handle_requests(), trait-admin-formulaires.php)
+    ══════════════════════════════════════════════════════════ */
+
+    /** Veille réglementaire (pense-bête) — bas de la page « Fin de saison & certificats ». */
+    public static function bloc_veille_reglementaire() {
+        ?>
+        <div class="sp-box" style="margin-top:18px;">
+            <h2>📋 Veille réglementaire</h2>
+            <?php if ( isset( $_GET['veille_demandee'] ) ) : ?>
+                <div class="notice notice-success is-dismissible"><p>✅ Demande de veille enregistrée. Pensez à ouvrir une conversation avec Claude Code et à lui demander de lancer la veille réglementaire pour ce plugin.</p></div>
+            <?php endif; ?>
+            <p class="description" style="margin-bottom:10px;">
+                Le plugin s'appuie sur 3 hypothèses réglementaires codées en dur, à revérifier de temps en temps auprès des sources officielles :
+            </p>
+            <ul style="margin:0 0 12px 20px;list-style:disc;font-size:13px;color:#374151;">
+                <li>Certificat médical Taekwondo (FFTDA) : renouvellement chaque année (12 mois par défaut, réglable plus haut sur cette page).</li>
+                <li>Renforcement musculaire : certificat médical seulement en 1ère inscription adulte, sinon questionnaire de santé QS-Sport.</li>
+                <li>Pass'Sport : aide de 50€, code déclaratif, aucune API de vérification connue côté Compte Asso.</li>
+            </ul>
+            <p class="description" style="margin-bottom:10px;">
+                Ce bouton n'interroge rien automatiquement — il enregistre simplement la date de votre demande, comme un pense-bête. La vérification elle-même se fait en demandant à Claude Code de « lancer la veille réglementaire » dans une conversation : il consultera les sources officielles et vous fera un rapport.
+            </p>
+            <?php $veille_demandee_le = get_option( 'sp_cal_veille_reglementaire_demandee_le', '' ); ?>
+            <p style="margin-bottom:10px;font-size:13px;">
+                Dernière demande de veille :
+                <strong><?php echo $veille_demandee_le ? esc_html( date( 'd/m/Y', strtotime( $veille_demandee_le ) ) ) : 'jamais'; ?></strong>
+            </p>
+            <form method="post">
+                <?php wp_nonce_field( 'sp_cal_veille_reglementaire' ); ?>
+                <input type="hidden" name="sp_veille_reglementaire_demandee" value="1">
+                <input type="submit" class="button button-primary" value="🔍 Demander une veille réglementaire">
+            </form>
+        </div>
+        <?php
+    }
+
+    /** Notifications automatiques du matin — onglet « Notifications » de la page « Envois d'emails ». */
+    public static function bloc_notifications() {
+        $notif_email          = get_option('sp_cal_notif_email',          get_option('admin_email'));
+        $notif_anniv          = get_option('sp_cal_notif_anniv',          '0') === '1';
+        $notif_anniv_jours    = intval(get_option('sp_cal_notif_anniv_jours',    7));
+        $notif_absences       = get_option('sp_cal_notif_absences',       '0') === '1';
+        $notif_absences_seuil = intval(get_option('sp_cal_notif_absences_seuil', 3));
+        $last_run             = get_option('sp_cal_notif_last_run', null);
+        ?>
+        <div class="sp-box">
+            <h2>📧 Notifications email</h2>
+            <p class="description">Les notifications sont envoyées automatiquement chaque matin à 8h via le cron WordPress.</p>
+
+            <form method="post">
+                <?php wp_nonce_field('sp_cal_settings'); ?>
+                <input type="hidden" name="sp_cal_bloc" value="notifs">
+                <table class="form-table" style="max-width:640px;">
+                    <tr>
+                        <th>Email destinataire</th>
+                        <td>
+                            <input type="email" name="sp_cal_notif_email" class="regular-text"
+                                   value="<?php echo esc_attr($notif_email); ?>">
+                            <p class="description">Reçoit toutes les notifications du club.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>🎂 Anniversaires</th>
+                        <td>
+                            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                <input type="checkbox" name="sp_cal_notif_anniv" value="1" <?php checked($notif_anniv); ?>>
+                                Activer les rappels d'anniversaires
+                            </label>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span>Prévenir</span>
+                                <input type="number" name="sp_cal_notif_anniv_jours" min="1" max="30"
+                                       value="<?php echo esc_attr($notif_anniv_jours); ?>"
+                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
+                                <span>jours à l'avance</span>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>⚠️ Absences répétées</th>
+                        <td>
+                            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                <input type="checkbox" name="sp_cal_notif_absences" value="1" <?php checked($notif_absences); ?>>
+                                Activer les alertes d'absences consécutives
+                            </label>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span>Alerter après</span>
+                                <input type="number" name="sp_cal_notif_absences_seuil" min="2" max="20"
+                                       value="<?php echo esc_attr($notif_absences_seuil); ?>"
+                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
+                                <span>absences consécutives</span>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
+                    <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
+                    <button type="button" id="sp-notif-test-anniv" class="button"
+                            data-type="anniv" <?php echo !$notif_anniv ? 'disabled title="Activez d\'abord les anniversaires"' : ''; ?>>
+                        🎂 Tester anniversaires
+                    </button>
+                    <button type="button" id="sp-notif-test-absences" class="button"
+                            data-type="absences" <?php echo !$notif_absences ? 'disabled title="Activez d\'abord les absences"' : ''; ?>>
+                        ⚠️ Tester absences
+                    </button>
+                    <span id="sp-notif-result" style="font-size:13px;color:#15803d;display:none;"></span>
+                </div>
+            </form>
+
+            <?php if ($last_run): ?>
+            <p class="sp-muted" style="margin-top:12px;font-size:12px;">
+                Dernier envoi : <?php echo esc_html($last_run['date']); ?>
+                <?php
+                $s = $last_run['sent'] ?? array();
+                $parts = array();
+                if (isset($s['anniv']))    $parts[] = $s['anniv'] . ' anniv.';
+                if (isset($s['absences'])) $parts[] = $s['absences'] . ' absences';
+                if ($parts) echo '— ' . implode(', ', $parts) . ' email(s) envoyé(s)';
+                ?>
+            </p>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /** Récapitulatif mensuel des entraîneurs et tarif au km — onglet « Réglages » de la page « Indemnités km ». */
+    public static function bloc_recap_entraineurs() {
+        $recap_actif = get_option('sp_cal_recap_actif', '0') === '1';
+        $recap_jour  = intval( get_option('sp_cal_recap_jour', 1) );
+        $tarif_km    = floatval( get_option('sp_cal_tarif_km', 0) );
+        $recap_last  = get_option('sp_cal_recap_last_run', null);
+        ?>
+        <div class="sp-box">
+            <h2>📊 Récapitulatif mensuel entraîneurs</h2>
+            <p class="description">
+                Le <strong><?php echo esc_html(ordinal_fr($recap_jour)); ?> de chaque mois</strong>,
+                un email est envoyé aux membres du bureau avec les jours d'intervention, les allers-retours
+                et le montant calculé pour chaque entraîneur.<br>
+                <strong>Formule :</strong> tarif €/km &times; km aller-retour &times; nombre d'allers-retours (1 par jour d'intervention, 2 si l'entraîneur l'a déclaré).
+                Les km sont configurés sur la fiche de chaque entraîneur.
+            </p>
+            <?php if ( isset( $_GET['recap_saved'] ) ) echo '<div class="notice notice-success is-dismissible"><p>✅ Paramètres du récapitulatif enregistrés.</p></div>'; ?>
+            <form method="post">
+                <?php wp_nonce_field('sp_cal_recap_settings'); ?>
+                <table class="form-table" style="max-width:640px;">
+                    <tr>
+                        <th>Activer</th>
+                        <td>
+                            <label style="display:flex;align-items:center;gap:8px;">
+                                <input type="checkbox" name="sp_cal_recap_actif" value="1" <?php checked($recap_actif); ?>>
+                                Envoyer automatiquement le récapitulatif mensuel
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Jour d'envoi</th>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span>Le</span>
+                                <input type="number" name="sp_cal_recap_jour" min="1" max="28"
+                                       value="<?php echo esc_attr($recap_jour); ?>"
+                                       style="width:60px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
+                                <span>de chaque mois <em style="color:#888;">(max. 28 pour éviter les mois courts)</em></span>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>💶 Tarif kilométrique</th>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <input type="number" name="sp_cal_tarif_km" min="0" max="5" step="0.01"
+                                       value="<?php echo esc_attr(number_format($tarif_km, 2, '.', '')); ?>"
+                                       style="width:80px;height:28px;border:1px solid #8c8f94;border-radius:4px;padding:0 6px;">
+                                <span>€/km</span>
+                            </div>
+                            <p class="description" style="margin-top:4px;">
+                                Taux légal de remboursement kilométrique. Exemple : 0.42 €/km.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;">
+                    <input type="submit" name="sp_cal_save_recap" class="button button-primary" value="Enregistrer">
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                        <?php
+                        $mois_labels_fr = array(
+                            1=>'Janvier',2=>'Février',3=>'Mars',4=>'Avril',5=>'Mai',6=>'Juin',
+                            7=>'Juillet',8=>'Août',9=>'Septembre',10=>'Octobre',11=>'Novembre',12=>'Décembre',
+                        );
+                        $cur_year  = intval(date('Y'));
+                        $cur_month = intval(date('n'));
+                        // Mois proposés : les 12 derniers
+                        $prev_month = $cur_month - 1 ?: 12;
+                        $prev_year  = $cur_month - 1 ? $cur_year : $cur_year - 1;
+                        ?>
+                        <select id="sp-recap-month" style="height:30px;border:1px solid #8c8f94;border-radius:4px;padding:0 4px;">
+                            <?php foreach ( $mois_labels_fr as $num => $label ) :
+                                $y = ( $num <= $cur_month && $num >= 1 ) ? $cur_year : $cur_year - 1;
+                                // Ajuster : si num > cur_month c'est l'année précédente
+                                if ( $num > $cur_month ) $y = $cur_year - 1;
+                                else $y = $cur_year;
+                                $selected = ( $num === $prev_month ) ? ' selected' : '';
+                            ?>
+                            <option value="<?php echo $num; ?>" data-year="<?php echo ($num > $cur_month ? $cur_year - 1 : $cur_year); ?>"<?php echo $selected; ?>>
+                                <?php echo $label . ' ' . ($num > $cur_month ? $cur_year - 1 : $cur_year); ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button type="button" id="sp-recap-test-now" class="button"
+                                title="Envoie le récapitulatif du mois sélectionné aux membres bureau">
+                            📊 Envoyer maintenant
+                        </button>
+                    </div>
+                    <span id="sp-recap-result" style="font-size:13px;color:#15803d;display:none;"></span>
+                </div>
+            </form>
+            <?php if ($recap_last): ?>
+            <p class="sp-muted" style="margin-top:12px;font-size:12px;">
+                Dernier envoi : <?php echo esc_html($recap_last['date']); ?>
+                — mois concerné : <?php echo esc_html($recap_last['mois'] ?? '—'); ?>
+                — <?php echo intval($recap_last['sent'] ?? 0); ?> email(s) envoyé(s)
+            </p>
+            <?php endif; ?>
+            <script>
+            (function($){
+                $('#sp-recap-test-now').on('click', function(){
+                    var btn   = $(this).prop('disabled', true).text('Envoi…');
+                    var sel   = $('#sp-recap-month option:selected');
+                    var month = parseInt(sel.val(), 10);
+                    var year  = parseInt(sel.data('year'), 10);
+                    $.post(ajaxurl, {
+                        action:       'sp_cal_send_recap_now',
+                        nonce:        '<?php echo wp_create_nonce("sp_cal_admin_nonce"); ?>',
+                        recap_month:  month,
+                        recap_year:   year
+                    }, function(res){
+                        btn.prop('disabled', false).text('📊 Envoyer maintenant');
+                        var $r = $('#sp-recap-result');
+                        $r.css('color', res.success ? '#15803d' : '#b91c1c').text(res.success ? res.data : '❌ ' + res.data).show();
+                        setTimeout(function(){ $r.fadeOut(); }, 8000);
+                    });
+                });
+            })(jQuery);
+            </script>
         </div>
         <?php
     }

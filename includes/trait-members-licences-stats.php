@@ -210,6 +210,9 @@ trait SP_Cal_Members_Licences_Stats {
         </script>
         <?php endif; ?>
 
+        <?php // Veille réglementaire (venue de Paramètres, 12/10/2026) — enregistrement réservé aux administrateurs.
+        if ( current_user_can( 'manage_options' ) ) SpCalPro_Admin::bloc_veille_reglementaire(); ?>
+
         </div>
         <?php
     }

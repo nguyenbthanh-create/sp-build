@@ -264,10 +264,25 @@ class SP_Cal_IK_Cloture {
 		$cloture    = $this->clotures()[ $mois_sel ] ?? null;
 		$tarif      = floatval( get_option( 'sp_cal_tarif_km', 0 ) );
 
-		echo '<div class="wrap"><h1>💶 Indemnités kilométriques</h1>'
-			. '<p class="description">Formule : tarif × km aller-retour de l\'entraîneur × allers-retours (1 par jour d\'intervention, 2 s\'il l\'a déclaré), plus les km exceptionnels. '
+		$url_reglages = admin_url( 'admin.php?page=' . self::PAGE . '&tab=reglages' );
+		$reglages     = sanitize_key( $_GET['tab'] ?? '' ) === 'reglages';
+
+		echo '<div class="wrap"><h1>💶 Indemnités kilométriques</h1>';
+		SP_Cal_Menu::onglets( [
+			'detail'   => [ 'Détail & clôture', admin_url( 'admin.php?page=' . self::PAGE ) ],
+			'reglages' => [ 'Réglages', $url_reglages ],
+		], $reglages ? 'reglages' : 'detail' );
+
+		// Onglet « Réglages » : tarif au km et envoi du récapitulatif mensuel (venus de Paramètres, 12/10/2026)
+		if ( $reglages ) {
+			SpCalPro_Admin::bloc_recap_entraineurs();
+			echo '</div>';
+			return;
+		}
+
+		echo '<p class="description">Formule : tarif × km aller-retour de l\'entraîneur × allers-retours (1 par jour d\'intervention, 2 s\'il l\'a déclaré), plus les km exceptionnels. '
 			. 'Tarif actuel : <strong>' . esc_html( number_format( $tarif, 2, ',', ' ' ) ) . ' €/km</strong> — tarif, envoi du récapitulatif mensuel et km de chaque entraîneur : '
-			. '<a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-settings' ) ) . '">Paramètres</a> et <a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-trainers' ) ) . '">Entraîneurs &amp; Bureau</a>.</p>';
+			. '<a href="' . esc_url( $url_reglages ) . '">onglet Réglages</a> et <a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-trainers' ) ) . '">Entraîneurs &amp; Bureau</a>.</p>';
 
 		// ── Détail d'un mois
 		echo '<div class="sp-box"><form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'

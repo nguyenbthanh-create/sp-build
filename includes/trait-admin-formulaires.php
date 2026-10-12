@@ -49,7 +49,7 @@ trait SpCalPro_Admin_Formulaires {
             update_option( 'sp_cal_pts_or',     max( 0, intval( $_POST['sp_pts_or']     ?? 3 ) ) );
             update_option( 'sp_cal_pts_argent', max( 0, intval( $_POST['sp_pts_argent'] ?? 2 ) ) );
             update_option( 'sp_cal_pts_bronze', max( 0, intval( $_POST['sp_pts_bronze'] ?? 1 ) ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&pts_saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=competition&pts_saved=1' ) ); exit;
         }
 		
 		/* ── Coefficients niveaux compétition ── */
@@ -58,19 +58,19 @@ trait SpCalPro_Admin_Formulaires {
             update_option( 'sp_cal_coef_regional',       max( 0.1, floatval( $_POST['sp_coef_reg'] ?? 1.5 ) ) );
             update_option( 'sp_cal_coef_national',       max( 0.1, floatval( $_POST['sp_coef_nat'] ?? 2.0 ) ) );
             update_option( 'sp_cal_coef_international',  max( 0.1, floatval( $_POST['sp_coef_int'] ?? 3.0 ) ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&coef_saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=competition&coef_saved=1' ) ); exit;
         }
 
         /* ── URL fiche membre (sauvegarde dédiée) ── */
         if ( isset( $_POST['sp_save_fiche_url'] ) && check_admin_referer( 'sp_cal_fiche_url' ) ) {
             update_option( 'sp_cal_fiche_membre_url', esc_url_raw( $_POST['sp_cal_fiche_membre_url'] ?? '' ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&saved=1' ) ); exit;
         }
 
         /* ── URL page palmarès public (sauvegarde dédiée) ── */
         if ( isset( $_POST['sp_save_palmares_url'] ) && check_admin_referer( 'sp_cal_palmares_url' ) ) {
             update_option( 'sp_cal_palmares_url', esc_url_raw( $_POST['sp_cal_palmares_url'] ?? '' ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=competition&saved=1' ) ); exit;
         }
 
         /* ── Création automatique page fiche membre ── */
@@ -95,7 +95,7 @@ trait SpCalPro_Admin_Formulaires {
                 $page_url = $page_id ? get_permalink( $page_id ) : '';
             }
             if ( $page_url ) update_option( 'sp_cal_fiche_membre_url', $page_url );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&fiche_created=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&fiche_created=1' ) ); exit;
         }
 
         /* ── Paramètres généraux ── */
@@ -121,23 +121,39 @@ trait SpCalPro_Admin_Formulaires {
                 }
             }
             update_option( 'sp_cal_vacances_zoneC', wp_json_encode( $periodes ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&vac_saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=vacances&vac_saved=1' ) ); exit;
         }
 
         if ( isset( $_POST['sp_cal_save_settings'] ) && check_admin_referer( 'sp_cal_settings' ) ) {
-            update_option( 'sp_cal_public_link', esc_url_raw( $_POST['sp_cal_public_link'] ?? '' ) );
-            // Informations club
-            update_option( 'sp_cal_club_num',          sanitize_text_field( wp_unslash( $_POST['sp_cal_club_num']          ?? '' ) ) );
-            update_option( 'sp_cal_club_affiliation',  sanitize_text_field( wp_unslash( $_POST['sp_cal_club_affiliation']  ?? '' ) ) );
-            update_option( 'sp_cal_club_ligue',        sanitize_text_field( wp_unslash( $_POST['sp_cal_club_ligue']        ?? '' ) ) );
-            update_option( 'sp_cal_club_labelise',     intval(              $_POST['sp_cal_club_labelise']                 ?? 0  ) );
-            // NE PAS toucher sp_cal_fiche_membre_url ici — géré par son propre formulaire
-            // Notifications
-            update_option( 'sp_cal_notif_email',           sanitize_email( wp_unslash( $_POST['sp_cal_notif_email']           ?? get_option('admin_email' ) ) ) );
-            update_option( 'sp_cal_notif_anniv',           isset($_POST['sp_cal_notif_anniv'])    ? '1' : '0' );
-            update_option( 'sp_cal_notif_anniv_jours',     intval(          $_POST['sp_cal_notif_anniv_jours']     ?? 7 ) );
-            update_option( 'sp_cal_notif_absences',        isset($_POST['sp_cal_notif_absences']) ? '1' : '0' );
-            update_option( 'sp_cal_notif_absences_seuil',  intval(          $_POST['sp_cal_notif_absences_seuil']  ?? 3 ) );
+            // Quatre formulaires partagent ce traitement ; chacun n'enregistre que SES réglages
+            // (champ caché sp_cal_bloc). Avant le 12/10/2026 tout était réécrit à chaque fois :
+            // enregistrer un bloc remettait les autres à leur valeur par défaut.
+            $bloc = sanitize_key( $_POST['sp_cal_bloc'] ?? '' );
+
+            if ( $bloc === 'general' ) {
+                update_option( 'sp_cal_public_link', esc_url_raw( $_POST['sp_cal_public_link'] ?? '' ) );
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&saved=1' ) ); exit;
+            }
+
+            if ( $bloc === 'club' ) {
+                update_option( 'sp_cal_club_num',          sanitize_text_field( wp_unslash( $_POST['sp_cal_club_num']          ?? '' ) ) );
+                update_option( 'sp_cal_club_affiliation',  sanitize_text_field( wp_unslash( $_POST['sp_cal_club_affiliation']  ?? '' ) ) );
+                update_option( 'sp_cal_club_ligue',        sanitize_text_field( wp_unslash( $_POST['sp_cal_club_ligue']        ?? '' ) ) );
+                update_option( 'sp_cal_club_labelise',     intval(              $_POST['sp_cal_club_labelise']                 ?? 0  ) );
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&saved=1' ) ); exit;
+            }
+
+            if ( $bloc === 'notifs' ) {
+                update_option( 'sp_cal_notif_email',           sanitize_email( wp_unslash( $_POST['sp_cal_notif_email']           ?? get_option('admin_email' ) ) ) );
+                update_option( 'sp_cal_notif_anniv',           isset($_POST['sp_cal_notif_anniv'])    ? '1' : '0' );
+                update_option( 'sp_cal_notif_anniv_jours',     intval(          $_POST['sp_cal_notif_anniv_jours']     ?? 7 ) );
+                update_option( 'sp_cal_notif_absences',        isset($_POST['sp_cal_notif_absences']) ? '1' : '0' );
+                update_option( 'sp_cal_notif_absences_seuil',  intval(          $_POST['sp_cal_notif_absences_seuil']  ?? 3 ) );
+                wp_redirect( admin_url( 'admin.php?page=' . SP_Cal_Mail_Queue::PAGE . '&tab=notifications&notif_saved=1' ) ); exit;
+            }
+
+            if ( $bloc !== 'couleurs' ) { wp_redirect( admin_url( 'admin.php?page=sp-cal-settings' ) ); exit; }
+
             // Couleurs catégories
             $colors = array();
             if ( ! empty( $_POST['cat_color'] ) ) {
@@ -153,19 +169,19 @@ trait SpCalPro_Admin_Formulaires {
                 }
             }
             update_option( 'sp_cal_cat_colors', wp_json_encode( $colors ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=cours&saved=1' ) ); exit;
         }
 
         /* ── Règlement intérieur : enregistrer (popup formulaire d'adhésion) ── */
         if ( isset( $_POST['sp_cal_save_reglement'] ) && check_admin_referer( 'sp_cal_reglement' ) ) {
             update_option( 'sp_cal_reglement_interieur', wp_kses_post( wp_unslash( $_POST['sp_cal_reglement_interieur'] ?? '' ) ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&reglement_saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&reglement_saved=1' ) ); exit;
         }
 
         /* ── Veille réglementaire : pense-bête, pas d'appel automatique (cf. doleances.md) ── */
         if ( isset( $_POST['sp_veille_reglementaire_demandee'] ) && check_admin_referer( 'sp_cal_veille_reglementaire' ) ) {
             update_option( 'sp_cal_veille_reglementaire_demandee_le', current_time( 'Y-m-d' ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&veille_demandee=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-licences&veille_demandee=1' ) ); exit;
         }
 
         /* ── Récapitulatif mensuel : enregistrer ── */
@@ -173,14 +189,14 @@ trait SpCalPro_Admin_Formulaires {
             update_option( 'sp_cal_recap_actif',   isset( $_POST['sp_cal_recap_actif'] ) ? '1' : '0' );
             update_option( 'sp_cal_recap_jour',    max( 1, min( 28, intval( $_POST['sp_cal_recap_jour']  ?? 1 ) ) ) );
             update_option( 'sp_cal_tarif_km',      floatval( str_replace( ',', '.', $_POST['sp_cal_tarif_km'] ?? '0' ) ) );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&recap_saved=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-ik&tab=reglages&recap_saved=1' ) ); exit;
         }
 
         /* ── Reset events ── */
         if ( isset( $_POST['sp_reset_events'] ) && check_admin_referer( 'sp_reset_events' ) ) {
             $wpdb->query( "TRUNCATE TABLE {$this->db->table_events()}" );
             $wpdb->query( "TRUNCATE TABLE {$this->db->table_presences_eleves()}" );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&events_reset=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=maintenance&events_reset=1' ) ); exit;
         }
 
         /* ── Nettoyage events parasites (doublons de matérialisation) ── */
@@ -206,7 +222,7 @@ trait SpCalPro_Admin_Formulaires {
                  )"
             );
             $cleaned = $wpdb->rows_affected;
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&cleaned=' . $cleaned ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=maintenance&cleaned=' . $cleaned ) ); exit;
         }
 
         /* ── Migration Discipline / Pour qui des événements (ex-champ "categorie" libre) ── */
@@ -215,17 +231,17 @@ trait SpCalPro_Admin_Formulaires {
             if ( $dry ) {
                 $preview = $this->db->preview_migration_cours_categories();
                 set_transient( 'sp_migrer_cours_cat_preview_' . get_current_user_id(), $preview, 300 );
-                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&migration_cours_preview=1' ) ); exit;
+                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=cours&migration_cours_preview=1' ) ); exit;
             }
             $total = $this->db->appliquer_migration_cours_categories();
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&migration_cours_done=1&nb=' . $total ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=cours&migration_cours_done=1&nb=' . $total ) ); exit;
         }
 
         /* ── Reset élèves ── */
         if ( isset( $_POST['sp_reset_eleves'] ) && check_admin_referer( 'sp_reset_eleves' ) ) {
             $wpdb->query( "TRUNCATE TABLE {$this->db->table_eleves()}" );
             $wpdb->query( "TRUNCATE TABLE {$this->db->table_presences_eleves()}" );
-            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&eleves_reset=1' ) ); exit;
+            wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=maintenance&eleves_reset=1' ) ); exit;
         }
 
         /* ── Trainer : sauvegarder ── */
