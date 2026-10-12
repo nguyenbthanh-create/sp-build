@@ -1550,7 +1550,7 @@ class SP_Cal_Dobok {
 	public function render_page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
-		// Même page pour les tenues du renforcement musculaire (class-tenues.php, 13/10/2026).
+		// Même page pour les tenues du renforcement musculaire (class-tenues.php, 12/10/2026).
 		if ( sanitize_key( $_GET['objet'] ?? '' ) === SP_Cal_Tenues::OBJET ) {
 			SP_Cal_Tenues::get_instance( $this->db )->render_page();
 			return;

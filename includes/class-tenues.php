@@ -1,6 +1,6 @@
 <?php
 /**
- * Tenues du renforcement musculaire prêtées par le club — étape 1 (13/10/2026) : côté bureau.
+ * Tenues du renforcement musculaire prêtées par le club — étape 1 (12/10/2026) : côté bureau.
  * Besoin de commande, stock, réception des commandes, remise, restitution, journal.
  * Étape 2 (à venir) : bloc « Ma tenue » sur la fiche de l'adhérent, avec ses demandes.
  *
