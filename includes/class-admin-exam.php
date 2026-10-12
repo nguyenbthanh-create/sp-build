@@ -26,49 +26,81 @@ class SP_Cal_Exam {
     }
 
     /* ══════════════════════════════════════════════════════════
-       AJAX — Synchronisation vacances scolaires Zone C
+       AJAX — Vacances scolaires d'une zone (calendrier officiel)
     ══════════════════════════════════════════════════════════ */
 
+    /**
+     * Propose les périodes de vacances d'une zone (A, B ou C) à partir du calendrier officiel
+     * (data.education.gouv.fr). N'ENREGISTRE RIEN : la page Paramètres > Calendrier & vacances
+     * remplit ses lignes avec la réponse, l'utilisateur corrige puis enregistre lui-même.
+     */
     public function ajax_sync_vacances() {
         check_ajax_referer( 'sp_cal_admin_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Accès refusé' );
 
-        $url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records'
-             . '?limit=100'
-             . '&lang=fr'
-             . '&timezone=Europe%2FParis'
-             . '&refine=zones%3A%22Zone%20C%22'
-             . '&refine=population%3A%22El%C3%A8ves%22'
-             . '&order_by=start_date%20asc';
+        $zone = strtoupper( sanitize_key( $_POST['zone'] ?? 'C' ) );
+        if ( ! in_array( $zone, array( 'A', 'B', 'C' ), true ) ) wp_send_json_error( 'Zone inconnue.' );
+
+        // À partir de l'année scolaire en cours (rentrée de septembre) ; les lignes « Enseignants »
+        // (prérentrée…) ne concernent pas les élèves.
+        $annee  = intval( current_time( 'Y' ) ) - ( intval( current_time( 'n' ) ) < 9 ? 1 : 0 );
+        $params = array(
+            'limit'    => 100,
+            'timezone' => 'Europe/Paris',
+            'refine'   => 'zones:Zone ' . $zone,
+            'where'    => "end_date >= date'" . $annee . "-09-01' and population != 'Enseignants'",
+            // Une ligne par académie de la zone : regroupées, sinon la limite de 100 lignes coupe la liste.
+            'group_by' => 'description,start_date,end_date',
+            'order_by' => 'start_date asc',
+        );
+        $url = 'https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?'
+             . http_build_query( $params, '', '&', PHP_QUERY_RFC3986 );
 
         $resp = wp_remote_get( $url, array( 'timeout' => 15 ) );
         if ( is_wp_error( $resp ) ) {
             wp_send_json_error( 'Erreur réseau : ' . $resp->get_error_message() );
         }
 
-        $body = json_decode( wp_remote_retrieve_body( $resp ), true );
-        if ( empty( $body['results'] ) ) {
+        $body     = json_decode( wp_remote_retrieve_body( $resp ), true );
+        $periodes = self::periodes_depuis_calendrier( is_array( $body['results'] ?? null ) ? $body['results'] : array() );
+        // Les vacances d'été précédentes (finies la veille de la rentrée) ne servent plus.
+        $rentree  = $annee . '-09-01';
+        $periodes = array_values( array_filter( $periodes, static function ( $p ) use ( $rentree ) { return $p['end'] >= $rentree; } ) );
+        if ( ! $periodes ) {
             wp_send_json_error( 'Aucune donnée reçue depuis data.education.gouv.fr' );
         }
+        wp_send_json_success( array( 'nb' => count( $periodes ), 'zone' => $zone, 'periodes' => $periodes ) );
+    }
 
+    /**
+     * Lignes du calendrier officiel → périodes [ label, start, end ] aux dates INCLUSES.
+     * Le calendrier donne en fin de période le jour de la REPRISE des cours : on retient la veille.
+     * Une même période est répétée pour chaque académie de la zone (dédoublonnée) ; une ligne
+     * d'un seul jour « Début des vacances d'été » (fin pas encore publiée) est ignorée.
+     *
+     * @param array $lignes Champ « results » de la réponse.
+     * @return array<int,array{label:string,start:string,end:string}>
+     */
+    public static function periodes_depuis_calendrier( array $lignes ): array {
         $periodes = array();
-        $seen     = array();
-        foreach ( $body['results'] as $r ) {
-            $start = isset( $r['start_date'] ) ? substr( $r['start_date'], 0, 10 ) : '';
-            $end   = isset( $r['end_date'] )   ? substr( $r['end_date'],   0, 10 ) : '';
-            if ( ! $start || ! $end ) continue;
-            $key = $start . '|' . $end;
-            if ( isset( $seen[$key] ) ) continue;
-            $seen[$key]  = true;
-            $periodes[]  = array(
-                'label' => sanitize_text_field( $r['description'] ?? '' ),
+        foreach ( $lignes as $r ) {
+            $start = substr( (string) ( $r['start_date'] ?? '' ), 0, 10 );
+            $end   = substr( (string) ( $r['end_date'] ?? '' ), 0, 10 );
+            if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $start ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $end ) ) continue;
+            $titre = trim( (string) ( $r['description'] ?? '' ) );
+            if ( $end > $start ) {
+                $end = gmdate( 'Y-m-d', strtotime( $end . ' 12:00:00 UTC' ) - DAY_IN_SECONDS );
+            } elseif ( stripos( $titre, 'Début' ) === 0 ) {
+                continue;
+            }
+            $periodes[ $start . '|' . $end ] = array(
+                'label' => trim( $titre . ' ' . substr( $start, 0, 4 ) ),
                 'start' => $start,
                 'end'   => $end,
             );
         }
-
-        update_option( 'sp_cal_vacances_zoneC', wp_json_encode( $periodes ) );
-        wp_send_json_success( array( 'nb' => count( $periodes ), 'periodes' => $periodes ) );
+        ksort( $periodes );
+        return array_values( $periodes );
     }
 
     /* ══════════════════════════════════════════════════════════

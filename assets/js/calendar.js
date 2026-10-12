@@ -213,6 +213,15 @@
             $('#sp-event-modal').on('click', function(e){ if($(e.target).is('#sp-event-modal')) CAL.closeModal(); });
             $('#btn-new-event').on('click', function(){ CAL.openModalForm(CAL.currentDate, null); });
             $('#btn-annul-lot').on('click', function(){ CAL.openLotModal(); });
+            // Lien « Annuler des cours… » d'une période de vacances (Paramètres > Calendrier & vacances) :
+            // la fenêtre s'ouvre directement sur cette période. Rien n'est annulé sans validation.
+            var lotUrl = new URLSearchParams(window.location.search), reDate = /^\d{4}-\d{2}-\d{2}$/;
+            if ($('#btn-annul-lot').length && reDate.test(lotUrl.get('lot_debut') || '') && reDate.test(lotUrl.get('lot_fin') || '')) {
+                CAL.openLotModal();
+                $('#sp-lot-debut').val(lotUrl.get('lot_debut'));
+                $('#sp-lot-fin').val(lotUrl.get('lot_fin'));
+                CAL.loadLot();
+            }
             $('#btn-quick-presence').on('click', function(){
                 var dayEvs = CAL.events.filter(function(ev){
                     return ev.date === CAL.currentDate && (ev.type==='cours_recurrent' || ev.type==='cours');

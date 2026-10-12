@@ -218,7 +218,7 @@ public function enqueue( $hook ) {
     public function page_palmares() { $this->members->page_palmares(); }
 
     /* ══════════════════════════════════════════════════════════
-       AJAX — Synchronisation vacances scolaires Zone C
+       AJAX — Vacances scolaires d'une zone (calendrier officiel)
     ══════════════════════════════════════════════════════════ */
 
     public function ajax_sync_vacances() { $this->exam->ajax_sync_vacances(); }

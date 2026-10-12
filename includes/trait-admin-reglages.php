@@ -20,7 +20,6 @@ trait SpCalPro_Admin_Reglages {
 
     public function page_settings() {
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé' );
-        $pub             = get_option( 'sp_cal_public_link', '' );
         $fiche_membre_url= get_option( 'sp_cal_fiche_membre_url', '' );
         $api_key    = get_option( 'sp_cal_api_key', '' );
         $cat_colors = json_decode( get_option( 'sp_cal_cat_colors', '{}' ), true ) ?: array();
@@ -187,7 +186,7 @@ trait SpCalPro_Admin_Reglages {
         <div class="sp-box">
             <h2>📅 Fonds de couleur — Calendrier &amp; Planning</h2>
             <p class="description" style="margin-bottom:16px;">
-                Coloration des cellules week-end et des périodes de vacances scolaires Zone C sur le calendrier admin et le planning public.
+                Coloration des cellules week-end et des périodes de vacances scolaires sur le calendrier admin et le planning public.
             </p>
 
             <!-- Couleurs -->
@@ -210,21 +209,37 @@ trait SpCalPro_Admin_Reglages {
                     </tr>
                 </table>
 
-                <!-- Saisie manuelle des vacances Zone C -->
-                <h3>🗓️ Périodes de vacances scolaires Zone C</h3>
+                <!-- Périodes de vacances : remplissage depuis le calendrier officiel, puis retouche à la main -->
+                <h3>🗓️ Périodes de vacances scolaires</h3>
+                <?php
+                $vac_stored = SpCalPro_DB::get_vacances();
+                $vac_zone   = get_option( 'sp_cal_vacances_zone', 'C' );
+                $vac_auj    = current_time( 'Y-m-d' );
+                ?>
+                <p style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+                    <label for="vac-zone"><strong>Zone</strong></label>
+                    <select name="sp_cal_vacances_zone" id="vac-zone">
+                        <?php foreach ( array( 'A', 'B', 'C' ) as $z ) : ?>
+                        <option value="<?php echo esc_attr( $z ); ?>" <?php selected( $vac_zone, $z ); ?>>Zone <?php echo esc_html( $z ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" id="vac-remplir" class="button">⬇️ Remplir depuis le calendrier officiel</button>
+                    <span id="vac-remplir-msg" style="font-size:13px;"></span>
+                </p>
                 <p class="description" style="margin-bottom:12px;">
-                    Saisissez les périodes de vacances. Les dates de début et de fin sont <strong>incluses</strong>.<br>
-                    Source officielle : <a href="https://www.education.gouv.fr/calendrier-scolaire-100148" target="_blank">education.gouv.fr/calendrier-scolaire</a>
+                    Le bouton remplace les lignes ci-dessous par les vacances de la zone, de l'année scolaire en cours et des suivantes déjà publiées
+                    (source : <a href="https://data.education.gouv.fr/explore/dataset/fr-en-calendrier-scolaire/" target="_blank" rel="noopener">data.education.gouv.fr</a>).
+                    <strong>Rien n'est enregistré tant que vous ne cliquez pas sur « Enregistrer »</strong> : vous pouvez corriger, ajouter ou retirer des lignes avant.
+                    Les dates de début et de fin sont <strong>incluses</strong> (la fin est la veille de la reprise des cours).
                 </p>
 
-                <?php $vac_stored = SpCalPro_DB::get_vacances(); ?>
-
-                <table class="wp-list-table widefat fixed" id="vac-table" style="max-width:720px;margin-bottom:10px;">
+                <table class="wp-list-table widefat fixed" id="vac-table" style="max-width:900px;margin-bottom:10px;">
                     <thead><tr>
-                        <th style="width:220px;">Libellé (ex: Toussaint 2025)</th>
+                        <th style="width:240px;">Libellé (ex: Toussaint 2025)</th>
                         <th style="width:160px;">Début</th>
                         <th style="width:160px;">Fin</th>
                         <th style="width:40px;"></th>
+                        <th>Cours du club</th>
                     </tr></thead>
                     <tbody id="vac-rows">
                     <?php
@@ -235,6 +250,12 @@ trait SpCalPro_Admin_Reglages {
                         <td><input type="date"  name="vac_start[]" value="<?php echo esc_attr($v['start']); ?>" style="width:100%;"></td>
                         <td><input type="date"  name="vac_end[]"   value="<?php echo esc_attr($v['end']);   ?>" style="width:100%;"></td>
                         <td><button type="button" class="button vac-remove" title="Supprimer" style="color:#dc2626;padding:2px 6px;">✕</button></td>
+                        <td class="vac-lot">
+                            <?php // Période enregistrée et pas encore finie : ouvre la fenêtre « Annuler des cours par lot » du calendrier, dates préremplies.
+                            if ( ! empty( $v['start'] ) && ! empty( $v['end'] ) && $v['end'] >= $vac_auj ) : ?>
+                            <a href="<?php echo esc_url( add_query_arg( array( 'page' => 'sp-cal-pro', 'lot_debut' => $v['start'], 'lot_fin' => $v['end'] ), admin_url( 'admin.php' ) ) ); ?>">Annuler des cours…</a>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -247,15 +268,41 @@ trait SpCalPro_Admin_Reglages {
 
             <script>
             (function($){
-                $('#vac-add').on('click', function(){
-                    $('#vac-rows').append(
+                function ligne( label, debut, fin, note ) {
+                    var $tr = $(
                         '<tr class="vac-row">'
                         + '<td><input type="text" name="vac_label[]" placeholder="Ex: Printemps 2026" class="regular-text" style="width:100%;"></td>'
                         + '<td><input type="date" name="vac_start[]" style="width:100%;"></td>'
                         + '<td><input type="date" name="vac_end[]"   style="width:100%;"></td>'
                         + '<td><button type="button" class="button vac-remove" title="Supprimer" style="color:#dc2626;padding:2px 6px;">✕</button></td>'
+                        + '<td class="vac-lot" style="color:#64748b;font-size:12px;"></td>'
                         + '</tr>'
                     );
+                    $tr.find('[name="vac_label[]"]').val( label || '' );
+                    $tr.find('[name="vac_start[]"]').val( debut || '' );
+                    $tr.find('[name="vac_end[]"]').val( fin || '' );
+                    $tr.find('.vac-lot').text( note || '' );
+                    return $tr;
+                }
+                $('#vac-add').on('click', function(){
+                    $('#vac-rows').append( ligne() );
+                });
+                // Remplissage depuis le calendrier officiel : remplace les lignes, n'enregistre rien.
+                $('#vac-remplir').on('click', function(){
+                    var $b = $(this), $m = $('#vac-remplir-msg').css('color', '#475569').text('Recherche…');
+                    $b.prop('disabled', true);
+                    $.post( ajaxurl, {
+                        action: 'sp_cal_sync_vacances',
+                        nonce:  '<?php echo esc_js( wp_create_nonce( 'sp_cal_admin_nonce' ) ); ?>',
+                        zone:   $('#vac-zone').val()
+                    } ).done( function( res ) {
+                        if ( ! res || ! res.success ) { $m.css('color', '#b91c1c').text( '❌ ' + ( res && res.data ? res.data : 'Réponse inattendue.' ) ); return; }
+                        var $rows = $('#vac-rows').empty();
+                        res.data.periodes.forEach( function( p ) { $rows.append( ligne( p.label, p.start, p.end, 'à enregistrer' ) ); } );
+                        $m.css('color', '#15803d').text( '✅ ' + res.data.nb + ' période(s) proposée(s) pour la zone ' + res.data.zone + ' — vérifiez puis enregistrez.' );
+                    } ).fail( function() {
+                        $m.css('color', '#b91c1c').text('❌ Le site n\'a pas répondu. Vous pouvez saisir les dates à la main.');
+                    } ).always( function() { $b.prop('disabled', false); } );
                 });
                 $(document).on('click', '.vac-remove', function(){
                     $(this).closest('tr').remove();
@@ -484,14 +531,7 @@ trait SpCalPro_Admin_Reglages {
         <!-- GÉNÉRAL -->
         <div class="sp-box">
             <h2>⚙️ Général</h2>
-            <form method="post">
-                <?php wp_nonce_field( 'sp_cal_settings' ); ?>
-                <input type="hidden" name="sp_cal_bloc" value="general">
                 <table class="form-table">
-                    <tr>
-                        <th>URL planning public</th>
-                        <td><input type="url" name="sp_cal_public_link" class="large-text" value="<?php echo esc_attr($pub); ?>"></td>
-                    </tr>
                     <tr>
                         <th>Clé API</th>
                         <td><code><?php echo esc_html($api_key); ?></code></td>
@@ -503,9 +543,6 @@ trait SpCalPro_Admin_Reglages {
                         </td>
                     </tr>
                 </table>
-
-                <input type="submit" name="sp_cal_save_settings" class="button button-primary" value="Enregistrer">
-            </form>
         </div>
 
         <!-- RÈGLEMENT INTÉRIEUR (popup formulaire d'adhésion public) -->

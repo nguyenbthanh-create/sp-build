@@ -211,6 +211,14 @@ class SP_Cal_Menu {
 		) );
 	}
 
+	/** Adresse de la première page PUBLIÉE du site qui contient ce shortcode ('' si aucune). */
+	public static function url_page_shortcode( string $tag ): string {
+		foreach ( self::pages_utilisant( $tag ) as $p ) {
+			if ( $p->post_status === 'publish' && get_post_type( (int) $p->ID ) === 'page' ) return (string) get_permalink( (int) $p->ID );
+		}
+		return '';
+	}
+
 	public static function page_shortcodes(): void {
 		if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Accès refusé.' );
 

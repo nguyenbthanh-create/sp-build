@@ -103,7 +103,9 @@ trait SpCalPro_Admin_Formulaires {
         if ( isset( $_POST['sp_cal_save_vacances'] ) && check_admin_referer( 'sp_cal_vacances' ) ) {
             update_option( 'sp_cal_we_color',  sanitize_hex_color( $_POST['sp_cal_we_color']  ?? '#f3f4f6' ) ?: '#f3f4f6' );
             update_option( 'sp_cal_vac_color', sanitize_hex_color( $_POST['sp_cal_vac_color'] ?? '#fef9c3' ) ?: '#fef9c3' );
-            // Périodes manuelles
+            $zone = strtoupper( sanitize_key( $_POST['sp_cal_vacances_zone'] ?? 'C' ) );
+            update_option( 'sp_cal_vacances_zone', in_array( $zone, array( 'A', 'B', 'C' ), true ) ? $zone : 'C' );
+            // Périodes (remplies depuis le calendrier officiel et/ou saisies à la main)
             $periodes = array();
             // wp_unslash : sans lui, « Vacances d'Hiver » prenait un « \ » de plus à chaque enregistrement.
             $labels = wp_unslash( (array) ( $_POST['vac_label'] ?? array() ) );
@@ -129,11 +131,6 @@ trait SpCalPro_Admin_Formulaires {
             // (champ caché sp_cal_bloc). Avant le 12/10/2026 tout était réécrit à chaque fois :
             // enregistrer un bloc remettait les autres à leur valeur par défaut.
             $bloc = sanitize_key( $_POST['sp_cal_bloc'] ?? '' );
-
-            if ( $bloc === 'general' ) {
-                update_option( 'sp_cal_public_link', esc_url_raw( $_POST['sp_cal_public_link'] ?? '' ) );
-                wp_redirect( admin_url( 'admin.php?page=sp-cal-settings&onglet=club&saved=1' ) ); exit;
-            }
 
             if ( $bloc === 'club' ) {
                 update_option( 'sp_cal_club_num',          sanitize_text_field( wp_unslash( $_POST['sp_cal_club_num']          ?? '' ) ) );
