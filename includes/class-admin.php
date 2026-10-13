@@ -11,6 +11,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-tenues.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-carte.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';

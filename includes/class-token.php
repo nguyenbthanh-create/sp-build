@@ -351,9 +351,12 @@ class SpCalPro_Token {
             <div class="sp-membre-header">
                 <div class="sp-membre-avatar">
                     <?php if ( ! empty($el->photo_url) ) : ?>
-                        <img src="<?php echo esc_url($el->photo_url); ?>"
-                             style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
-                             alt="">
+                        <?php // Même cadrage que sur la carte (réglé par le bureau, class-carte.php). ?>
+                        <span style="display:block;width:100%;height:100%;border-radius:50%;overflow:hidden;">
+                            <img src="<?php echo esc_url($el->photo_url); ?>"
+                                 style="width:100%;height:100%;display:block;<?php echo esc_attr( SP_Cal_Carte::style_photo( $el ) ); ?>"
+                                 alt="">
+                        </span>
                     <?php else : ?>
                         <?php echo esc_html(mb_strtoupper(mb_substr($el->prenom,0,1).mb_substr($el->nom,0,1))); ?>
                     <?php endif; ?>
@@ -407,116 +410,16 @@ class SpCalPro_Token {
                     </label>
                 </div>
 
-                <!-- RECTO -->
-                <div class="sp-carte-recto" id="sp-carte-recto-<?php echo intval($el->id); ?>">
-                    <!-- Bandes déco -->
-                    <div class="sp-carte-band-blue"></div>
-                    <div class="sp-carte-band-yellow"></div>
-                    <div class="sp-carte-band-red"></div>
-
-                    <!-- Logo -->
-                    <div class="sp-carte-logo-wrap">
-                        <img src="<?php echo esc_url(get_option('sp_cal_logo_url', 'https://tkdclaira.fr/wp-content/uploads/2026/04/LogoSansLettre.png')); ?>"
-                             class="sp-carte-logo"
-                             onerror="this.style.display='none'">
-                    </div>
-                    <div class="sp-carte-club-name"><?php echo esc_html(strtoupper($club)); ?></div>
-                    <div class="sp-carte-club-sub">CARTE DE MEMBRE</div>
-
-                    <!-- Séparateur -->
-                    <div class="sp-carte-sep"></div>
-
-                    <!-- Identité -->
-                    <div class="sp-carte-nom"><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></div>
-                    <div class="sp-carte-meta">
-                        <?php
-                        $meta_parts = array_filter([
-                            $club_affil ? 'FFTDA' . ($club_affil ? ' '.$club_affil : '') : '',
-                            $club_ligue,
-                            $club_num ? 'Club '.$club_num : '',
-                        ]);
-                        echo esc_html(implode(' · ', $meta_parts));
-                        ?>
-                    </div>
-
-                    <!-- Infos -->
-                    <div class="sp-carte-infos">
-                        <?php if ($el->licence): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Licence</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->licence); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if ($el->date_naissance && $el->annee_naissance): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Né(e) le</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->date_naissance.'/'.$el->annee_naissance); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($el->num_passeport)): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Passeport</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->num_passeport); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($el->urgence_telephone)): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Urgence</span>
-                            <span class="sp-carte-info-v sp-carte-info-urgence"><?php echo esc_html($el->urgence_telephone); ?></span>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- QR Code -->
-                    <div class="sp-carte-qr-zone">
-                        <div id="sp-qr-<?php echo intval($el->id); ?>" class="sp-carte-qr-box"></div>
-                        <?php if ($club_labelise > 0): ?>
-                        <div class="sp-carte-stars">
-                            <?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#ffdd0e':'rgba(255,255,255,0.2)').';font-size:9px;">★</span>'; ?>
-                        </div>
-                        <div class="sp-carte-labelise-txt">Club labellisé</div>
-                        <?php endif; ?>
-                        <div class="sp-carte-qr-scan">Scanner pour pointer</div>
-                    </div>
-
-                    <?php if ( ! empty($el->photo_url) ) : ?>
-                    <div class="sp-carte-photo-wrap">
-                        <img src="<?php echo esc_url($el->photo_url); ?>"
-                             class="sp-carte-photo"
-                             alt="">
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="sp-carte-url">tkdclaira.fr</div>
-                </div>
-
-                <!-- VERSO -->
-                <div class="sp-carte-verso" id="sp-carte-verso-<?php echo intval($el->id); ?>">
-                    <div class="sp-carte-verso-header">
-                        <div class="sp-carte-verso-logo-wrap">
-                            <img src="<?php echo esc_url(get_option('sp_cal_logo_url', 'https://tkdclaira.fr/wp-content/uploads/2026/04/LogoSansLettre.png')); ?>"
-                                 class="sp-carte-verso-logo"
-                                 onerror="this.style.display='none'">
-                        </div>
-                        <span class="sp-carte-verso-title"><?php echo esc_html(strtoupper($club)); ?></span>
-                        <span class="sp-carte-verso-badge"><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></span>
-                    </div>
-                    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px;">
-                        <div style="color:rgba(255,255,255,0.15);font-size:40px;line-height:1;user-select:none;font-family:'Song Myung',cursive;letter-spacing:3px;">태권도</div>
-                        <div style="color:rgba(255,255,255,0.35);font-size:9px;letter-spacing:2px;text-transform:uppercase;">Carte de membre officielle</div>
-                    </div>
-                    <div class="sp-carte-verso-footer">
-                        <span><?php
-                            $footer_parts = array_filter([$club_affil, $club_num ? 'Club '.$club_num : '', 'tkdclaira.fr']);
-                            echo esc_html(implode(' · ', $footer_parts));
-                        ?></span>
-                        <?php if ($club_labelise > 0): ?>
-                        <span>
-                            <?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#e30613':'rgba(255,255,255,0.12)').';font-size:8px;">★</span>'; ?>
-                        </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php
+                // Recto et verso : dessin unique de SP_Cal_Carte (class-carte.php), partagé avec
+                // l'impression par lot de l'administration. Le QR code est rempli par le script plus bas.
+                $sp_carte = SP_Cal_Carte::html( $el, array(
+                    'qr'         => '<div id="sp-qr-' . intval( $el->id ) . '"></div>',
+                    'discipline' => $this->db->label_discipline( $el->categorie_saisie ?? '' ),
+                    'id'         => intval( $el->id ),
+                ) );
+                ?>
+                <div class="sp-carte-pile"><?php echo $sp_carte['recto'] . $sp_carte['verso']; ?></div>
             </div>
 
             <!-- PAGE IMPRESSION A4 — 8 cartes -->
@@ -905,6 +808,15 @@ class SpCalPro_Token {
         @media (max-width:400px) {
             .sp-carte-recto, .sp-carte-verso { width:100% !important; height:auto !important; }
         }
+        /* ── Carte de membre (refonte du 13/10/2026) : dessin dans class-carte.php ── */
+        <?php echo SP_Cal_Carte::css(); ?>
+        .sp-carte-pile { display:flex; flex-direction:column; gap:16px; align-items:flex-start; }
+        @media (max-width:440px) {
+            .sp-carte-membre .spcm { --u: calc((100vw - 80px) / 340); }
+        }
+        @media print {
+            .sp-carte-membre .spcm { --u: calc(85.6mm / 340); border-radius:0; }
+        }
         /* ── Inscriptions événements ── */
         .sp-insc-event {
             display:flex; align-items:center; justify-content:space-between;
@@ -936,7 +848,7 @@ class SpCalPro_Token {
             function initQR() {
                 if (typeof QRCode === 'undefined') { setTimeout(initQR, 100); return; }
                 var url = '<?php echo esc_js($token_url); ?>';
-                new QRCode(qrEl, { text:url, width:68, height:68, colorDark:'#111111', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M });
+                new QRCode(qrEl, { text:url, width:204, height:204, colorDark:'#111111', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M });
             }
             initQR();
         })();
@@ -944,7 +856,7 @@ class SpCalPro_Token {
             var carteEl = document.getElementById('sp-carte-<?php echo intval($el->id); ?>');
             if (!carteEl) return;
 
-            // Récupérer le CSS de la carte
+            // Règles de la carte (classes « spcm ») et police du filigrane, copiées dans la fenêtre d'impression.
             var css = '';
             var sheets = document.styleSheets;
             for (var i = 0; i < sheets.length; i++) {
@@ -952,65 +864,40 @@ class SpCalPro_Token {
                     var rules = sheets[i].cssRules || sheets[i].rules;
                     for (var j = 0; j < rules.length; j++) {
                         var sel = rules[j].selectorText || '';
-                        if (sel.indexOf('sp-carte') !== -1 || sel.indexOf('sp-membre-section') !== -1) {
+                        if (sel.indexOf('spcm') !== -1 || (rules[j].type === 5 && rules[j].cssText.indexOf('SP Dokdo') !== -1)) {
                             css += rules[j].cssText + '\n';
                         }
                     }
                 } catch(e) {}
             }
 
-            var win = window.open('', '_blank', 'width=500,height=600');
-            // ── Mode imprimeur : débord 2mm, angles droits, traits de coupe ──
+            // Taille réelle (85,6 × 54 mm). Mode imprimeur : débord de 2 mm, angles droits, traits de coupe.
             var proMode = document.getElementById('sp-mode-imprimeur-indiv');
-            if (proMode && proMode.checked) {
-                css += '.sp-carte-recto,.sp-carte-verso{'
-                     +   'width:89.6mm!important;height:58mm!important;'
-                     +   'border-radius:0!important;'
-                     + '}'
-                     + '.sp-carte-recto{margin-bottom:4mm!important;}'
-                     + '.sp-pro-wrap{position:relative;display:inline-block;}'
-                     + '.sp-cm{position:absolute;background:rgba(255,255,255,.55);display:block;pointer-events:none;z-index:99;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
-                     + '.sp-cm.h{width:1.5mm;height:.4pt;}'
-                     + '.sp-cm.v{width:.4pt;height:1.5mm;}'
-                     + '.sp-cm.tl-h{top:2mm;left:0;}.sp-cm.tl-v{top:0;left:2mm;}'
-                     + '.sp-cm.tr-h{top:2mm;right:0;}.sp-cm.tr-v{top:0;right:2mm;}'
-                     + '.sp-cm.bl-h{bottom:2mm;left:0;}.sp-cm.bl-v{bottom:0;left:2mm;}'
-                     + '.sp-cm.br-h{bottom:2mm;right:0;}.sp-cm.br-v{bottom:0;right:2mm;}'
-                     /* Zone de sécurité : recul des éléments de bord (≥ 3mm du bord aggrandi) */
-                     /* Bandes : hauteur 58mm + bleue élargie à 25mm pour couvrir QR décalé */
-                     + '.sp-carte-band-blue{height:58mm!important;width:25mm!important;}'
-                     + '.sp-carte-band-yellow{height:58mm!important;right:24mm!important;}'
-                     + '.sp-carte-band-red{width:64.5mm!important;height:3.5mm!important;bottom:0!important;}'
-                     + '.sp-carte-logo-wrap{top:4.5mm!important;left:5mm!important;}'
-                     + '.sp-carte-club-name{top:5mm!important;left:15.5mm!important;}'
-                     + '.sp-carte-club-sub{top:9mm!important;left:15.5mm!important;}'
-                     + '.sp-carte-qr-zone{top:4mm!important;right:2.5mm!important;}'
-                     + '.sp-carte-url{bottom:4mm!important;right:4mm!important;}'
-                     + '.sp-carte-photo-wrap{bottom:6.5mm!important;left:5mm!important;}'
-                     + '.sp-carte-verso-header{padding-left:5mm!important;padding-right:5mm!important;}'
-                     + '.sp-carte-verso-footer{padding-left:5mm!important;padding-right:5mm!important;}';
+            var pro     = !!(proMode && proMode.checked);
+            var coupe   = '';
+            ['hg','hd','bg','bd'].forEach(function(c){ coupe += '<span class="spcm-coupe h ' + c + '"></span><span class="spcm-coupe v ' + c + '"></span>'; });
+            function face(sel) {
+                var el = carteEl.querySelector(sel).cloneNode(true);
+                el.classList.add('spcm--impression');
+                if (pro) { el.classList.add('spcm--imprimeur'); el.insertAdjacentHTML('afterbegin', coupe); }
+                // Le QR est un <canvas> : son dessin ne se copie pas avec le HTML, on le remplace par son image.
+                var src = carteEl.querySelector(sel + ' .spcm-qr canvas'), dst = el.querySelector('.spcm-qr');
+                if (src && dst) { try { dst.innerHTML = '<img src="' + src.toDataURL('image/png') + '" alt="QR">'; } catch(e) {} }
+                return el.outerHTML;
             }
-            var cropMarks = '<div class="sp-cm h tl-h"></div><div class="sp-cm v tl-v"></div>'
-                          + '<div class="sp-cm h tr-h"></div><div class="sp-cm v tr-v"></div>'
-                          + '<div class="sp-cm h bl-h"></div><div class="sp-cm v bl-v"></div>'
-                          + '<div class="sp-cm h br-h"></div><div class="sp-cm v br-v"></div>';
-            var wrapOpen  = (proMode && proMode.checked) ? '<div class="sp-pro-wrap">' + cropMarks : '';
-            var wrapClose = (proMode && proMode.checked) ? '</div>' : '';
+
+            var win = window.open('', '_blank', 'width=500,height=600');
             win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
                 + '<title>Carte de membre</title>'
                 + '<style>'
-                + 'body{margin:20px;padding:0;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}'
+                + 'body{margin:10mm;padding:0;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}'
+                + '.spcm{margin-bottom:6mm;}'
                 + css
-                + '@media print{'
-                + '  body{margin:0;}'
-                + '  button{display:none!important;}'
-                + '  .sp-carte-recto,.sp-carte-verso{-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
-                + '}'
+                + '@media print{ body{margin:8mm;} }'
                 + '</style></head><body>'
-                + wrapOpen + carteEl.querySelector('.sp-carte-recto').outerHTML + wrapClose
-                + '<br>'
-                + wrapOpen + carteEl.querySelector('.sp-carte-verso').outerHTML + wrapClose
-                + '<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script>'
+                + face('.spcm-recto') + face('.spcm-verso')
+                + '<script>window.onload=function(){var go=function(){window.print();window.onafterprint=function(){window.close();};};'
+                + 'if(document.fonts&&document.fonts.ready){document.fonts.ready.then(go);}else{go();}}<\/script>'
                 + '</body></html>');
             win.document.close();
         }

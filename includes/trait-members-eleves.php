@@ -939,6 +939,70 @@ trait SP_Cal_Members_Eleves {
                             </button>
                         </div>
                     </div>
+
+                    <?php
+                    // Cadrage de la photo sur la carte de membre (class-carte.php, 13/10/2026) : le bureau
+                    // place le visage dans le cadre — utile pour une photo scannée où le portrait n'est pas
+                    // au centre. Enregistré avec la fiche (extra_data['photo_cadrage']).
+                    list( $cad_x, $cad_y, $cad_z ) = $edit ? SP_Cal_Carte::cadrage( $edit ) : array( 50, 50, 1.0 );
+                    ?>
+                    <div id="sp-cadrage" style="margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb;<?php echo empty($edit->photo_url) ? 'display:none;' : ''; ?>">
+                        <p style="margin:0 0 8px;font-weight:600;font-size:12px;color:#374151;">Cadrage sur la carte de membre</p>
+                        <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
+                            <div id="sp-cadrage-cadre" style="width:<?php echo intval( SP_Cal_Carte::PHOTO_L * 1.6 ); ?>px;height:<?php echo intval( SP_Cal_Carte::PHOTO_H * 1.6 ); ?>px;border-radius:8px;overflow:hidden;border:2px solid #111;background:#1f2937;cursor:grab;touch-action:none;flex-shrink:0;">
+                                <img id="sp-cadrage-img" src="<?php echo esc_url($edit->photo_url ?? ''); ?>" alt="" draggable="false" style="width:100%;height:100%;display:block;object-fit:cover;user-select:none;pointer-events:none;">
+                            </div>
+                            <div style="max-width:340px;">
+                                <label for="sp-cadrage-zoom" style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;">Zoom</label>
+                                <input type="range" id="sp-cadrage-zoom" min="1" max="4" step="0.05" value="<?php echo esc_attr( $cad_z ); ?>" style="width:220px;">
+                                <p class="description" style="margin:8px 0;">Faites glisser la photo dans le cadre pour placer le visage, puis ajustez le zoom. Le cadrage est enregistré avec la fiche (bouton « Mettre à jour »).</p>
+                                <button type="button" class="button" id="sp-cadrage-reset">Recentrer</button>
+                            </div>
+                        </div>
+                        <input type="hidden" name="eleve_cadrage_x" id="sp-cadrage-x" value="<?php echo esc_attr( $cad_x ); ?>">
+                        <input type="hidden" name="eleve_cadrage_y" id="sp-cadrage-y" value="<?php echo esc_attr( $cad_y ); ?>">
+                        <input type="hidden" name="eleve_cadrage_z" id="sp-cadrage-z" value="<?php echo esc_attr( $cad_z ); ?>">
+                    </div>
+                    <script>
+                    (function(){
+                        var bloc = document.getElementById('sp-cadrage'), cadre = document.getElementById('sp-cadrage-cadre'), img = document.getElementById('sp-cadrage-img');
+                        var fx = document.getElementById('sp-cadrage-x'), fy = document.getElementById('sp-cadrage-y'), fz = document.getElementById('sp-cadrage-z'), zoom = document.getElementById('sp-cadrage-zoom');
+                        var source = document.getElementById('sp-eleve-photo-img');
+                        if (!bloc || !cadre || !img) return;
+                        var x = parseFloat(fx.value) || 50, y = parseFloat(fy.value) || 50, z = parseFloat(fz.value) || 1;
+                        function borne(v, a, b) { return Math.max(a, Math.min(b, v)); }
+                        function appliquer() {
+                            x = borne(x, 0, 100); y = borne(y, 0, 100); z = borne(z, 1, 4);
+                            img.style.objectPosition = x + '% ' + y + '%';
+                            img.style.transformOrigin = x + '% ' + y + '%';
+                            img.style.transform = 'scale(' + z + ')';
+                            fx.value = Math.round(x); fy.value = Math.round(y); fz.value = z.toFixed(2); zoom.value = z;
+                        }
+                        // Glisser : la photo suit le pointeur (plus le zoom est fort, plus le geste est fin).
+                        var depart = null;
+                        cadre.addEventListener('pointerdown', function(e){ depart = { px: e.clientX, py: e.clientY, x: x, y: y }; cadre.setPointerCapture(e.pointerId); cadre.style.cursor = 'grabbing'; });
+                        cadre.addEventListener('pointermove', function(e){
+                            if (!depart) return;
+                            x = depart.x - (e.clientX - depart.px) * 100 / (cadre.clientWidth * z) * 1.2;
+                            y = depart.y - (e.clientY - depart.py) * 100 / (cadre.clientHeight * z) * 1.2;
+                            appliquer();
+                        });
+                        ['pointerup', 'pointercancel'].forEach(function(n){ cadre.addEventListener(n, function(){ depart = null; cadre.style.cursor = 'grab'; }); });
+                        zoom.addEventListener('input', function(){ z = parseFloat(zoom.value) || 1; appliquer(); });
+                        document.getElementById('sp-cadrage-reset').addEventListener('click', function(){ x = 50; y = 50; z = 1; appliquer(); });
+                        // Nouvelle photo choisie ou photo retirée (boutons ci-dessus) : le cadre suit, recentré.
+                        if (source && window.MutationObserver) {
+                            new MutationObserver(function(){
+                                var src = source.getAttribute('src') || '';
+                                if (src === img.getAttribute('src')) return;
+                                img.setAttribute('src', src);
+                                bloc.style.display = src ? '' : 'none';
+                                x = 50; y = 50; z = 1; appliquer();
+                            }).observe(source, { attributes: true, attributeFilter: ['src'] });
+                        }
+                        appliquer();
+                    })();
+                    </script>
                     <script>
                     // Envoi direct dans le dossier de l'adhérent, fermé au web (09/10/2026) — plus par
                     // la médiathèque, publique (class-docs-adhesion.php::ajax_depot()). Partagé avec

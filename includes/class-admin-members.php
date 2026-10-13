@@ -145,6 +145,21 @@ class SP_Cal_Members {
                 ),
             ) );
 
+            // Cadrage de la photo sur la carte (class-carte.php). Un cadrage laissé au centre sans zoom
+            // n'est pas enregistré : la fiche reste « jamais recadrée » pour la liste des photos à revoir.
+            if ( isset( $_POST['eleve_cadrage_x'], $_POST['eleve_cadrage_y'], $_POST['eleve_cadrage_z'] ) ) {
+                $cadrage = SP_Cal_Carte::cadrage_valide(
+                    sanitize_text_field( wp_unslash( $_POST['eleve_cadrage_x'] ) ),
+                    sanitize_text_field( wp_unslash( $_POST['eleve_cadrage_y'] ) ),
+                    sanitize_text_field( wp_unslash( $_POST['eleve_cadrage_z'] ) )
+                );
+                if ( array( 50, 50, 1.0 ) === $cadrage || empty( $_POST['eleve_photo_url'] ) ) {
+                    unset( $extra['photo_cadrage'] );
+                } else {
+                    $extra['photo_cadrage'] = array( 'x' => $cadrage[0], 'y' => $cadrage[1], 'z' => $cadrage[2] );
+                }
+            }
+
             $data = array(
                 'nom'              => sanitize_text_field( wp_unslash( $_POST['eleve_nom']          ?? '' ) ),
                 'prenom'           => sanitize_text_field( wp_unslash( $_POST['eleve_prenom']       ?? '' ) ),

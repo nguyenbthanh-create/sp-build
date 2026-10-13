@@ -55,291 +55,47 @@ trait SP_Cal_Members_Cartes {
         header( 'Content-Type: text/html; charset=UTF-8' );
 
         $nom_club = esc_html( strtoupper( $club ) );
+        // Dessin unique de la carte (class-carte.php, refonte du 13/10/2026) : mêmes recto et verso
+        // que sur la fiche personnelle, aux dimensions réelles (85,6 × 54 mm, + 2 mm de débord et
+        // traits de coupe en mode imprimeur).
         ?><!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>Cartes membres — <?php echo esc_html( $cat_sel ?: 'Tous' ); ?></title>
-<link href="https://fonts.googleapis.com/css2?family=Song+Myung&display=swap" rel="stylesheet">
 <style>
-* { box-sizing:border-box; margin:0; padding:0; }
-body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#f3f4f6; padding:10mm; }
-
-/* ── Même classes que la carte token ── */
-.sp-carte-recto,
-.sp-carte-verso {
-    width:340px; height:215px; border-radius:12px;
-    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    position:relative; overflow:hidden;
-    -webkit-print-color-adjust:exact; print-color-adjust:exact;
-}
-.sp-carte-recto { background:#111; }
-.sp-carte-band-blue   { position:absolute;right:0;top:0;width:88px;height:215px;background:#0f70b7; }
-.sp-carte-band-yellow { position:absolute;right:84px;top:0;width:4px;height:215px;background:#ffdd0e; }
-.sp-carte-band-red    { position:absolute;bottom:0;left:0;width:252px;height:5px;background:#e30613; }
-.sp-carte-logo-wrap   { position:absolute;top:10px;left:12px;width:30px;height:30px;border-radius:4px;background:#fff;display:flex;align-items:center;justify-content:center; }
-.sp-carte-logo        { width:28px;height:28px;object-fit:contain; }
-.sp-carte-club-name   { position:absolute;top:12px;left:50px;color:#fff;font-size:10px;font-weight:600;letter-spacing:1.5px; }
-.sp-carte-club-sub    { position:absolute;top:25px;left:50px;color:#ffdd0e;font-size:8px;letter-spacing:1px; }
-.sp-carte-sep         { position:absolute;top:46px;left:12px;width:240px;height:0.5px;background:rgba(255,255,255,.12); }
-.sp-carte-nom         { position:absolute;top:54px;left:12px;right:100px;color:#fff;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.sp-carte-meta        { position:absolute;top:72px;left:12px;right:100px;color:rgba(255,255,255,.4);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.sp-carte-infos       { position:absolute;top:88px;left:12px;right:100px;display:flex;flex-direction:column;gap:4px; }
-.sp-carte-info-row    { display:flex;gap:6px;align-items:center; }
-.sp-carte-info-k      { color:rgba(255,255,255,.38);font-size:8px;width:50px;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0; }
-.sp-carte-info-v      { color:#fff;font-size:9px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.sp-carte-qr-zone     { position:absolute;top:8px;right:2px;width:86px;display:flex;flex-direction:column;align-items:center;gap:2px; }
-.sp-carte-qr-box      { width:72px;height:72px;background:#fff;border-radius:6px;overflow:hidden;display:flex;align-items:center;justify-content:center; }
-.sp-carte-qr-box img  { max-width:72px;max-height:72px; }
-.sp-carte-stars       { display:flex;gap:1px;margin-top:3px; }
-.sp-carte-labelise-txt{ color:rgba(255,255,255,.35);font-size:7px;letter-spacing:.3px; }
-.sp-carte-qr-scan     { color:rgba(255,255,255,.35);font-size:7px;text-align:center; }
-.sp-carte-url         { position:absolute;bottom:8px;right:6px;color:rgba(255,255,255,.25);font-size:7px; }
-.sp-carte-photo-wrap  { position:absolute;bottom:12px;left:12px;width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.18);background:#222; }
-.sp-carte-photo       { width:100%;height:100%;object-fit:cover;display:block; }
-/* Verso */
-.sp-carte-verso        { background:#111;display:flex;flex-direction:column; }
-.sp-carte-verso-header { height:36px;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0; }
-.sp-carte-verso-logo-wrap { width:22px;height:22px;border-radius:3px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
-.sp-carte-verso-logo   { width:20px;height:20px;object-fit:contain; }
-.sp-carte-verso-title  { color:rgba(255,255,255,.75);font-size:10px;font-weight:500;letter-spacing:.8px; }
-.sp-carte-verso-badge  { margin-left:auto;background:#ffdd0e;border-radius:8px;padding:2px 8px;font-size:8px;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px; }
-.sp-carte-verso-body   { flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px; }
-.sp-carte-verso-tkd    { color:rgba(255,255,255,.15);font-size:42px;line-height:1;user-select:none;font-family:'Song Myung',cursive;letter-spacing:4px; }
-.sp-carte-verso-sub    { color:rgba(255,255,255,.35);font-size:9px;letter-spacing:2px;text-transform:uppercase; }
-.sp-carte-verso-footer { height:24px;padding:0 12px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:center;font-size:8px;color:rgba(255,255,255,.3);flex-shrink:0; }
-
-/* ── Grille écran : recto | verso côte à côte ── */
-.cartes-grid { display:flex;flex-direction:column;gap:20px;width:fit-content;margin:0 auto; }
-.carte-wrap  { display:flex;flex-direction:row;gap:16px;break-inside:avoid; }
-
-/* ── Impression : redimensionner 340px → 85.6mm ── */
+* { box-sizing:border-box; }
+body { margin:0; padding:8mm; background:#fff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+<?php echo SP_Cal_Carte::css(); ?>
+.cartes-grid { display:flex; flex-direction:column; gap:6mm; width:fit-content; margin:0 auto; }
+.carte-wrap  { display:flex; flex-direction:row; gap:<?php echo $pro ? '8mm' : '6mm'; ?>; break-inside:avoid; page-break-inside:avoid; }
 @media print {
-    @page { size:A4 portrait;margin:8mm; }
-    body { background:#fff;padding:0;width:177.2mm; }
-    .cartes-grid { display:flex;flex-direction:column;gap:6mm;width:177.2mm; }
-    .carte-wrap  { display:flex;flex-direction:row;gap:6mm;break-inside:avoid; }
-    .sp-carte-recto,
-    .sp-carte-verso { width:85.6mm;height:54mm;border-radius:0; }
-    .sp-carte-recto { margin-bottom:0; }
-    .sp-carte-band-blue   { width:22mm;height:54mm; }
-    .sp-carte-band-yellow { right:21mm;width:1mm;height:54mm; }
-    .sp-carte-band-red    { width:63mm;height:1.5mm; }
-    .sp-carte-logo-wrap   { top:2.5mm;left:3mm;width:8mm;height:8mm;border-radius:1mm; }
-    .sp-carte-logo        { width:7mm;height:7mm; }
-    /* ── Nom club & sous-titre ── */
-    .sp-carte-club-name   { top:3mm;left:14mm;font-size:7pt;color:#fff !important; }
-    .sp-carte-club-sub    { top:7.5mm;left:14mm;font-size:5pt;color:#ffdd0e !important; }
-    .sp-carte-sep         { top:13mm;left:3mm;width:60mm; }
-    /* ── Nom membre — plus grand, gras ── */
-    .sp-carte-nom         { top:15mm;left:3mm;right:25mm;font-size:9.5pt;font-weight:700;color:#fff !important; }
-    /* ── Méta affiliation — blanc lisible ── */
-    .sp-carte-meta        { top:21mm;left:3mm;right:25mm;font-size:5pt;color:rgba(255,255,255,.85) !important; }
-    /* ── Bloc infos ── */
-    .sp-carte-infos       { top:25.5mm;left:3mm;right:25mm;gap:1.5mm; }
-    .sp-carte-info-k      { font-size:5pt;width:13mm;color:rgba(255,255,255,.8) !important; }
-    .sp-carte-info-v      { font-size:6pt;color:#fff !important; }
-    /* ── Zone QR ── */
-    .sp-carte-qr-zone     { top:2mm;right:0.5mm;width:22mm; }
-    .sp-carte-qr-box      { width:18mm;height:18mm;border-radius:1.5mm; }
-    .sp-carte-qr-box img  { max-width:18mm;max-height:18mm; }
-    .sp-carte-stars       { gap:0.3mm;margin-top:1mm; }
-    .sp-carte-labelise-txt{ font-size:4pt;color:rgba(255,255,255,.8) !important; }
-    .sp-carte-qr-scan     { font-size:4pt;color:rgba(255,255,255,.8) !important; }
-    /* ── URL bas ── */
-    .sp-carte-url         { bottom:2mm;right:2mm;font-size:4.5pt;color:rgba(255,255,255,.7) !important; }
-    /* ── Photo ── */
-    .sp-carte-photo-wrap  { bottom:3mm;left:3mm;width:12mm;height:12mm;border-width:0.5mm; }
-    /* ── Verso ── */
-    .sp-carte-verso-header{ height:10mm; }
-    .sp-carte-verso-logo-wrap { width:6mm;height:6mm; }
-    .sp-carte-verso-logo  { width:5.5mm;height:5.5mm; }
-    .sp-carte-verso-title { font-size:7pt;color:#fff !important; }
-    .sp-carte-verso-badge { font-size:6pt;padding:1mm 2.5mm;border-radius:2mm; }
-    .sp-carte-verso-tkd   { font-size:22pt;color:rgba(255,255,255,.55) !important; }
-    .sp-carte-verso-sub   { font-size:5pt;color:rgba(255,255,255,.85) !important;letter-spacing:1.5px; }
-    .sp-carte-verso-footer{ height:7mm;font-size:5pt;color:rgba(255,255,255,.75) !important; }
+    @page { size:A4 portrait; margin:8mm; }
+    body { padding:0; }
 }
 </style>
-<?php if ( $pro ) : ?>
-<style>
-/* ═══════════════════════════════════════════════════════════════
-   MODE IMPRIMEUR — débord 2mm, angles droits, traits de coupe
-   Carte nette  : 85.6 × 54 mm
-   Carte imprimée : 89.6 × 58 mm (+2 mm chaque côté)
-   Le prestataire coupe le long des traits de coupe.
-═══════════════════════════════════════════════════════════════ */
-
-/* Dimensions bleed */
-body.sp-print-pro .sp-carte-recto,
-body.sp-print-pro .sp-carte-verso {
-    width:89.6mm !important;
-    height:58mm !important;
-    border-radius:0 !important;
-}
-body.sp-print-pro .sp-carte-recto { margin-bottom:4mm !important; }
-
-/* Ajuste la grille pour les cartes plus larges */
-@media print {
-    body.sp-print-pro .carte-wrap {
-        gap:10mm;
-    }
-    body.sp-print-pro .sp-carte-recto { margin-bottom:0 !important; }
-}
-
-/* ── Wrapper portant les traits de coupe ── */
-.sp-pro-wrap {
-    position:relative;
-    display:inline-block;
-    -webkit-print-color-adjust:exact;
-    print-color-adjust:exact;
-}
-
-/* ── Traits de coupe ──
-   Ligne blanche semi-transparente placée à 2 mm du bord de la carte (= ligne de coupe)
-   Longueur 1.5 mm dans la zone de débord, épaisseur 0.4 pt.
-   Sur fond sombre : blanc 55 % d'opacité, lisible à la lumière.           */
-.sp-cm {
-    position:absolute;
-    background:rgba(255,255,255,.55);
-    display:block;
-    pointer-events:none;
-    z-index:99;
-    -webkit-print-color-adjust:exact;
-    print-color-adjust:exact;
-}
-.sp-cm.h { width:1.5mm; height:.4pt; } /* horizontal */
-.sp-cm.v { width:.4pt; height:1.5mm; } /* vertical   */
-
-/* Coin haut-gauche */
-.sp-cm.tl-h { top:2mm;  left:0;    }
-.sp-cm.tl-v { top:0;    left:2mm;  }
-/* Coin haut-droit */
-.sp-cm.tr-h { top:2mm;  right:0;   }
-.sp-cm.tr-v { top:0;    right:2mm; }
-/* Coin bas-gauche */
-.sp-cm.bl-h { bottom:2mm; left:0;    }
-.sp-cm.bl-v { bottom:0;   left:2mm;  }
-/* Coin bas-droit */
-.sp-cm.br-h { bottom:2mm; right:0;   }
-.sp-cm.br-v { bottom:0;   right:2mm; }
-
-@media print {
-    /* ── Bandes : étendre à la hauteur bleed + élargir bleue pour couvrir QR décalé ──
-       QR zone : right:2.5mm + width:22mm → commence à 65.1mm du bord gauche
-       Bande bleue : width:25mm → commence à 64.6mm ✓ couvre le QR
-       Bande jaune : suit la bleue à right:24mm
-       Bande rouge : rejoint la bande jaune → width:64.5mm                          */
-    body.sp-print-pro .sp-carte-band-blue   { height:58mm !important; width:25mm   !important; }
-    body.sp-print-pro .sp-carte-band-yellow { height:58mm !important; right:24mm   !important; }
-    /* Bande rouge : height:3.5mm = 1.5mm visible après coupe + 2mm de débord en bas */
-    body.sp-print-pro .sp-carte-band-red    { width:64.5mm !important; height:3.5mm !important; bottom:0 !important; }
-    /* Logo + nom club — coin haut-gauche */
-    body.sp-print-pro .sp-carte-logo-wrap { top:4.5mm !important; left:5mm !important; }
-    body.sp-print-pro .sp-carte-club-name { top:5mm   !important; left:15.5mm !important; }
-    body.sp-print-pro .sp-carte-club-sub  { top:9mm   !important; left:15.5mm !important; }
-    /* QR code — coin haut-droit */
-    body.sp-print-pro .sp-carte-qr-zone   { top:4mm   !important; right:2.5mm !important; }
-    /* URL — coin bas-droit */
-    body.sp-print-pro .sp-carte-url       { bottom:4mm !important; right:4mm   !important; }
-    /* Photo — remontée de 2mm pour sortir de la zone de débord */
-    body.sp-print-pro .sp-carte-photo-wrap { bottom:6.5mm !important; left:5mm !important; }
-    /* Verso header & footer — padding latéraux */
-    body.sp-print-pro .sp-carte-verso-header { padding-left:5mm !important; padding-right:5mm !important; }
-    body.sp-print-pro .sp-carte-verso-footer { padding-left:5mm !important; padding-right:5mm !important; }
-}
-</style>
-<?php endif; ?>
 </head>
-<body<?php if ( $pro ) echo ' class="sp-print-pro"'; ?>>
+<body>
 <div class="cartes-grid">
 <?php foreach ( $eleves as $el ) :
     $token_url = home_url( '/fiche-membre/?token=' . rawurlencode( $el->token ?? '' ) );
-    $qr_url    = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' . urlencode( $token_url );
-    $nom       = esc_html( $el->prenom . ' ' . mb_strtoupper( $el->nom ) );
-    $footer_parts = array_filter( [ $club_affil, $club_num ? 'Club ' . $club_num : '', 'tkdclaira.fr' ] );
-    $footer_str   = esc_html( implode( ' · ', $footer_parts ) );
+    $qr_url    = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode( $token_url );
+    $carte     = SP_Cal_Carte::html( $el, array(
+        'qr'         => '<img src="' . esc_url( $qr_url ) . '" alt="QR">',
+        'discipline' => $this->db->label_discipline( $el->categorie_saisie ?? '' ),
+        'impression' => true,
+        'imprimeur'  => $pro,
+    ) );
 ?>
-<div class="carte-wrap">
-<?php if ( $pro ) : ?>
-<div class="sp-pro-wrap">
-    <span class="sp-cm h tl-h"></span><span class="sp-cm v tl-v"></span>
-    <span class="sp-cm h tr-h"></span><span class="sp-cm v tr-v"></span>
-    <span class="sp-cm h bl-h"></span><span class="sp-cm v bl-v"></span>
-    <span class="sp-cm h br-h"></span><span class="sp-cm v br-v"></span>
-<?php endif; ?>
-    <div class="sp-carte-recto">
-        <div class="sp-carte-band-blue"></div>
-        <div class="sp-carte-band-yellow"></div>
-        <div class="sp-carte-band-red"></div>
-        <?php if ( $logo_url ) : ?>
-        <div class="sp-carte-logo-wrap"><img src="<?php echo esc_url($logo_url); ?>" class="sp-carte-logo"></div>
-        <?php endif; ?>
-        <div class="sp-carte-club-name"><?php echo $nom_club; ?></div>
-        <div class="sp-carte-club-sub">CARTE DE MEMBRE</div>
-        <div class="sp-carte-sep"></div>
-        <div class="sp-carte-nom"><?php echo $nom; ?></div>
-        <div class="sp-carte-meta"><?php echo esc_html( $meta_str ); ?></div>
-        <div class="sp-carte-infos">
-            <?php if ( $el->licence ) : ?>
-            <div class="sp-carte-info-row"><span class="sp-carte-info-k">Licence</span><span class="sp-carte-info-v"><?php echo esc_html($el->licence); ?></span></div>
-            <?php endif; ?>
-            <?php if ( $el->date_naissance && $el->annee_naissance ) : ?>
-            <div class="sp-carte-info-row"><span class="sp-carte-info-k">Né(e) le</span><span class="sp-carte-info-v"><?php echo esc_html($el->date_naissance.'/'.$el->annee_naissance); ?></span></div>
-            <?php endif; ?>
-            <?php if ( ! empty( $el->urgence_telephone ) ) : ?>
-            <div class="sp-carte-info-row"><span class="sp-carte-info-k">Urgence</span><span class="sp-carte-info-v" style="color:#e30613;"><?php echo esc_html($el->urgence_telephone); ?></span></div>
-            <?php endif; ?>
-        </div>
-        <?php if ( ! empty( $el->photo_url ) ) : ?>
-        <div class="sp-carte-photo-wrap"><img src="<?php echo esc_url($el->photo_url); ?>" class="sp-carte-photo"></div>
-        <?php endif; ?>
-        <div class="sp-carte-qr-zone">
-            <div class="sp-carte-qr-box"><img src="<?php echo esc_url($qr_url); ?>" alt="QR"></div>
-            <?php if ( $club_labelise > 0 ) : ?>
-            <div class="sp-carte-stars">
-                <?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#ffdd0e':'rgba(255,255,255,0.2)').';font-size:10px;">★</span>'; ?>
-            </div>
-            <div class="sp-carte-labelise-txt">Club labellisé</div>
-            <?php endif; ?>
-            <div class="sp-carte-qr-scan">Scanner pour pointer</div>
-        </div>
-        <div class="sp-carte-url">tkdclaira.fr</div>
-    </div><!-- .sp-carte-recto -->
-<?php if ( $pro ) : ?>
-</div><!-- .sp-pro-wrap recto -->
-<div class="sp-pro-wrap">
-    <span class="sp-cm h tl-h"></span><span class="sp-cm v tl-v"></span>
-    <span class="sp-cm h tr-h"></span><span class="sp-cm v tr-v"></span>
-    <span class="sp-cm h bl-h"></span><span class="sp-cm v bl-v"></span>
-    <span class="sp-cm h br-h"></span><span class="sp-cm v br-v"></span>
-<?php endif; ?>
-    <div class="sp-carte-verso">
-        <div class="sp-carte-verso-header">
-            <?php if ( $logo_url ) : ?>
-            <div class="sp-carte-verso-logo-wrap"><img src="<?php echo esc_url($logo_url); ?>" class="sp-carte-verso-logo"></div>
-            <?php endif; ?>
-            <span class="sp-carte-verso-title"><?php echo $nom_club; ?></span>
-            <span class="sp-carte-verso-badge"><?php echo $nom; ?></span>
-        </div>
-        <div class="sp-carte-verso-body">
-            <div class="sp-carte-verso-tkd">태권도</div>
-            <div class="sp-carte-verso-sub">Carte de membre officielle</div>
-        </div>
-        <div class="sp-carte-verso-footer">
-            <span><?php echo $footer_str; ?></span>
-            <?php if ( $club_labelise > 0 ) : ?>
-            <span><?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#e30613':'rgba(255,255,255,.12)').';font-size:9px;">★</span>'; ?></span>
-            <?php endif; ?>
-        </div>
-    </div><!-- .sp-carte-verso -->
-<?php if ( $pro ) : ?>
-</div><!-- .sp-pro-wrap verso -->
-<?php endif; ?>
-</div><!-- .carte-wrap -->
+<div class="carte-wrap"><?php echo $carte['recto'] . $carte['verso']; ?></div>
 <?php endforeach; ?>
 </div>
-<script>window.onload=function(){ window.print(); window.onafterprint=function(){ window.close(); }; };</script>
+<script>
+window.onload = function () {
+    var go = function () { window.print(); window.onafterprint = function () { window.close(); }; };
+    if ( document.fonts && document.fonts.ready ) { document.fonts.ready.then( go ); } else { go(); }
+};
+</script>
 </body>
 </html>
 <?php
@@ -627,6 +383,84 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
             <div style="font-size:32px;margin-bottom:8px;">🔍</div>
             <div style="font-size:14px;color:#64748b;">Aucun élève actif trouvé pour cette sélection.</div>
         </div>
+        <?php endif; ?>
+
+        <?php if ( $eleves ) :
+            // Photos telles qu'elles apparaîtront sur la carte (13/10/2026). Le navigateur repère celles
+            // qui sont en largeur et n'ont jamais été recadrées : ce sont en général des photos scannées,
+            // dont le visage n'est pas au centre. « Recadrer » ouvre la fiche sur l'outil de cadrage.
+        ?>
+        <div id="sp-photos-cartes" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px 28px;margin-top:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
+                <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;">Photos des cartes</div>
+                <label style="font-size:13px;"><input type="checkbox" id="sp-photos-filtre"> Seulement celles à revoir</label>
+            </div>
+            <p style="font-size:13px;color:#64748b;margin:0 0 14px;">
+                Chaque photo est montrée dans le cadre de la carte. <strong id="sp-photos-compte">…</strong>
+            </p>
+            <div id="sp-photos-grille" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:14px;">
+            <?php foreach ( $eleves as $el ) :
+                $extra_ph   = json_decode( (string) ( $el->extra_data ?? '' ), true );
+                $recadree   = is_array( $extra_ph ) && ! empty( $extra_ph['photo_cadrage'] );
+                $a_photo    = ! empty( $el->photo_url );
+            ?>
+                <div class="sp-photo-carte" data-photo="<?php echo $a_photo ? '1' : '0'; ?>" data-recadree="<?php echo $recadree ? '1' : '0'; ?>" style="text-align:center;font-size:12px;">
+                    <div style="width:<?php echo intval( SP_Cal_Carte::PHOTO_L ); ?>px;height:<?php echo intval( SP_Cal_Carte::PHOTO_H ); ?>px;margin:0 auto 6px;border-radius:6px;overflow:hidden;border:2px solid #111;background:#1f2937;display:flex;align-items:center;justify-content:center;">
+                        <?php if ( $a_photo ) : ?>
+                        <img src="<?php echo esc_url( $el->photo_url ); ?>" alt="" loading="lazy" style="width:100%;height:100%;display:block;<?php echo esc_attr( SP_Cal_Carte::style_photo( $el ) ); ?>">
+                        <?php else : ?>
+                        <span style="color:#fff;font-size:28px;font-weight:600;"><?php echo esc_html( SP_Cal_Carte::initiales( $el ) ); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div style="font-weight:600;color:#0f172a;line-height:1.25;"><?php echo esc_html( $el->prenom . ' ' . mb_strtoupper( $el->nom ) ); ?></div>
+                    <div class="sp-photo-etat" style="min-height:18px;margin:2px 0;color:#64748b;"><?php echo $a_photo ? '' : 'Sans photo'; ?></div>
+                    <a href="<?php echo esc_url( admin_url( 'admin.php?page=sp-cal-eleves&sp_edit_eleve=' . intval( $el->id ) ) . '#sp-cadrage' ); ?>"><?php echo $a_photo ? 'Recadrer' : 'Ajouter une photo'; ?></a>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <script>
+        (function(){
+            var grille = document.getElementById('sp-photos-grille'), filtre = document.getElementById('sp-photos-filtre'), compte = document.getElementById('sp-photos-compte');
+            if (!grille) return;
+            var tuiles = Array.prototype.slice.call(grille.querySelectorAll('.sp-photo-carte'));
+            function marquer(t, texte) {
+                t.dataset.revoir = '1';
+                var e = t.querySelector('.sp-photo-etat');
+                e.textContent = texte; e.style.color = '#b45309'; e.style.fontWeight = '600';
+            }
+            function bilan() {
+                var n = tuiles.filter(function(t){ return t.dataset.revoir === '1'; }).length;
+                var sans = tuiles.filter(function(t){ return t.dataset.photo === '0'; }).length;
+                compte.textContent = n + ' photo(s) à recadrer, ' + sans + ' adhérent(s) sans photo, sur ' + tuiles.length + '.';
+                // Celles à revoir d'abord, puis les « sans photo », puis les autres.
+                tuiles.slice().sort(function(a, b){
+                    var ra = a.dataset.revoir === '1' ? 0 : (a.dataset.photo === '0' ? 1 : 2), rb = b.dataset.revoir === '1' ? 0 : (b.dataset.photo === '0' ? 1 : 2);
+                    return ra - rb;
+                }).forEach(function(t){ grille.appendChild(t); });
+                appliquer();
+            }
+            function appliquer() {
+                tuiles.forEach(function(t){ t.style.display = (!filtre.checked || t.dataset.revoir === '1' || t.dataset.photo === '0') ? '' : 'none'; });
+            }
+            filtre.addEventListener('change', appliquer);
+            var restantes = 0;
+            tuiles.forEach(function(t){
+                var img = t.querySelector('img');
+                if (!img) return;
+                restantes++;
+                function fini() {
+                    if (img.naturalWidth && img.naturalWidth > img.naturalHeight && t.dataset.recadree !== '1') marquer(t, 'Photo en largeur : à recadrer');
+                    if (!img.naturalWidth) marquer(t, 'Photo illisible');
+                    if (--restantes === 0) bilan();
+                }
+                // Chargement différé : on force le chargement pour pouvoir mesurer toutes les photos.
+                img.loading = 'eager';
+                if (img.complete) fini(); else { img.addEventListener('load', fini); img.addEventListener('error', fini); }
+            });
+            if (!restantes) bilan();
+        })();
+        </script>
         <?php endif; ?>
 
         </div>
