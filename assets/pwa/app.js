@@ -349,6 +349,23 @@ function renderCarte() {
     var el = gEleve;
     var carte = el.carte || {};
 
+    // Nouvelle carte (13/10/2026) : recto et verso dessinés par le serveur (class-carte.php), les mêmes
+    // que sur la fiche personnelle et à l'impression. L'ancien dessin ci-dessous ne sert plus que si
+    // le serveur ne les envoie pas.
+    if (carte.recto && carte.verso) {
+        var inner = document.getElementById('spcal-card-inner');
+        if (inner) inner.classList.add('spcal-card-v2');
+        document.getElementById('spcal-recto').innerHTML = carte.recto;
+        document.getElementById('spcal-verso').innerHTML = carte.verso;
+        (function genQRv2() {
+            if (typeof QRCode === 'undefined') { setTimeout(genQRv2, 100); return; }
+            var box = document.getElementById('spcal-qr-box');
+            if (box) new QRCode(box, { text: carte.qr_url||location.href, width:204, height:204, colorDark:'#111', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M });
+        })();
+        renderCarteInstallHint();
+        return;
+    }
+
     // ── Recto ──────────────────────────────────────────────────
     var metaParts = [
         carte.club_affil ? 'FFTDA '+(carte.club_affil||'') : '',
@@ -431,6 +448,10 @@ function renderCarte() {
             (versoStars ? '<span>'+versoStars+'</span>' : '')+
         '</div>';
 
+    renderCarteInstallHint();
+}
+
+function renderCarteInstallHint() {
     // Hint installation
     var isIOS     = /iphone|ipad|ipod/i.test(navigator.userAgent);
     var isAndroid = /android/i.test(navigator.userAgent);

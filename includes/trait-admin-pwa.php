@@ -153,6 +153,13 @@ trait SpCalPro_Admin_Pwa {
         $jours         = $statut_saison['jours'];
         $adhesion      = array( 'a_renouveler' => 'expire', 'bientot' => 'expire_bientot' )[ $statut_saison['code'] ] ?? 'actif';
         $grade_vise = $this->db->get_grade_vise_eleve( $el );
+        // Carte de membre : même dessin que la fiche personnelle et l'impression (class-carte.php,
+        // 13/10/2026). L'application y dessine le QR code (#spcal-qr-box) ; les anciens champs de
+        // « carte » restent envoyés pour une application encore ouverte avec l'ancien script.
+        $carte_html = SP_Cal_Carte::html( $el, array(
+            'qr'         => '<div id="spcal-qr-box"></div>',
+            'discipline' => $this->db->label_discipline( $el->categorie_saisie ?? '' ),
+        ) );
         return rest_ensure_response( array(
             'id' => intval( $el->id ), 'prenom' => $el->prenom, 'nom' => mb_strtoupper( $el->nom ),
             'grade' => $el->grade ?? '', 'categorie_age' => $el->categorie_age ?? '',
@@ -169,6 +176,8 @@ trait SpCalPro_Admin_Pwa {
             // Passerelle vers la fiche complète (grades, présences, doboks) — unification fiche / PWA, étape 1.
             'fiche_url'  => ( $this->token && ! empty( $el->token ) ) ? $this->token->get_fiche_url( $el->token ) : '',
             'carte' => array(
+                'recto'         => $carte_html['recto'],
+                'verso'         => $carte_html['verso'],
                 'qr_url'        => home_url( '/' ) . '?token=' . rawurlencode( $el->token ?? '' ),
                 'club_nom'      => get_option( 'blogname', '' ),
                 'club_num'      => get_option( 'sp_cal_club_num', '' ),
@@ -469,6 +478,15 @@ window.addEventListener('error', function(e) {
 </script>
 
 <link rel="stylesheet" href="<?php echo esc_url( SP_CAL_PRO_URL . 'assets/pwa/app.css?ver=' . sp_cal_asset_ver( 'assets/pwa/app.css' ) ); ?>">
+<?php // Dessin de la carte de membre partagé avec la fiche personnelle (class-carte.php) ; ici la carte
+      // prend la largeur de l'écran (340 px au plus) et garde ses proportions. ?>
+<style>
+<?php echo SP_Cal_Carte::css(); ?>
+#spcal-carte{--uc:calc(min(340px, 100vw - 32px) / 340);}
+.spcal-card-inner.spcal-card-v2{height:calc(215 * var(--uc));}
+.spcal-card-v2 .sp-carte-recto,.spcal-card-v2 .sp-carte-verso{background:none;border-radius:0;overflow:visible;}
+.spcal-card-v2 .spcm{--u:var(--uc);}
+</style>
 
 <div id="spcal-pwa">
 
