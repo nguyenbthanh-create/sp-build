@@ -872,13 +872,14 @@ class SP_Cal_Tenues {
 
 	/** Sujet et corps du mail qui demande ses tailles à un adhérent. @return array{0:string,1:string} */
 	public static function texte_invitation( string $qui, array $pieces, string $lien ): array {
-		$quoi = count( $pieces ) > 1 ? 'ses tailles de haut et de bas' : ( ( $pieces[0] ?? '' ) === 'haut' ? 'sa taille de haut' : 'sa taille de bas' );
+		// Le mail s'adresse directement à l'adhérent (formulation choisie par le club, 13/10/2026).
+		$quoi = count( $pieces ) > 1 ? 'vos tailles de haut et de bas' : ( ( $pieces[0] ?? '' ) === 'haut' ? 'votre taille de haut' : 'votre taille de bas' );
 		$corps = "Bonjour,\n\n"
 			. "Le club prépare la commande des tenues de renforcement musculaire (un haut et un bas), prêtées à chaque adhérent.\n\n"
-			. "Pour préparer celle de $qui, il nous manque $quoi.\n\n"
-			. "Merci de l'indiquer sur la fiche personnelle, rubrique « Ma tenue de renforcement musculaire » — cela prend quelques secondes :\n"
+			. "Pour préparer la vôtre, $qui, il nous manque $quoi.\n\n"
+			. "Merci de l'indiquer sur votre fiche personnelle, rubrique « Ma tenue de renforcement musculaire » — cela prend quelques secondes :\n"
 			. $lien . "\n\n"
-			. "Les tailles vont de XS à XXL. Sans cette information, nous ne pourrons pas commander la tenue.\n\n"
+			. "Les tailles vont de XS à XXL. Sans cette information, nous ne pourrons pas commander votre tenue.\n\n"
 			. "Ce lien est personnel : merci de ne pas le partager.\n\n"
 			. 'Sportivement,';
 		return [ 'Tenue de renforcement musculaire : vos tailles', $corps ];
