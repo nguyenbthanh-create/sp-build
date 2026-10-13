@@ -96,7 +96,7 @@ class SP_Cal_Tenues {
 		SP_Cal_Schema::enregistrer( 'Tenues renfo', [ $this, 'maybe_create_tables' ] );
 
 		foreach ( [ 'remise', 'restitution', 'perte', 'commande', 'supprimer_lot', 'inventaire', 'reforme', 'supprimer_mvt', 'reglages',
-		            'dem_terminer', 'dem_refuser', 'dem_annuler', 'inviter' ] as $a ) {
+		            'dem_terminer', 'dem_refuser', 'dem_annuler', 'inviter', 'exemple' ] as $a ) {
 			add_action( 'admin_post_sp_tenue_' . $a, [ $this, 'handle_' . $a ] );
 		}
 
@@ -698,6 +698,8 @@ class SP_Cal_Tenues {
 			'ok_dem_annulee'    => [ 'success', 'Demande close : l\'adhérent garde sa pièce actuelle.' ],
 			'ok_dem_refusee'    => [ 'success', 'Demande refusée (adhérent prévenu par mail si activé).' ],
 			'err_dem'           => [ 'error',   'Cette demande n\'existe pas ou a déjà été traitée.' ],
+			'ok_exemple'        => [ 'success', 'Exemple envoyé : regardez votre boîte de réception (et les indésirables).' ],
+			'err_exemple'       => [ 'error',   'L\'exemple n\'a pas pu être envoyé : adresse invalide, ou refus du service d\'envoi.' ],
 			'ok_invites'        => [ $n ? 'success' : 'warning', sprintf( '%d mail(s) envoyé(s) pour demander les tailles.', $n ) . ( $n2 ? sprintf( ' %d adhérent(s) sans adresse email : à contacter autrement.', $n2 ) : '' ) ],
 			'ok_supprime'       => [ 'success', 'Suppression effectuée.' ],
 			'ok_inventaire'     => [ 'success', sprintf( 'Inventaire enregistré : %d ajustement(s).', $n ) ],
@@ -829,6 +831,14 @@ class SP_Cal_Tenues {
 				echo '<button type="submit" class="button button-primary">📧 Envoyer la demande à ' . count( $a_inviter ) . ' adhérent(s)</button>';
 				if ( $sans_email ) echo ' <span class="spd-meta">' . count( $sans_email ) . ' sans adresse email : ' . esc_html( implode( ', ', array_map( static function ( $e ) { return trim( $e->nom . ' ' . $e->prenom ); }, $sans_email ) ) ) . '</span>';
 				echo '</form>';
+
+				// Exemple : le mail du premier adhérent de la liste, tel qu'il le recevra, mais adressé au bureau.
+				$premier = $a_inviter[0];
+				$this->form_open( 'exemple', [ 'tab' => 'besoin' ], 'spd-inline' );
+				echo '<label for="spt-exemple-email">Recevoir un exemple (le mail de ' . esc_html( $premier->prenom ) . ') à l\'adresse :</label> ';
+				echo '<input type="email" id="spt-exemple-email" name="email_test" class="regular-text" required value="' . esc_attr( wp_get_current_user()->user_email ) . '"> ';
+				echo '<button type="submit" class="button">M\'envoyer un exemple</button></form>';
+
 				echo '<details style="margin-top:10px;"><summary>Voir le texte du mail</summary><pre style="white-space:pre-wrap;background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:12px;max-width:760px;">'
 					. esc_html( self::texte_invitation( 'Prénom NOM', [ 'haut', 'bas' ], 'https://…/fiche-membre/?token=…' )[1] ) . '</pre></details>';
 			}
@@ -874,6 +884,34 @@ class SP_Cal_Tenues {
 		return [ 'Tenue de renforcement musculaire : vos tailles', $corps ];
 	}
 
+	/** Lien personnel de l'adhérent vers « Ma tenue » : celui qu'il a déjà, créé seulement s'il n'en a jamais eu. */
+	private function lien_ma_tenue( object $el ): string {
+		$token = (string) ( $el->token ?? '' );
+		if ( $token === '' ) {
+			global $wpdb;
+			$token = bin2hex( random_bytes( 32 ) );
+			$wpdb->update( $this->table_eleves(), [ 'token' => $token ], [ 'id' => (int) $el->id ] );
+			$el->token = $token;
+		}
+		return $this->fiche_url( $token ) . '#spt-front';
+	}
+
+	/**
+	 * Exemple pour le bureau : le mail du premier adhérent à relancer, avec son nom et son vrai lien,
+	 * envoyé à l'adresse saisie (jamais à l'adhérent). L'objet porte la mention « EXEMPLE ».
+	 */
+	public function handle_exemple(): void {
+		$this->verifier( 'exemple' );
+		$dest = sanitize_email( wp_unslash( $_POST['email_test'] ?? '' ) );
+		[ $a_inviter ] = $this->adherents_a_inviter();
+		if ( ! $dest || ! is_email( $dest ) || ! $a_inviter ) $this->retour( 'err_exemple' );
+		$el = $a_inviter[0];
+		[ $sujet, $corps ] = self::texte_invitation( $el->prenom . ' ' . mb_strtoupper( $el->nom ), $el->pieces_manquantes, $this->lien_ma_tenue( $el ) );
+		$club = get_option( 'blogname', 'Club' );
+		$ok   = wp_mail( $dest, '[' . $club . '] EXEMPLE — ' . $sujet, $corps . "\n\n-- \n" . $club, [ 'Content-Type: text/plain; charset=UTF-8' ] );
+		$this->retour( $ok ? 'ok_exemple' : 'err_exemple' );
+	}
+
 	/** Envoie la demande de tailles aux adhérents concernés (bouton de l'onglet Besoin de commande). */
 	public function handle_inviter(): void {
 		$this->verifier( 'inviter' );
@@ -881,13 +919,7 @@ class SP_Cal_Tenues {
 		[ $a_inviter, $sans_email ] = $this->adherents_a_inviter();
 		$n = 0;
 		foreach ( $a_inviter as $el ) {
-			// Lien personnel : celui que l'adhérent a déjà ; créé seulement s'il n'en a jamais eu.
-			$token = (string) ( $el->token ?? '' );
-			if ( $token === '' ) {
-				$token = bin2hex( random_bytes( 32 ) );
-				$wpdb->update( $this->table_eleves(), [ 'token' => $token ], [ 'id' => (int) $el->id ] );
-			}
-			[ $sujet, $corps ] = self::texte_invitation( $el->prenom . ' ' . mb_strtoupper( $el->nom ), $el->pieces_manquantes, $this->fiche_url( $token ) . '#spt-front' );
+			[ $sujet, $corps ] = self::texte_invitation( $el->prenom . ' ' . mb_strtoupper( $el->nom ), $el->pieces_manquantes, $this->lien_ma_tenue( $el ) );
 			$this->envoyer( ( $el->email_parent ?? '' ) ?: $el->email, $sujet, $corps );
 			$n++;
 		}
