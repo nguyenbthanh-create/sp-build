@@ -1227,10 +1227,23 @@ class SP_Cal_Tenues {
 		};
 
 		if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_spt_nonce'] ?? '' ) ), 'sp_tenue_front_' . $el->id ) ) $retour( 'expire' );
-		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
 
 		$action = sanitize_key( $_POST['sp_tenue_front'] );
 		$id     = (int) $el->id;
+
+		// Tailles du haut et du bas notées sur la fiche : l'adhérent du renforcement les corrige
+		// lui-même (possible même si les demandes sont désactivées). Elles servent au besoin de commande.
+		if ( $action === 'tailles' ) {
+			if ( ! (int) $el->actif || ! self::est_renfo( $el ) ) $retour( 'ferme' );
+			$haut = $this->post_taille( 'taille_haut' );
+			$bas  = $this->post_taille( 'taille_bas' );
+			if ( $haut === '' || $bas === '' ) $retour( 'tailles_erreur' );
+			global $wpdb;
+			$wpdb->update( $this->table_eleves(), [ 'taille_tshirt' => $haut, 'taille_pantalon' => $bas ], [ 'id' => $id ] );
+			$retour( 'tailles_ok' );
+		}
+
+		if ( ! (int) $el->actif || ! $this->reglages()['demandes_on'] ) $retour( 'ferme' );
 
 		if ( $action === 'annuler' ) {
 			$d = $this->demande( (int) ( $_POST['dem_id'] ?? 0 ) );
@@ -1317,8 +1330,14 @@ class SP_Cal_Tenues {
 			'ferme'       => [ 'err',  'Les demandes ne sont pas possibles pour le moment : contactez le bureau.' ],
 			'expire'      => [ 'err',  'La page a expiré : rechargez-la puis recommencez.' ],
 			'erreur'      => [ 'err',  'La demande n\'a pas pu être enregistrée : vérifiez vos choix.' ],
+			'tailles_ok'  => [ 'ok',   'Vos tailles sont enregistrées. Merci !' ],
+			'tailles_erreur' => [ 'err', 'Choisissez une taille pour le haut et pour le bas.' ],
 		];
 		$msg = sanitize_key( $_GET['tenue_msg'] ?? '' );
+		// Tailles notées sur la fiche, quand elles sont lisibles (sinon l'adhérent est invité à les choisir).
+		$t_haut = self::lire_taille( $el->taille_tshirt ?? '', $tailles );
+		$t_bas  = self::lire_taille( $el->taille_pantalon ?? '', $tailles );
+		$tailles_a_saisir = $renfo && (int) $el->actif && ( $t_haut === '' || $t_bas === '' );
 		?>
 		<div class="sp-membre-section spt-front" id="spt-front">
 			<style>
@@ -1341,6 +1360,14 @@ class SP_Cal_Tenues {
 				.spt-front .spt-btn{margin-top:8px;padding:8px 16px;border:0;border-radius:6px;background:#D4000F;color:#fff;font-weight:600;cursor:pointer}
 				.spt-front .spt-lien{background:none;border:0;padding:0;color:#b91c1c;text-decoration:underline;cursor:pointer;font-size:13px}
 				.spt-front .spt-note{font-size:12px;color:#6b7280;margin-top:12px}
+				.spt-front .spt-tailles{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center;font-size:14px;margin:6px 0}
+				.spt-front .spt-tailles b{font-size:16px}
+				.spt-front .spt-edit{background:none;border:1px solid #e5e7eb;border-radius:6px;padding:2px 10px;cursor:pointer;font-size:13px;line-height:1.6}
+				.spt-front .spt-edit:hover{border-color:#D4000F}
+				.spt-front .spt-tailles-form{border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin:8px 0 10px;background:#f9fafb}
+				.spt-front .spt-tailles-form[hidden]{display:none}
+				.spt-front .spt-tailles-form label{display:inline-block;margin:0 18px 6px 0}
+				.spt-front .spt-alerte{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:10px 14px;border-radius:8px;margin:8px 0;font-size:14px}
 			</style>
 			<h2>👕 Ma tenue de renforcement musculaire</h2>
 
@@ -1352,6 +1379,34 @@ class SP_Cal_Tenues {
 				<p>Votre tenue (un haut et un bas) est prêtée par le club : elle vous sera remise lors d'une distribution.</p>
 			<?php else : ?>
 				<p>Cette tenue est prêtée par le club : elle est à rendre si vous arrêtez l'activité.</p>
+			<?php endif; ?>
+
+			<?php if ( $renfo ) : ?>
+				<?php if ( $tailles_a_saisir ) : ?>
+					<div class="spt-alerte">Nous avons besoin de vos tailles pour préparer votre tenue : merci de les indiquer ci-dessous.</div>
+				<?php endif; ?>
+				<div class="spt-tailles">
+					<span>Taille du haut : <b><?php echo esc_html( $t_haut !== '' ? $t_haut : '—' ); ?></b></span>
+					<span>Taille du bas : <b><?php echo esc_html( $t_bas !== '' ? $t_bas : '—' ); ?></b></span>
+					<?php if ( (int) $el->actif ) : ?>
+						<button type="button" class="spt-edit" onclick="var f=document.getElementById('spt-tailles-form');f.hidden=!f.hidden;">✏️ Modifier mes tailles</button>
+					<?php endif; ?>
+				</div>
+				<?php if ( (int) $el->actif ) : ?>
+				<form method="post" class="spt-tailles-form" id="spt-tailles-form"<?php echo ( $tailles_a_saisir || $msg === 'tailles_erreur' ) ? '' : ' hidden'; ?>>
+					<?php $this->champs_front( $el ); ?>
+					<input type="hidden" name="sp_tenue_front" value="tailles">
+					<?php foreach ( [ 'taille_haut' => [ 'Haut', $t_haut ], 'taille_bas' => [ 'Bas', $t_bas ] ] as $champ => $c ) : ?>
+					<label><?php echo esc_html( $c[0] ); ?> :
+						<select name="<?php echo esc_attr( $champ ); ?>" required>
+							<option value="">— Choisir —</option>
+							<?php foreach ( $tailles as $t ) echo '<option value="' . esc_attr( $t ) . '"' . selected( $c[1], $t, false ) . '>' . esc_html( $t ) . '</option>'; ?>
+						</select>
+					</label>
+					<?php endforeach; ?>
+					<button type="submit" class="spt-btn">Enregistrer mes tailles</button>
+				</form>
+				<?php endif; ?>
 			<?php endif; ?>
 
 			<div class="spt-cartes">

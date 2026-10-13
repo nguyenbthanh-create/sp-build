@@ -587,7 +587,9 @@ class SpCalPro_Token {
             </div>
             <?php endif; ?>
 
-            <!-- Grade actuel / prochain grade -->
+            <!-- Grade actuel / prochain grade — sans objet pour un adhérent du renforcement musculaire
+                 qui n'a aucun grade (13/10/2026) : la rubrique n'est alors pas affichée. -->
+            <?php if ( $el->grade || ! SP_Cal_Tenues::est_renfo( $el ) ) : ?>
             <div class="sp-membre-section">
                 <h2>🥋 Grade</h2>
                 <?php if($el->grade): ?>
@@ -605,6 +607,7 @@ class SpCalPro_Token {
                 </div>
                 <?php else: ?><p class="sp-membre-muted">Aucun grade renseigné.</p><?php endif; ?>
             </div>
+            <?php endif; ?>
 
             <?php // Bloc « Mes doboks » (SP_Cal_Dobok::render_bloc_adherent) ?>
             <?php do_action( 'sp_cal_fiche_membre_apres_grade', $el ); ?>
