@@ -420,9 +420,31 @@ class SP_Cal_Tenues {
 	}
 
 	/** Adhérents actifs, triés par nom. */
+	/**
+	 * Saison prise en compte : la saison courante si elle a des adhérents actifs, sinon la plus
+	 * fréquente (même règle que les doboks, SP_Cal_Dobok::saison_par_defaut()).
+	 */
+	private function saison_reference(): string {
+		global $wpdb;
+		$tel = $this->table_eleves();
+		$s   = $this->saison_courante();
+		if ( (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $tel WHERE actif = 1 AND saison = %s", $s ) ) > 0 ) return $s;
+		$f = (string) $wpdb->get_var( "SELECT saison FROM $tel WHERE actif = 1 AND saison != '' GROUP BY saison ORDER BY COUNT(*) DESC LIMIT 1" );
+		return $f ?: $s;
+	}
+
+	/** L'adhérent est-il inscrit pour la saison prise en compte ? (un adhérent de la saison passée ne l'est plus) */
+	private function est_de_la_saison( $el ): bool {
+		return (int) ( $el->actif ?? 0 ) === 1 && (string) ( $el->saison ?? '' ) === $this->saison_reference();
+	}
+
+	/**
+	 * Adhérents de la saison en cours, triés par nom. Ceux de la saison précédente qui n'ont pas
+	 * renouvelé sont écartés, comme pour les doboks (13/10/2026) : ni besoin de commande, ni relance.
+	 */
 	private function eleves_actifs(): array {
 		global $wpdb;
-		return (array) $wpdb->get_results( "SELECT * FROM {$this->table_eleves()} WHERE actif = 1 ORDER BY nom ASC, prenom ASC" );
+		return (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$this->table_eleves()} WHERE actif = 1 AND saison = %s ORDER BY nom ASC, prenom ASC", $this->saison_reference() ) );
 	}
 
 	// ══════════════════════════════════════════════════════════════
@@ -784,7 +806,7 @@ class SP_Cal_Tenues {
 			}
 		}
 
-		printf( '<p class="spd-compte"><strong>%d</strong> adhérent(s) actif(s) au renforcement musculaire — <strong>%d</strong> déjà équipé(s) d\'un haut et d\'un bas.</p>', count( $renfo ), (int) $calc['equipes'] );
+		printf( '<p class="spd-compte"><strong>%d</strong> adhérent(s) du renforcement musculaire inscrit(s) pour la saison %s — <strong>%d</strong> déjà équipé(s) d\'un haut et d\'un bas. Les adhérents de la saison précédente qui n\'ont pas renouvelé ne sont pas comptés.</p>', count( $renfo ), esc_html( $this->saison_reference() ), (int) $calc['equipes'] );
 		echo '<p class="description" style="max-width:900px;">Pour chaque adhérent du renforcement qui n\'a pas encore sa tenue : un haut et un bas, dans la coupe de son sexe et à la taille notée sur sa fiche (« T-shirt » pour le haut, « Pantalon » pour le bas). '
 			. 'Les adhérents du taekwondo, qui ont aussi accès au renforcement, ne sont pas comptés : ajoutez leurs pièces à la main dans la commande si besoin. '
 			. 'Les demandes d\'adhérents en attente de stock sont ajoutées au besoin ; les pièces déjà réservées ne comptent plus dans le stock.</p>';
@@ -987,15 +1009,16 @@ class SP_Cal_Tenues {
 		$detenus = $this->detenus();
 		$tailles = $this->tailles();
 		$eleves  = $this->eleves_actifs();
-		// Un ancien adhérent (inactif) qui n'a pas rendu sa tenue doit rester visible.
-		$inactifs = array_diff( array_keys( $detenus ), array_map( static function ( $e ) { return (int) $e->id; }, $eleves ) );
-		foreach ( $inactifs as $id ) { if ( $el = $this->eleve( (int) $id ) ) $eleves[] = $el; }
+		// Un ancien adhérent (inactif, ou resté sur la saison passée) qui n'a pas rendu sa tenue doit rester visible.
+		$partis = [];
+		foreach ( array_diff( array_keys( $detenus ), array_map( static function ( $e ) { return (int) $e->id; }, $eleves ) ) as $id ) {
+			if ( $el = $this->eleve( (int) $id ) ) { $eleves[] = $el; $partis[ (int) $id ] = true; }
+		}
 
 		$liste = array_values( array_filter( $eleves, function ( $el ) use ( $vue, $q, $detenus ) {
 			$a = ! empty( $detenus[ (int) $el->id ] );
 			if ( $vue === 'renfo' && ! self::est_renfo( $el ) && ! $a ) return false;
 			if ( $vue === 'detenteurs' && ! $a ) return false;
-			if ( $vue !== 'tous' && empty( $el->actif ) && ! $a ) return false;
 			return $q === '' || mb_stripos( $el->nom . ' ' . $el->prenom, $q ) !== false;
 		} ) );
 
@@ -1017,12 +1040,12 @@ class SP_Cal_Tenues {
 			$renfo = self::est_renfo( $el );
 
 			echo '<tr id="el-' . $id . '"><td><strong><a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . $id ) ) . '">' . esc_html( trim( $el->nom . ' ' . $el->prenom ) ) . '</a></strong>';
-			echo '<div class="spd-meta">' . esc_html( $renfo ? 'Renforcement musculaire' : 'Taekwondo' ) . ( empty( $el->actif ) ? ' · <strong>inactif</strong>' : '' ) . '</div></td>';
+			echo '<div class="spd-meta">' . esc_html( $renfo ? 'Renforcement musculaire' : 'Taekwondo' ) . ( isset( $partis[ $id ] ) ? ' · <strong>plus adhérent cette saison</strong>' : '' ) . '</div></td>';
 			echo '<td class="spd-taille">Haut : ' . esc_html( (string) ( $el->taille_tshirt ?? '' ) !== '' ? $el->taille_tshirt : '—' ) . '<br>Bas : ' . esc_html( (string) ( $el->taille_pantalon ?? '' ) !== '' ? $el->taille_pantalon : '—' ) . '</td><td>';
 			if ( ! $chez ) echo '<span class="spd-vide">rien</span>';
 			foreach ( $chez as $d ) echo '<span class="spd-dobok">' . esc_html( self::label( $d['modele'] ) . ' ' . $d['taille'] . ( $d['nb'] > 1 ? ' ×' . $d['nb'] : '' ) ) . '</span> ';
 			echo '</td><td>';
-			if ( empty( $el->actif ) && $chez ) echo '<span class="spd-alerte spd-warn">Parti : tenue à récupérer</span>';
+			if ( isset( $partis[ $id ] ) && $chez ) echo '<span class="spd-alerte spd-warn">Plus adhérent cette saison : tenue à récupérer</span>';
 			elseif ( $renfo ) foreach ( self::PIECES as $piece => $lib ) { if ( empty( $a[ $piece ] ) ) echo '<span class="spd-alerte spd-info">' . esc_html( $lib ) . ' à remettre</span>'; }
 			echo '</td><td><button type="button" class="button button-small spd-toggle" data-cible="gerer-' . $id . '">Gérer</button></td></tr>';
 
@@ -1425,8 +1448,9 @@ class SP_Cal_Tenues {
 		$pieces   = $this->pieces_de( $id );
 		$ouvertes = $this->demandes_ouvertes_de( $id );
 		$renfo    = self::est_renfo( $el );
-		// Adhérent du taekwondo : le bloc n'apparaît que s'il a une tenue du club.
-		if ( ! $renfo && ! $pieces && ! $ouvertes ) return;
+		// Adhérent du taekwondo, ou adhérent de la saison passée qui n'a pas renouvelé : le bloc
+		// n'apparaît que s'il a une tenue du club (pour la rendre).
+		if ( ( ! $renfo || ! $this->est_de_la_saison( $el ) ) && ! $pieces && ! $ouvertes ) return;
 
 		$peut    = (int) $el->actif && $this->reglages()['demandes_on'];
 		$tailles = $this->tailles();
@@ -1448,7 +1472,7 @@ class SP_Cal_Tenues {
 		// Tailles notées sur la fiche, quand elles sont lisibles (sinon l'adhérent est invité à les choisir).
 		$t_haut = self::lire_taille( $el->taille_tshirt ?? '', $tailles );
 		$t_bas  = self::lire_taille( $el->taille_pantalon ?? '', $tailles );
-		$tailles_a_saisir = $renfo && (int) $el->actif && ( $t_haut === '' || $t_bas === '' );
+		$tailles_a_saisir = $renfo && $this->est_de_la_saison( $el ) && ( $t_haut === '' || $t_bas === '' );
 		?>
 		<div class="sp-membre-section spt-front" id="spt-front">
 			<style>
