@@ -96,7 +96,7 @@ class SP_Cal_Tenues {
 		SP_Cal_Schema::enregistrer( 'Tenues renfo', [ $this, 'maybe_create_tables' ] );
 
 		foreach ( [ 'remise', 'restitution', 'perte', 'commande', 'supprimer_lot', 'inventaire', 'reforme', 'supprimer_mvt', 'reglages',
-		            'dem_terminer', 'dem_refuser', 'dem_annuler' ] as $a ) {
+		            'dem_terminer', 'dem_refuser', 'dem_annuler', 'inviter' ] as $a ) {
 			add_action( 'admin_post_sp_tenue_' . $a, [ $this, 'handle_' . $a ] );
 		}
 
@@ -698,6 +698,7 @@ class SP_Cal_Tenues {
 			'ok_dem_annulee'    => [ 'success', 'Demande close : l\'adhérent garde sa pièce actuelle.' ],
 			'ok_dem_refusee'    => [ 'success', 'Demande refusée (adhérent prévenu par mail si activé).' ],
 			'err_dem'           => [ 'error',   'Cette demande n\'existe pas ou a déjà été traitée.' ],
+			'ok_invites'        => [ $n ? 'success' : 'warning', sprintf( '%d mail(s) envoyé(s) pour demander les tailles.', $n ) . ( $n2 ? sprintf( ' %d adhérent(s) sans adresse email : à contacter autrement.', $n2 ) : '' ) ],
 			'ok_supprime'       => [ 'success', 'Suppression effectuée.' ],
 			'ok_inventaire'     => [ 'success', sprintf( 'Inventaire enregistré : %d ajustement(s).', $n ) ],
 			'ok_reforme'        => [ 'success', 'Sortie du stock enregistrée.' ],
@@ -814,7 +815,84 @@ class SP_Cal_Tenues {
 					esc_url( admin_url( 'admin.php?page=sp-cal-eleves&sp_edit_eleve=' . (int) $el->id ) ) );
 			}
 			echo '</tbody></table>';
+
+			// Invitation par mail : chacun complète ses tailles lui-même, sur sa fiche personnelle.
+			[ $a_inviter, $sans_email ] = $this->adherents_a_inviter();
+			echo '<h2 style="margin-top:22px;">Leur demander leurs tailles par mail</h2>';
+			echo '<p class="description" style="max-width:900px;">Chaque adhérent dont une taille manque reçoit un mail avec son lien personnel : il choisit ses tailles (XS → XXL) dans la rubrique « Ma tenue » de sa fiche, et le besoin de commande se met à jour tout seul. Le sexe, lui, reste à compléter par le bureau sur la fiche.</p>';
+			$derniere = get_option( 'sp_tenue_invitation', [] );
+			if ( ! empty( $derniere['date'] ) ) echo '<p>Dernier envoi : <strong>' . esc_html( mysql2date( 'd/m/Y à H:i', $derniere['date'] ) ) . '</strong> — ' . (int) ( $derniere['n'] ?? 0 ) . ' mail(s).</p>';
+			if ( ! $a_inviter ) {
+				echo '<p>' . ( $sans_email ? 'Aucun des adhérents concernés n\'a d\'adresse email : contactez-les autrement.' : 'Personne à relancer : seules des informations à compléter par le bureau manquent.' ) . '</p>';
+			} else {
+				$this->form_open( 'inviter', [ 'tab' => 'besoin' ], '', sprintf( 'Envoyer %d mail(s) maintenant ?', count( $a_inviter ) ) );
+				echo '<button type="submit" class="button button-primary">📧 Envoyer la demande à ' . count( $a_inviter ) . ' adhérent(s)</button>';
+				if ( $sans_email ) echo ' <span class="spd-meta">' . count( $sans_email ) . ' sans adresse email : ' . esc_html( implode( ', ', array_map( static function ( $e ) { return trim( $e->nom . ' ' . $e->prenom ); }, $sans_email ) ) ) . '</span>';
+				echo '</form>';
+				echo '<details style="margin-top:10px;"><summary>Voir le texte du mail</summary><pre style="white-space:pre-wrap;background:#f6f7f7;border:1px solid #dcdcde;border-radius:6px;padding:12px;max-width:760px;">'
+					. esc_html( self::texte_invitation( 'Prénom NOM', [ 'haut', 'bas' ], 'https://…/fiche-membre/?token=…' )[1] ) . '</pre></details>';
+			}
 		}
+	}
+
+	/**
+	 * Adhérents actifs du renforcement dont une taille (haut ou bas) manque et qui n'ont pas déjà
+	 * cette pièce : [ à inviter (avec email), sans email ]. Chaque élève reçoit ->pieces_manquantes.
+	 */
+	private function adherents_a_inviter(): array {
+		$tailles = $this->tailles();
+		$detenus = $this->detenus();
+		$avec = [];
+		$sans = [];
+		foreach ( $this->eleves_actifs() as $el ) {
+			if ( ! self::est_renfo( $el ) ) continue;
+			$a = [];
+			foreach ( $detenus[ (int) $el->id ] ?? [] as $d ) $a[ self::MODELES[ $d['modele'] ]['piece'] ?? '' ] = true;
+			$manque = [];
+			foreach ( array_keys( self::PIECES ) as $piece ) {
+				if ( empty( $a[ $piece ] ) && self::attendu( $el, $piece, $tailles )[1] === '' ) $manque[] = $piece;
+			}
+			if ( ! $manque ) continue;
+			$el->pieces_manquantes = $manque;
+			$dest = ( $el->email_parent ?? '' ) ?: ( $el->email ?? '' );
+			if ( $dest && is_email( $dest ) ) $avec[] = $el; else $sans[] = $el;
+		}
+		return [ $avec, $sans ];
+	}
+
+	/** Sujet et corps du mail qui demande ses tailles à un adhérent. @return array{0:string,1:string} */
+	public static function texte_invitation( string $qui, array $pieces, string $lien ): array {
+		$quoi = count( $pieces ) > 1 ? 'ses tailles de haut et de bas' : ( ( $pieces[0] ?? '' ) === 'haut' ? 'sa taille de haut' : 'sa taille de bas' );
+		$corps = "Bonjour,\n\n"
+			. "Le club prépare la commande des tenues de renforcement musculaire (un haut et un bas), prêtées à chaque adhérent.\n\n"
+			. "Pour préparer celle de $qui, il nous manque $quoi.\n\n"
+			. "Merci de l'indiquer sur la fiche personnelle, rubrique « Ma tenue de renforcement musculaire » — cela prend quelques secondes :\n"
+			. $lien . "\n\n"
+			. "Les tailles vont de XS à XXL. Sans cette information, nous ne pourrons pas commander la tenue.\n\n"
+			. "Ce lien est personnel : merci de ne pas le partager.\n\n"
+			. 'Sportivement,';
+		return [ 'Tenue de renforcement musculaire : vos tailles', $corps ];
+	}
+
+	/** Envoie la demande de tailles aux adhérents concernés (bouton de l'onglet Besoin de commande). */
+	public function handle_inviter(): void {
+		$this->verifier( 'inviter' );
+		global $wpdb;
+		[ $a_inviter, $sans_email ] = $this->adherents_a_inviter();
+		$n = 0;
+		foreach ( $a_inviter as $el ) {
+			// Lien personnel : celui que l'adhérent a déjà ; créé seulement s'il n'en a jamais eu.
+			$token = (string) ( $el->token ?? '' );
+			if ( $token === '' ) {
+				$token = bin2hex( random_bytes( 32 ) );
+				$wpdb->update( $this->table_eleves(), [ 'token' => $token ], [ 'id' => (int) $el->id ] );
+			}
+			[ $sujet, $corps ] = self::texte_invitation( $el->prenom . ' ' . mb_strtoupper( $el->nom ), $el->pieces_manquantes, $this->fiche_url( $token ) . '#spt-front' );
+			$this->envoyer( ( $el->email_parent ?? '' ) ?: $el->email, $sujet, $corps );
+			$n++;
+		}
+		if ( $n ) update_option( 'sp_tenue_invitation', [ 'date' => current_time( 'mysql' ), 'n' => $n ], false );
+		$this->retour( 'ok_invites', [ 'n' => $n, 'n2' => count( $sans_email ) ] );
 	}
 
 	/** Quantités « à commander » de l'onglet Besoin, pour préremplir la grille de réception. */

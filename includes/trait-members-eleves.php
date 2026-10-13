@@ -1392,6 +1392,7 @@ trait SP_Cal_Members_Eleves {
                     <?php foreach ( $saisons as $s ) echo '<option value="' . esc_attr($s) . '">' . esc_html($s) . '</option>'; ?>
                 </select>
                 <?php endif; ?>
+                <button type="button" class="button" id="sp-flt-reset" style="display:none;">✕ Tout afficher</button>
             </div>
 
             <?php if ( empty( $eleves ) ) : ?>
@@ -1581,10 +1582,40 @@ trait SP_Cal_Members_Eleves {
                 updateTotal();
                 updateCount();
             }
-            if(fName)   fName.addEventListener('input',   applyFilter);
-            if(fCat)    fCat.addEventListener('change',   applyFilter);
-            if(fCatS)   fCatS.addEventListener('change',  applyFilter);
-            if(fSaison) fSaison.addEventListener('change',applyFilter);
+            /* Les filtres sont gardés en mémoire le temps de la session (sessionStorage) : après
+               l'enregistrement d'une fiche, la liste revient filtrée comme on l'avait laissée, au lieu
+               de réafficher tout le club (13/10/2026). */
+            var fReset = document.getElementById('sp-flt-reset');
+            var CLE_FILTRES = 'sp_cal_eleves_filtres';
+            var champs = { name: fName, cat: fCat, catS: fCatS, saison: fSaison };
+            function memoriser() {
+                var etat = {}, actif = false;
+                Object.keys(champs).forEach(function(k){ if (champs[k]) { etat[k] = champs[k].value; if (etat[k]) actif = true; } });
+                try { sessionStorage.setItem(CLE_FILTRES, JSON.stringify(etat)); } catch (e) {}
+                if (fReset) fReset.style.display = actif ? '' : 'none';
+            }
+            function filtrer() { applyFilter(); memoriser(); }
+            if(fName)   fName.addEventListener('input',   filtrer);
+            if(fCat)    fCat.addEventListener('change',   filtrer);
+            if(fCatS)   fCatS.addEventListener('change',  filtrer);
+            if(fSaison) fSaison.addEventListener('change',filtrer);
+            if(fReset)  fReset.addEventListener('click', function(){
+                Object.keys(champs).forEach(function(k){ if (champs[k]) champs[k].value = ''; });
+                filtrer();
+            });
+            // Restauration au chargement (après la définition du reste du script).
+            setTimeout(function(){
+                var etat = null;
+                try { etat = JSON.parse(sessionStorage.getItem(CLE_FILTRES) || 'null'); } catch (e) {}
+                if (!etat) return;
+                Object.keys(champs).forEach(function(k){
+                    if (!champs[k] || !etat[k]) return;
+                    champs[k].value = etat[k];
+                    // Une valeur qui n'existe plus dans la liste déroulante est ignorée.
+                    if (champs[k].value !== etat[k]) champs[k].value = '';
+                });
+                filtrer();
+            }, 0);
 
             /* ── Tri alphabétique (clic sur l'en-tête "Nom") ──────── */
             var sortTh  = document.getElementById('sp-sort-nom');
