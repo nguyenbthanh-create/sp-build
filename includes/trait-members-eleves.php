@@ -538,7 +538,38 @@ trait SP_Cal_Members_Eleves {
                 </script>
                 <?php
                 $f( 'Passeport FFTDA',         'eleve_num_passeport', $edit->num_passeport   ?? '' );
-                $f( 'Saison',                  'eleve_saison',       $edit->saison          ?? '', 'text', '2025/2026' );
+                // Saison : liste déroulante (13/10/2026) au lieu d'un champ libre — une faute de frappe
+                // (« 2026-2027 », « 26/27 ») sortait l'adhérent des listes de la saison (doboks, tenues…).
+                // Proposées : saison en cours, précédente, suivante, et celles déjà portées par des fiches.
+                // Une valeur hors liste déjà enregistrée reste proposée, pour ne rien modifier sans le vouloir.
+                $saison_cours = (string) get_option( 'tkd_saison_courante', '' );
+                if ( ! preg_match( '#^(\d{4})/\d{4}$#', $saison_cours, $m_saison ) ) {
+                    $an_debut     = (int) current_time( 'Y' ) - ( (int) current_time( 'n' ) >= 9 ? 0 : 1 );
+                    $saison_cours = $an_debut . '/' . ( $an_debut + 1 );
+                } else {
+                    $an_debut = (int) $m_saison[1];
+                }
+                $saisons = array( ( $an_debut + 1 ) . '/' . ( $an_debut + 2 ), $saison_cours, ( $an_debut - 1 ) . '/' . $an_debut );
+                foreach ( (array) $wpdb->get_col( "SELECT DISTINCT saison FROM $tel WHERE saison != ''" ) as $s_exist ) {
+                    if ( preg_match( '#^\d{4}/\d{4}$#', (string) $s_exist ) ) $saisons[] = (string) $s_exist;
+                }
+                $saisons = array_values( array_unique( $saisons ) );
+                rsort( $saisons );
+                $saison_edit = $edit ? (string) ( $edit->saison ?? '' ) : $saison_cours;
+                ?>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Saison</label>
+                        <select name="eleve_saison" class="regular-text" style="width:100%;">
+                            <option value="">—</option>
+                            <?php if ( $saison_edit !== '' && ! in_array( $saison_edit, $saisons, true ) ) : ?>
+                            <option value="<?php echo esc_attr( $saison_edit ); ?>" selected><?php echo esc_html( $saison_edit ); ?> (à corriger)</option>
+                            <?php endif; ?>
+                            <?php foreach ( $saisons as $s_opt ) : ?>
+                            <option value="<?php echo esc_attr( $s_opt ); ?>" <?php selected( $saison_edit, $s_opt ); ?>><?php echo esc_html( $s_opt . ( $s_opt === $saison_cours ? ' (en cours)' : '' ) ); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                <?php
                 ?>
                     <!-- Discipline pratiquée (droite col 1) — mêmes codes que le formulaire public
                          d'adhésion (TKD/RENFO, cf. SP_Front_Adhesion::DISCIPLINES) pour que la fiche
