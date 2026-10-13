@@ -549,22 +549,22 @@ trait SP_Cal_Members_Eleves {
                 } else {
                     $an_debut = (int) $m_saison[1];
                 }
-                $saisons = array( ( $an_debut + 1 ) . '/' . ( $an_debut + 2 ), $saison_cours, ( $an_debut - 1 ) . '/' . $an_debut );
+                $saisons_fiche = array( ( $an_debut + 1 ) . '/' . ( $an_debut + 2 ), $saison_cours, ( $an_debut - 1 ) . '/' . $an_debut );
                 foreach ( (array) $wpdb->get_col( "SELECT DISTINCT saison FROM $tel WHERE saison != ''" ) as $s_exist ) {
-                    if ( preg_match( '#^\d{4}/\d{4}$#', (string) $s_exist ) ) $saisons[] = (string) $s_exist;
+                    if ( preg_match( '#^\d{4}/\d{4}$#', (string) $s_exist ) ) $saisons_fiche[] = (string) $s_exist;
                 }
-                $saisons = array_values( array_unique( $saisons ) );
-                rsort( $saisons );
+                $saisons_fiche = array_values( array_unique( $saisons_fiche ) );
+                rsort( $saisons_fiche );
                 $saison_edit = $edit ? (string) ( $edit->saison ?? '' ) : $saison_cours;
                 ?>
                     <div style="margin-bottom:12px;">
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Saison</label>
                         <select name="eleve_saison" class="regular-text" style="width:100%;">
                             <option value="">—</option>
-                            <?php if ( $saison_edit !== '' && ! in_array( $saison_edit, $saisons, true ) ) : ?>
+                            <?php if ( $saison_edit !== '' && ! in_array( $saison_edit, $saisons_fiche, true ) ) : ?>
                             <option value="<?php echo esc_attr( $saison_edit ); ?>" selected><?php echo esc_html( $saison_edit ); ?> (à corriger)</option>
                             <?php endif; ?>
-                            <?php foreach ( $saisons as $s_opt ) : ?>
+                            <?php foreach ( $saisons_fiche as $s_opt ) : ?>
                             <option value="<?php echo esc_attr( $s_opt ); ?>" <?php selected( $saison_edit, $s_opt ); ?>><?php echo esc_html( $s_opt . ( $s_opt === $saison_cours ? ' (en cours)' : '' ) ); ?></option>
                             <?php endforeach; ?>
                         </select>
