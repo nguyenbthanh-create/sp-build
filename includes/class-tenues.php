@@ -23,7 +23,7 @@
  *
  * Qui est concerné : les adhérents inscrits au renforcement musculaire. Une adhésion au taekwondo
  * donne aussi accès au renforcement (pas l'inverse) : le bureau coche « Pratique aussi le renforcement
- * musculaire » sur la fiche de ceux qui en profitent (extra_data['pratique_renfo'], 14/10/2026) et ils
+ * musculaire » sur la fiche de ceux qui en profitent (extra_data['pratique_renfo'], 13/10/2026) et ils
  * sont alors traités comme les autres. Sans la case, rien n'est attendu pour un adhérent du taekwondo,
  * mais le bureau peut lui remettre une tenue (vue « Tous les adhérents »).
  *
@@ -274,7 +274,7 @@ class SP_Cal_Tenues {
 		return (bool) preg_match( '/renfo|renforcement/i', (string) ( $el->categorie_saisie ?? '' ) );
 	}
 
-	/** Adhérent du taekwondo dont la fiche porte la case « Pratique aussi le renforcement musculaire » (14/10/2026). */
+	/** Adhérent du taekwondo dont la fiche porte la case « Pratique aussi le renforcement musculaire » (13/10/2026). */
 	public static function pratique_aussi_renfo( $el ): bool {
 		$extra = json_decode( (string) ( $el->extra_data ?? '' ), true );
 		return is_array( $extra ) && ! empty( $extra['pratique_renfo'] );
