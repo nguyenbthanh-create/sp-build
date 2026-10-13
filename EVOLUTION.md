@@ -425,10 +425,11 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Reste à faire sur la carte** : (1) **application `/app/`** — elle garde l'ancienne carte (photo ronde) tant que l'utilisateur n'a pas donné son accord et essayé sur le site de test ; elle ne lit pas encore le cadrage ; (2) la branche `$do_print` de `page_print_cartes()` est de l'ancien code jamais atteint (l'impression passe par `maybe_print_cartes()`), à retirer ; (3) contenu du verso pour le renforcement (pas de grade) ; (4) le glisser de l'outil de cadrage est approximatif (la photo ne suit pas le doigt au pixel près).
 - Texte du mail de demande des tailles : s'adresse directement à l'adhérent (« Pour préparer la vôtre, Prénom NOM, il nous manque vos tailles… »), en prod `a7a375c`, vérifié.
 
-## 13/10/2026 — Tenues : adhérents du taekwondo qui pratiquent aussi le renforcement (codé, à essayer sur le site de test)
+## 13/10/2026 — Tenues : adhérents du taekwondo qui pratiquent aussi le renforcement (en prod `8195845` le 13/10/2026, vérifié)
 
 - **Besoin** : une fiche ne porte qu'une discipline ; un adhérent du taekwondo qui vient aussi au renforcement n'entrait pas dans le prêt des tenues (ni besoin de commande, ni demande des tailles, ni « Ma tenue »).
 - **Fait** : case « 💪 Pratique aussi le renforcement musculaire » sous la discipline de la fiche admin (masquée si la discipline est déjà le renforcement), enregistrée dans `extra_data['pratique_renfo']`. `SP_Cal_Tenues::porte_tenue()` (= inscrit au renforcement **ou** case cochée) remplace `est_renfo()` partout dans le prêt des tenues ; les tailles t-shirt / pantalon de la fiche passent alors en liste XS → XXL. `est_renfo()` reste la discipline seule (rubrique Grade de la fiche personnelle, doboks) : l'adhérent garde son dobok, son grade et sa carte « Taekwondo ».
+- **Saison de la fiche admin** : liste déroulante (en cours, précédente, suivante, saisons déjà portées par des fiches) au lieu du champ libre ; une valeur hors liste reste proposée « (à corriger) ». Même envoi.
 - **Pas fait** : la case n'est pas proposée dans le formulaire d'adhésion (à décider) ; elle n'est pas remise à zéro au renouvellement.
 
 ## Comment tenir ce fichier à jour
