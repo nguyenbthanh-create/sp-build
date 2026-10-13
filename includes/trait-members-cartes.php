@@ -429,10 +429,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 var e = t.querySelector('.sp-photo-etat');
                 e.textContent = texte; e.style.color = '#b45309'; e.style.fontWeight = '600';
             }
-            function bilan() {
+            function compter() {
                 var n = tuiles.filter(function(t){ return t.dataset.revoir === '1'; }).length;
                 var sans = tuiles.filter(function(t){ return t.dataset.photo === '0'; }).length;
-                compte.textContent = n + ' photo(s) à recadrer, ' + sans + ' adhérent(s) sans photo, sur ' + tuiles.length + '.';
+                compte.textContent = n + ' photo(s) à recadrer, ' + sans + ' adhérent(s) sans photo, sur ' + tuiles.length + (restantes > 0 ? ' — lecture des photos en cours…' : '.');
+            }
+            function bilan() {
+                compter();
                 // Celles à revoir d'abord, puis les « sans photo », puis les autres.
                 tuiles.slice().sort(function(a, b){
                     var ra = a.dataset.revoir === '1' ? 0 : (a.dataset.photo === '0' ? 1 : 2), rb = b.dataset.revoir === '1' ? 0 : (b.dataset.photo === '0' ? 1 : 2);
@@ -444,15 +447,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 tuiles.forEach(function(t){ t.style.display = (!filtre.checked || t.dataset.revoir === '1' || t.dataset.photo === '0') ? '' : 'none'; });
             }
             filtre.addEventListener('change', appliquer);
-            var restantes = 0;
+            var restantes = grille.querySelectorAll('img').length;
             tuiles.forEach(function(t){
                 var img = t.querySelector('img');
                 if (!img) return;
-                restantes++;
                 function fini() {
                     if (img.naturalWidth && img.naturalWidth > img.naturalHeight && t.dataset.recadree !== '1') marquer(t, 'Photo en largeur : à recadrer');
                     if (!img.naturalWidth) marquer(t, 'Photo illisible');
-                    if (--restantes === 0) bilan();
+                    // Le compte avance photo par photo ; le tri n'est fait qu'une fois toutes lues.
+                    if (--restantes === 0) bilan(); else compter();
                 }
                 // Chargement différé : on force le chargement pour pouvoir mesurer toutes les photos.
                 img.loading = 'eager';
