@@ -408,6 +408,7 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
   - **Bureau** : onglet « Demandes » (terminer = restitution + remise en une fois, refuser avec motif, clore sans suite) ; pastille du menu « Doboks & tenues » et mention sur le bouton « Tenues » ; dans l'onglet Adhérents, « Reprendre » propose la taille à remettre en échange (échange en une saisie).
   - **Mails** (réglables, comme les doboks) : au bureau à chaque demande ou annulation ; à l'adhérent quand sa demande est enregistrée, mise en attente, réservée ou refusée. Demandes désactivables dans Réglages.
   - Pas de « première tenue » à demander par l'adhérent : la distribution initiale est à l'initiative du bureau (onglet Adhérents).
+- **Constats de l'utilisateur (13/10/2026), à traiter** : (1) sur sa fiche personnelle, un adhérent du renforcement ne peut pas corriger ses tailles — le formulaire « mesures » est dans le bloc « Mes doboks », masqué pour le renforcement, et ses champs t-shirt / pantalon y sont libres : à proposer dans « Ma tenue » avec les listes XS → XXL ; (2) **dans un 2e temps**, revoir le contenu de la fiche personnelle (`class-token.php`) pour le renforcement : elle affiche des rubriques sans objet (grade, passages…) ; idée de l'utilisateur : y montrer plutôt les compétitions auxquelles l'adhérent a participé.
 
 ## Comment tenir ce fichier à jour
 
