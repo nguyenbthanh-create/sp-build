@@ -413,6 +413,13 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Liste des adhérents de l'administration** : les filtres (nom, catégorie d'âge, discipline, saison) n'existaient que dans la page et étaient perdus à chaque enregistrement d'une fiche. Ils sont gardés en mémoire le temps de la session du navigateur (`sessionStorage`, `trait-members-eleves.php`) et rétablis au rechargement ; bouton « ✕ Tout afficher » pour les effacer.
 - **Reste, dans un 2e temps** : revoir le contenu de la fiche personnelle (`class-token.php`) pour le renforcement : elle affiche des rubriques sans objet (grade, passages…) ; idée de l'utilisateur : y montrer plutôt les compétitions auxquelles l'adhérent a participé.
 
+## 13/10/2026 — À FAIRE : revoir le style de la carte de membre (demande de l'utilisateur, proposition faite, pas codé)
+
+- **Demande** : rester dans les couleurs du club (noir `#111`, bleu `#0f70b7`, jaune `#ffdd0e`, rouge `#e30613`), et surtout agrandir la photo, jugée minuscule : 46 px en rond sur une carte de 340 × 215 px, soit ~11 mm une fois imprimée au format carte bancaire (85,6 × 54 mm).
+- **Proposition présentée (maquette)** : recto — bande bleue à gauche portant une photo d'identité rectangulaire (~80 × 104 px, ~23 × 30 mm imprimée) avec saison et discipline dessous ; prénom et nom en grand à droite ; QR de pointage en bas à droite ; filet jaune et liseré rouge conservés. Verso — contact d'urgence et date de naissance (retirés du recto), licence, site, filigrane 태권도. Sans photo : initiales à la place.
+- **Attention** : la carte est dessinée à **trois endroits** qui doivent rester identiques — fiche personnelle (`class-token.php`, avec son impression « mode imprimeur »), impression par lot de l'administration (`trait-members-cartes.php`) et application `/app/` (`assets/pwa/app.css` + `app.js`). Toucher à `/app/` demande l'accord explicite de l'utilisateur et un essai sur le site de test. Vérifier aussi la définition des photos rangées (réduites à 40–115 Ko) pour l'impression en plus grand.
+- Texte du mail de demande des tailles : s'adresse directement à l'adhérent (« Pour préparer la vôtre, Prénom NOM, il nous manque vos tailles… »), en prod `a7a375c`, vérifié.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
