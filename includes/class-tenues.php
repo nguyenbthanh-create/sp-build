@@ -22,8 +22,10 @@
  *     1 haut + 1 bas, dans la coupe de son sexe (proposée, jamais imposée).
  *
  * Qui est concerné : les adhérents inscrits au renforcement musculaire. Une adhésion au taekwondo
- * donne aussi accès au renforcement (pas l'inverse) et rien n'enregistre qui en profite : pour eux
- * rien n'est attendu, mais le bureau peut leur remettre une tenue (vue « Tous les adhérents »).
+ * donne aussi accès au renforcement (pas l'inverse) : le bureau coche « Pratique aussi le renforcement
+ * musculaire » sur la fiche de ceux qui en profitent (extra_data['pratique_renfo'], 14/10/2026) et ils
+ * sont alors traités comme les autres. Sans la case, rien n'est attendu pour un adhérent du taekwondo,
+ * mais le bureau peut lui remettre une tenue (vue « Tous les adhérents »).
  *
  * @package SP_Build
  */
@@ -270,6 +272,17 @@ class SP_Cal_Tenues {
 	/** Les adhérents du renforcement musculaire (colonne categorie_saisie : « RENFO » ou ancien libellé libre). */
 	public static function est_renfo( $el ): bool {
 		return (bool) preg_match( '/renfo|renforcement/i', (string) ( $el->categorie_saisie ?? '' ) );
+	}
+
+	/** Adhérent du taekwondo dont la fiche porte la case « Pratique aussi le renforcement musculaire » (14/10/2026). */
+	public static function pratique_aussi_renfo( $el ): bool {
+		$extra = json_decode( (string) ( $el->extra_data ?? '' ), true );
+		return is_array( $extra ) && ! empty( $extra['pratique_renfo'] );
+	}
+
+	/** À qui le club prête une tenue : les inscrits au renforcement, et ceux du taekwondo qui le pratiquent aussi. */
+	public static function porte_tenue( $el ): bool {
+		return self::est_renfo( $el ) || self::pratique_aussi_renfo( $el );
 	}
 
 	/** 'M', 'F' ou '' (fiche à compléter). */
@@ -792,7 +805,7 @@ class SP_Cal_Tenues {
 	// ── Onglet Besoin de commande ────────────────────────────────────────
 	private function render_besoin(): void {
 		$tailles = $this->tailles();
-		$renfo   = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'est_renfo' ] ) );
+		$renfo   = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'porte_tenue' ] ) );
 		$calc    = self::besoin( $renfo, $this->detenus(), $tailles );
 		$stock   = $this->stock_promettable();
 		$besoin  = $this->avec_demandes_en_attente( $calc['besoin'] );
@@ -808,7 +821,7 @@ class SP_Cal_Tenues {
 
 		printf( '<p class="spd-compte"><strong>%d</strong> adhérent(s) du renforcement musculaire inscrit(s) pour la saison %s — <strong>%d</strong> déjà équipé(s) d\'un haut et d\'un bas. Les adhérents de la saison précédente qui n\'ont pas renouvelé ne sont pas comptés.</p>', count( $renfo ), esc_html( $this->saison_reference() ), (int) $calc['equipes'] );
 		echo '<p class="description" style="max-width:900px;">Pour chaque adhérent du renforcement qui n\'a pas encore sa tenue : un haut et un bas, dans la coupe de son sexe et à la taille notée sur sa fiche (« T-shirt » pour le haut, « Pantalon » pour le bas). '
-			. 'Les adhérents du taekwondo, qui ont aussi accès au renforcement, ne sont pas comptés : ajoutez leurs pièces à la main dans la commande si besoin. '
+			. 'Les adhérents du taekwondo ne sont comptés que si la case « Pratique aussi le renforcement musculaire » est cochée sur leur fiche. '
 			. 'Les demandes d\'adhérents en attente de stock sont ajoutées au besoin ; les pièces déjà réservées ne comptent plus dans le stock.</p>';
 
 		echo '<h2>À commander</h2>';
@@ -877,7 +890,7 @@ class SP_Cal_Tenues {
 		$avec = [];
 		$sans = [];
 		foreach ( $this->eleves_actifs() as $el ) {
-			if ( ! self::est_renfo( $el ) ) continue;
+			if ( ! self::porte_tenue( $el ) ) continue;
 			$a = [];
 			foreach ( $detenus[ (int) $el->id ] ?? [] as $d ) $a[ self::MODELES[ $d['modele'] ]['piece'] ?? '' ] = true;
 			$manque = [];
@@ -952,7 +965,7 @@ class SP_Cal_Tenues {
 
 	/** Quantités « à commander » de l'onglet Besoin, pour préremplir la grille de réception. */
 	private function quantites_a_commander(): array {
-		$renfo  = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'est_renfo' ] ) );
+		$renfo  = array_values( array_filter( $this->eleves_actifs(), [ __CLASS__, 'porte_tenue' ] ) );
 		$besoin = $this->avec_demandes_en_attente( self::besoin( $renfo, $this->detenus(), $this->tailles() )['besoin'] );
 		$stock  = $this->stock_promettable();
 		$out    = [];
@@ -1017,7 +1030,7 @@ class SP_Cal_Tenues {
 
 		$liste = array_values( array_filter( $eleves, function ( $el ) use ( $vue, $q, $detenus ) {
 			$a = ! empty( $detenus[ (int) $el->id ] );
-			if ( $vue === 'renfo' && ! self::est_renfo( $el ) && ! $a ) return false;
+			if ( $vue === 'renfo' && ! self::porte_tenue( $el ) && ! $a ) return false;
 			if ( $vue === 'detenteurs' && ! $a ) return false;
 			return $q === '' || mb_stripos( $el->nom . ' ' . $el->prenom, $q ) !== false;
 		} ) );
@@ -1037,7 +1050,7 @@ class SP_Cal_Tenues {
 			$chez  = $detenus[ $id ] ?? [];
 			$a     = [];
 			foreach ( $chez as $d ) $a[ self::MODELES[ $d['modele'] ]['piece'] ?? '' ] = true;
-			$renfo = self::est_renfo( $el );
+			$renfo = self::porte_tenue( $el );
 
 			echo '<tr id="el-' . $id . '"><td><strong><a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-fiche-eleve&eleve_id=' . $id ) ) . '">' . esc_html( trim( $el->nom . ' ' . $el->prenom ) ) . '</a></strong>';
 			echo '<div class="spd-meta">' . esc_html( $renfo ? 'Renforcement musculaire' : 'Taekwondo' ) . ( isset( $partis[ $id ] ) ? ' · <strong>plus adhérent cette saison</strong>' : '' ) . '</div></td>';
@@ -1368,7 +1381,7 @@ class SP_Cal_Tenues {
 		// Tailles du haut et du bas notées sur la fiche : l'adhérent du renforcement les corrige
 		// lui-même (possible même si les demandes sont désactivées). Elles servent au besoin de commande.
 		if ( $action === 'tailles' ) {
-			if ( ! (int) $el->actif || ! self::est_renfo( $el ) ) $retour( 'ferme' );
+			if ( ! (int) $el->actif || ! self::porte_tenue( $el ) ) $retour( 'ferme' );
 			$haut = $this->post_taille( 'taille_haut' );
 			$bas  = $this->post_taille( 'taille_bas' );
 			if ( $haut === '' || $bas === '' ) $retour( 'tailles_erreur' );
@@ -1447,7 +1460,7 @@ class SP_Cal_Tenues {
 		$id       = (int) $el->id;
 		$pieces   = $this->pieces_de( $id );
 		$ouvertes = $this->demandes_ouvertes_de( $id );
-		$renfo    = self::est_renfo( $el );
+		$renfo    = self::porte_tenue( $el );
 		// Adhérent du taekwondo, ou adhérent de la saison passée qui n'a pas renouvelé : le bloc
 		// n'apparaît que s'il a une tenue du club (pour la rendre).
 		if ( ( ! $renfo || ! $this->est_de_la_saison( $el ) ) && ! $pieces && ! $ouvertes ) return;

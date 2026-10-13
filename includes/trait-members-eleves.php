@@ -567,6 +567,16 @@ trait SP_Cal_Members_Eleves {
                             });
                         })();
                         </script>
+                        <?php
+                        // Un adhérent du taekwondo a aussi accès au renforcement musculaire : la case le fait
+                        // entrer dans le prêt des tenues (class-tenues.php) — tailles XS → XXL, besoin de
+                        // commande, « Ma tenue » sur sa fiche. Sans effet sur la cotisation ni sur la carte.
+                        $disc_est_renfo = (bool) preg_match( '/renfo|renforcement/i', (string) $disc_edit );
+                        ?>
+                        <label id="sp-eleve-aussi-renfo-ligne" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-top:8px;<?php echo $disc_est_renfo ? 'display:none;' : ''; ?>">
+                            <input type="checkbox" name="eleve_pratique_renfo" id="sp-eleve-aussi-renfo" value="1" <?php checked( ! empty( $extra['pratique_renfo'] ) ); ?>>
+                            <span>💪 Pratique aussi le renforcement musculaire <span style="font-weight:400;color:#888;">(tenue prêtée par le club)</span></span>
+                        </label>
                     </div>
                 <?php
                 // Colonne droite
@@ -750,14 +760,15 @@ trait SP_Cal_Members_Eleves {
                     $f3('Taille (cm)',        'eleve_taille_cm',      $edit->taille_cm      ?? '');
                     $f3('Poids (kg)',          'eleve_poids_kg',       $edit->poids_kg       ?? '');
                     $f3('Pointure',            'eleve_pointure',       $edit->pointure       ?? '');
-                    // Tailles du haut et du bas : pour un adhérent du renforcement musculaire, liste XS → XXL
+                    // Tailles du haut et du bas : pour un adhérent du renforcement musculaire (ou du taekwondo
+                    // qui le pratique aussi, case ci-dessus), liste XS → XXL
                     // (celle des tenues prêtées, class-tenues.php) au lieu du champ libre — le besoin de
                     // commande ne sait lire que ces tailles. Chaque champ existe en deux versions de même
                     // nom ; celle qui ne sert pas est désactivée, donc pas envoyée. Une valeur déjà saisie
                     // hors liste (« 38 ») reste proposée et sélectionnée : ouvrir puis enregistrer une fiche
                     // ne modifie rien tant qu'on ne choisit pas autre chose.
                     $tailles_tenue = SP_Cal_Tenues::tailles_reglees();
-                    $est_renfo     = $edit ? SP_Cal_Tenues::est_renfo( $edit ) : false;
+                    $est_renfo     = $edit ? SP_Cal_Tenues::porte_tenue( $edit ) : false;
                     $f_taille = function( $label, $name, $val ) use ( $tailles_tenue, $est_renfo ) {
                         $val     = (string) $val;
                         $normale = mb_strtoupper( trim( $val ) );
@@ -779,12 +790,17 @@ trait SP_Cal_Members_Eleves {
                         var disc = document.getElementById('sp-eleve-disc-select'), autre = document.getElementById('sp-eleve-disc-autre');
                         if (!disc) return;
                         function majTailles() {
-                            var renfo = disc.value === 'RENFO' || (disc.value === '__autre__' && autre && /renfo|renforcement/i.test(autre.value));
+                            var inscrit = disc.value === 'RENFO' || (disc.value === '__autre__' && autre && /renfo|renforcement/i.test(autre.value));
+                            var aussi = document.getElementById('sp-eleve-aussi-renfo'), ligne = document.getElementById('sp-eleve-aussi-renfo-ligne');
+                            if (ligne) ligne.style.display = inscrit ? 'none' : 'flex';
+                            var renfo = inscrit || !!(aussi && aussi.checked);
                             document.querySelectorAll('.sp-taille-libre').forEach(function (el) { el.disabled = renfo; el.style.display = renfo ? 'none' : ''; });
                             document.querySelectorAll('.sp-taille-liste').forEach(function (el) { el.disabled = !renfo; el.style.display = renfo ? '' : 'none'; });
                         }
                         disc.addEventListener('change', majTailles);
                         if (autre) autre.addEventListener('input', majTailles);
+                        var aussiRenfo = document.getElementById('sp-eleve-aussi-renfo');
+                        if (aussiRenfo) aussiRenfo.addEventListener('change', majTailles);
                     })();
                     </script>
                     </div><!-- fin grille -->

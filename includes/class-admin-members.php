@@ -124,6 +124,8 @@ class SP_Cal_Members {
             $extra = array_merge( $extra_existant, array(
                 'sexe'                    => sanitize_text_field( wp_unslash( $_POST['eleve_sexe'] ?? '' ) ),
                 'autorisation_photo'      => isset( $_POST['eleve_autorisation_photo'] ) ? 1 : 0,
+                // Adhérent du taekwondo qui pratique aussi le renforcement : entre dans le prêt des tenues (class-tenues.php).
+                'pratique_renfo'          => isset( $_POST['eleve_pratique_renfo'] ) ? 1 : 0,
                 'pass_sport_code'         => sanitize_text_field( wp_unslash( $_POST['eleve_pass_sport_code'] ?? '' ) ),
                 'qs_sport_confirme'       => isset( $_POST['eleve_qs_sport_confirme'] ) ? 1 : 0,
                 'date_certificat_medical' => sanitize_text_field( wp_unslash( $_POST['eleve_date_certificat_medical'] ?? '' ) ),
