@@ -644,16 +644,20 @@ trait SP_Cal_Members_Eleves {
                             </label>
                         </div>
                     </div>
-                    <!-- Catégorie d'âge — liste déroulante sourcée sur les 5 catégories officielles
+                    <!-- Catégorie d'âge — liste déroulante sourcée sur les 4 catégories officielles
                          (toujours proposées, même si aucun élève n'en a encore une en base — sinon
                          "Tout âge" n'apparaîtrait qu'une fois qu'un premier élève l'aurait déjà,
                          problème de l'oeuf et la poule) + le référentiel des grades + les
-                         valeurs déjà utilisées sur d'autres fiches, pour couvrir tout cas hérité. -->
+                         valeurs déjà utilisées sur d'autres fiches, pour couvrir tout cas hérité.
+                         « Adulte » n'est plus attribuée depuis le 08/10/2026 (classes scolaires) :
+                         retirée le 14/10/2026, sauf sur une fiche qui l'a encore (sa valeur reste
+                         affichée telle quelle au lieu de basculer en « Autre… »). -->
                     <div style="margin-bottom:12px;">
                         <?php
                         $cat_edit       = $edit->categorie_age ?? '';
-                        $cats_officiel  = array( 'Baby', 'Enfant', 'Ado/adulte', 'Adulte', 'Tout âge' );
+                        $cats_officiel  = array( 'Baby', 'Enfant', 'Ado/adulte', 'Tout âge' );
                         $cats_dispo     = array_unique( array_merge( $cats_officiel, array_keys( $grades_ref ), $cats ) );
+                        $cats_dispo     = array_filter( $cats_dispo, static function ( $c ) use ( $cat_edit ) { return $c !== 'Adulte' || $cat_edit === 'Adulte'; } );
                         $cat_connue     = in_array( $cat_edit, $cats_dispo, true );
                         ?>
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie d'âge</label>

@@ -433,6 +433,16 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Saison de la fiche admin** : liste déroulante (en cours, précédente, suivante, saisons déjà portées par des fiches) au lieu du champ libre ; une valeur hors liste reste proposée « (à corriger) ». Même envoi.
 - **Pas fait** : la case n'est pas proposée dans le formulaire d'adhésion (à décider) ; elle n'est pas remise à zéro au renouvellement.
 
+## 14/10/2026 — Fiche adhérent : catégorie « Adulte » retirée de la liste (codé, à déployer)
+
+- Plus attribuée depuis la règle des classes scolaires du 08/10/2026, elle restait proposée dans la liste « Catégorie d'âge » de la fiche admin (`trait-members-eleves.php`). Retirée de la liste officielle et filtrée des valeurs reprises de la base, **sauf** sur une fiche qui l'a encore (6 fiches inactives de 2025/2026) : sa valeur reste affichée au lieu de basculer en « Autre… ». Le filtre « Catégorie d'âge » de la liste des adhérents n'est pas touché : il ne montre que les valeurs réellement présentes en base. Même retrait fait dans TKD Cotisations (v1.2.1).
+- **À vérifier sur le test** : fiche d'un adhérent actif → la liste propose Baby / Enfant / Ado/adulte / Tout âge ; une fiche restée en « Adulte » l'affiche toujours sélectionnée.
+
+## 14/10/2026 — Renouvellement : relancer aussi les adhérents désactivés (piste, non urgente)
+
+- Le tableau des non-renouvelés (« Fin de saison & certificats ») et son bouton « Relancer » ne listent que les fiches actives encore sur l'ancienne saison (`get_non_renouveles()`, `class-renouvellement.php`). Un adhérent déjà désactivé qui a perdu ses emails n'a plus de moyen simple de recevoir son lien `?renouv=`. Contournement : réactiver sa fiche puis Relancer. Risque sinon : il remplit le formulaire sans lien → doublon.
+- Piste retenue : ajouter au même tableau les désactivés « Non renouvelé — saison écoulée », avec le même bouton (texte du mail adapté : l'accès n'est plus actif). À faire si le cas se reproduit une ou deux fois cette saison.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
