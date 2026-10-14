@@ -433,7 +433,7 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Saison de la fiche admin** : liste déroulante (en cours, précédente, suivante, saisons déjà portées par des fiches) au lieu du champ libre ; une valeur hors liste reste proposée « (à corriger) ». Même envoi.
 - **Pas fait** : la case n'est pas proposée dans le formulaire d'adhésion (à décider) ; elle n'est pas remise à zéro au renouvellement.
 
-## 14/10/2026 — Fiche adhérent : catégorie « Adulte » retirée de la liste (codé, à déployer)
+## 14/10/2026 — Fiche adhérent : catégorie « Adulte » retirée de la liste (sur le site de test `b9f3f9d`, vérifié le 14/10/2026 — prod à faire)
 
 - Plus attribuée depuis la règle des classes scolaires du 08/10/2026, elle restait proposée dans la liste « Catégorie d'âge » de la fiche admin (`trait-members-eleves.php`). Retirée de la liste officielle et filtrée des valeurs reprises de la base, **sauf** sur une fiche qui l'a encore (6 fiches inactives de 2025/2026) : sa valeur reste affichée au lieu de basculer en « Autre… ». Le filtre « Catégorie d'âge » de la liste des adhérents n'est pas touché : il ne montre que les valeurs réellement présentes en base. Même retrait fait dans TKD Cotisations (v1.2.1).
 - **À vérifier sur le test** : fiche d'un adhérent actif → la liste propose Baby / Enfant / Ado/adulte / Tout âge ; une fiche restée en « Adulte » l'affiche toujours sélectionnée.
