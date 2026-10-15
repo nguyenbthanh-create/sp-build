@@ -348,6 +348,8 @@ function renderAccueil() {
 function renderCarte() {
     var el = gEleve;
     var carte = el.carte || {};
+    // Texte du QR code, repris par l'affichage plein écran (spCalQrPlein).
+    gQrTexte = carte.qr_url || location.href;
 
     // Nouvelle carte (13/10/2026) : recto et verso dessinés par le serveur (class-carte.php), les mêmes
     // que sur la fiche personnelle et à l'impression. L'ancien dessin ci-dessous ne sert plus que si
@@ -360,7 +362,7 @@ function renderCarte() {
         (function genQRv2() {
             if (typeof QRCode === 'undefined') { setTimeout(genQRv2, 100); return; }
             var box = document.getElementById('spcal-qr-box');
-            if (box) new QRCode(box, { text: carte.qr_url||location.href, width:204, height:204, colorDark:'#111', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M });
+            if (box) { new QRCode(box, { text: carte.qr_url||location.href, width:204, height:204, colorDark:'#111', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M }); spCalQrCliquable(box); }
         })();
         renderCarteInstallHint();
         return;
@@ -419,7 +421,7 @@ function renderCarte() {
     function genQR() {
         if (typeof QRCode === 'undefined') { setTimeout(genQR, 100); return; }
         var box = document.getElementById('spcal-qr-box');
-        if (box) new QRCode(box, { text: carte.qr_url||location.href, width:68, height:68, colorDark:'#111', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M });
+        if (box) { new QRCode(box, { text: carte.qr_url||location.href, width:68, height:68, colorDark:'#111', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.M }); spCalQrCliquable(box); }
     }
     genQR();
 
@@ -731,6 +733,49 @@ window.spCalFlipCard = function() {
     var inner = document.getElementById('spcal-card-inner');
     if (inner) inner.classList.toggle('flipped');
 };
+
+/* ── QR code en plein écran (15/10/2026) ─────────────────────────
+   Sur la carte, le QR est réduit au dessin de la carte : trop petit pour certains scanners.
+   Le bouton « Afficher le QR en grand » (ou un appui sur le QR de la carte) le montre seul,
+   le plus grand possible sur fond blanc, avec le prénom pour que l'entraîneur vérifie.
+   Même texte de QR que la carte : rien ne change côté pointage. Un appui referme ;
+   fermeture automatique après 2 minutes. L'écran reste allumé pendant l'affichage
+   si le navigateur le permet (Wake Lock) — la luminosité, elle, ne se règle pas depuis une page web. */
+var gQrTexte = '', gQrVerrou = null, gQrMinuteur = null;
+
+function spCalQrCliquable(box) {
+    box.style.cursor = 'zoom-in';
+    box.addEventListener('click', function(e) { e.stopPropagation(); spCalQrPlein(); });
+}
+
+window.spCalQrPlein = function() {
+    if (!gQrTexte || typeof QRCode === 'undefined') return;
+    var ov = document.getElementById('spcal-qr-plein');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'spcal-qr-plein';
+        ov.onclick = spCalQrFermer;
+        (document.getElementById('spcal-pwa') || document.body).appendChild(ov);
+    }
+    var taille = Math.max(160, Math.min(440, Math.min(window.innerWidth, window.innerHeight) - 72));
+    ov.innerHTML = '<div id="spcal-qr-plein-box"></div>'
+        + '<div class="spcal-qr-plein-nom">' + esc(gEleve ? gEleve.prenom + ' ' + gEleve.nom : '') + '</div>'
+        + '<div class="spcal-qr-plein-aide">Touchez l’écran pour fermer</div>';
+    new QRCode(document.getElementById('spcal-qr-plein-box'), { text: gQrTexte, width: taille, height: taille, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+    ov.style.display = 'flex';
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+        navigator.wakeLock.request('screen').then(function(v) { gQrVerrou = v; }).catch(function() {});
+    }
+    clearTimeout(gQrMinuteur);
+    gQrMinuteur = setTimeout(spCalQrFermer, 120000);
+};
+
+function spCalQrFermer() {
+    var ov = document.getElementById('spcal-qr-plein');
+    if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+    clearTimeout(gQrMinuteur);
+    if (gQrVerrou) { gQrVerrou.release().catch(function() {}); gQrVerrou = null; }
+}
 
 /* ── Erreur ──────────────────────────────────────────────────── */
 function showError(msg) {

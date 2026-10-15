@@ -548,6 +548,8 @@ window.addEventListener('error', function(e) {
                     </div>
                 </div>
                 <p class="spcal-card-hint">Appuyez sur la carte pour retourner</p>
+                <!-- QR code seul en plein écran, pour le scan des présences — spCalQrPlein() (15/10/2026) -->
+                <button type="button" class="spcal-qr-plein-btn" onclick="spCalQrPlein()">🔍 Afficher le QR en grand</button>
                 <div class="spcal-install-hint" id="spcal-install-hint" style="display:none">
                     <span class="spcal-ih-ico">📲</span>
                     <span id="spcal-install-text"></span>

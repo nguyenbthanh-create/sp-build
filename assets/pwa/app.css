@@ -191,6 +191,12 @@
 .spcal-card-hint{text-align:center;font-size:12px;color:rgba(255,255,255,.3);margin:0 0 20px;}
 .spcal-install-hint{background:#1a1a1a;border-radius:12px;padding:14px 16px;font-size:13px;color:rgba(255,255,255,.5);display:flex;align-items:flex-start;gap:10px;}
 .spcal-install-hint .spcal-ih-ico{font-size:20px;flex-shrink:0;margin-top:1px;}
+/* QR code en plein écran (spCalQrPlein, 15/10/2026) */
+.spcal-qr-plein-btn{display:block;width:100%;max-width:340px;margin:-8px auto 20px;padding:14px 16px;background:#0f70b7;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;}
+#spcal-qr-plein{position:fixed;inset:0;z-index:10000;background:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;cursor:zoom-out;}
+#spcal-qr-plein-box img,#spcal-qr-plein-box canvas{display:block;}
+.spcal-qr-plein-nom{color:#111;font-size:22px;font-weight:700;}
+.spcal-qr-plein-aide{color:#64748b;font-size:13px;}
 
 /* ── POINTAGE ────────────────────────────────────────────────── */
 .spcal-ptg-cours-btn{width:100%;background:#1a1a1a;border:none;border-radius:12px;padding:14px 16px;margin-bottom:10px;color:#fff;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px;border-left:3px solid #0f70b7;}
