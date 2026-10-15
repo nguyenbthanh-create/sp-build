@@ -443,12 +443,13 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - Le tableau des non-renouvelés (« Fin de saison & certificats ») et son bouton « Relancer » ne listent que les fiches actives encore sur l'ancienne saison (`get_non_renouveles()`, `class-renouvellement.php`). Un adhérent déjà désactivé qui a perdu ses emails n'a plus de moyen simple de recevoir son lien `?renouv=`. Contournement : réactiver sa fiche puis Relancer. Risque sinon : il remplit le formulaire sans lien → doublon.
 - Piste retenue : ajouter au même tableau les désactivés « Non renouvelé — saison écoulée », avec le même bouton (texte du mail adapté : l'accès n'est plus actif). À faire si le cas se reproduit une ou deux fois cette saison.
 
-## 15/10/2026 — Application `/app/` : QR code de la carte en plein écran (codé, à essayer sur le site de test)
+## 15/10/2026 — Application `/app/` : QR code de la carte en plein écran (en prod `59da348` le 15/10/2026, validé par l'utilisateur sur le test)
 
 - **Demande** : selon les téléphones, le QR code de la carte de membre est trop petit pour le scan des présences (il est réduit au dessin de la carte). **Accord explicite de l'utilisateur** pour un bouton plein écran plutôt qu'un onglet en plus (barre du bas déjà chargée).
 - **Fait** : onglet Carte → bouton « Afficher le QR en grand » sous la carte (`trait-admin-pwa.php`), et appui sur le QR de la carte (sans retourner la carte) → `spCalQrPlein()` (`assets/pwa/app.js`) : QR seul sur fond blanc, taille = plus petit côté de l'écran − 72 px (160 à 440 px), prénom et nom dessous, « Touchez l'écran pour fermer », fermeture auto après 2 min, écran maintenu allumé si le navigateur le permet (Wake Lock). Style dans `assets/pwa/app.css`. **Même texte de QR que la carte** (`carte.qr_url`) : scanner, cartes imprimées et pointage inchangés ; mode PIN des entraîneurs non touché.
 - **Non faisable simplement** : fermeture automatique « après le pointage » (le téléphone de l'adhérent ne sait pas quand l'entraîneur l'a scanné) et réglage de la luminosité (impossible depuis une page web).
 - **À vérifier sur le test, avec un vrai téléphone** : bouton visible sous la carte ; plein écran lisible par le scanner de pointage ; appui sur le QR de la carte → plein écran (la carte ne se retourne pas) ; appui ailleurs sur la carte → elle se retourne toujours ; fermeture au toucher.
+- **Vérifié en prod (15/10/2026, navigateur intégré)** : `app.js` 71 177 octets et `app.css` 23 249 octets servis (tailles exactes), bouton présent dans la page `/app/`, script chargé sans erreur (`spCalQrPlein` défini ; seul message : le 401 attendu de l'API sans lien personnel ni PIN). Affichage de la carte sur téléphone : contrôlé par l'utilisateur.
 
 ## Comment tenir ce fichier à jour
 
