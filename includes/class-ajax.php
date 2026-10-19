@@ -1858,13 +1858,40 @@ class SpCalPro_Ajax {
         return array( $debut, $fin );
     }
 
-    /** Cours récurrents de la période, avec leur état (annulé ou non). */
+    /**
+     * Cours visés par le lot : ceux de la période (2 mois max), ou — raccourci « Jours fériés de la
+     * saison » (feries=1, 19/10/2026) — ceux qui tombent un jour férié d'aujourd'hui à la fin de saison
+     * (chaque occurrence porte alors le nom du jour férié dans 'ferie').
+     * @return array [ occurrences, début, fin, jours fériés (AAAA-MM-JJ => libellé) ou null ]
+     */
+    private function lot_cible() {
+        if ( empty( $_POST['feries'] ) ) {
+            list( $debut, $fin ) = $this->lot_periode();
+            return array( $this->db->get_slot_occurrences( $debut, $fin ), $debut, $fin, null );
+        }
+        $debut = current_time( 'Y-m-d' );
+        $fin   = SpCalPro_DB::fin_saison_prochaine();
+        if ( $fin === '' ) { // fin de saison non réglée : 31 août suivant
+            $fin = ( (int) substr( $debut, 0, 4 ) + ( (int) substr( $debut, 5, 2 ) >= 9 ? 1 : 0 ) ) . '-08-31';
+        }
+        $feries = SpCalPro_DB::jours_feries( $debut, $fin );
+        $occ    = array();
+        foreach ( $feries as $date => $libelle ) {
+            foreach ( $this->db->get_slot_occurrences( $date, $date ) as $o ) {
+                $o['ferie'] = $libelle;
+                $occ[]      = $o;
+            }
+        }
+        return array( $occ, $debut, $fin, $feries );
+    }
+
+    /** Cours récurrents de la période (ou des jours fériés), avec leur état (annulé ou non). */
     public function lot_occurrences() {
         $this->nonce();
         $this->require_admin();
-        list( $debut, $fin ) = $this->lot_periode();
+        list( $occurrences ) = $this->lot_cible();
         $out = array();
-        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+        foreach ( $occurrences as $o ) {
             $out[] = array(
                 'slot_id'     => intval( $o['slot_id'] ),
                 'date'        => $o['date'],
@@ -1873,20 +1900,21 @@ class SpCalPro_Ajax {
                 'titre'       => $o['titre'],
                 'libelle'     => $this->db->libelle_creneau( $o ),
                 'annule'      => ! empty( $o['annul_id'] ),
+                'ferie'       => $o['ferie'] ?? '',
             );
         }
         usort( $out, static fn( $a, $b ) => strcmp( $a['date'] . $a['heure_debut'], $b['date'] . $b['heure_debut'] ) );
         wp_send_json_success( array( 'cours' => $out ) );
     }
 
-    /** Cours cochés (JSON [ {slot_id, date}, … ]) qui existent bien dans la période. @return array clé "date_slot" => occurrence */
-    private function lot_selection( $debut, $fin ) {
+    /** Cours cochés (JSON [ {slot_id, date}, … ]) qui font bien partie des cours visés. @return array clé "date_slot" => occurrence */
+    private function lot_selection( array $occurrences ) {
         $demandes = json_decode( wp_unslash( (string) ( $_POST['cours'] ?? '[]' ) ), true );
         if ( ! is_array( $demandes ) || ! $demandes ) wp_send_json_error( 'Aucun cours coché.' );
         $voulus = array();
         foreach ( $demandes as $d ) $voulus[ sanitize_text_field( (string) ( $d['date'] ?? '' ) ) . '_' . intval( $d['slot_id'] ?? 0 ) ] = true;
         $sel = array();
-        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+        foreach ( $occurrences as $o ) {
             $k = $o['date'] . '_' . intval( $o['slot_id'] );
             if ( isset( $voulus[ $k ] ) ) $sel[ $k ] = $o;
         }
@@ -1897,8 +1925,8 @@ class SpCalPro_Ajax {
         $this->nonce();
         $this->require_admin();
         global $wpdb;
-        list( $debut, $fin ) = $this->lot_periode();
-        $sel      = $this->lot_selection( $debut, $fin );
+        list( $occurrences, $debut, $fin, $feries ) = $this->lot_cible();
+        $sel      = $this->lot_selection( $occurrences );
         $motif    = sanitize_textarea_field( wp_unslash( $_POST['motif'] ?? '' ) );
         $notifier = ! empty( $_POST['notifier'] );
         $te       = $this->db->table_events();
@@ -1920,10 +1948,13 @@ class SpCalPro_Ajax {
         $sent    = 0;
         $en_file = 0;
         if ( $notifier && $annules ) {
-            // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés.
-            $maintenus = array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) );
+            // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés. Jours fériés :
+            // aucun « maintenu » (les autres jours de la saison ne sont pas concernés par ce mail).
+            $maintenus = $feries === null
+                ? array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) )
+                : array();
             $notif   = new SpCalPro_Notifications( $this->db );
-            $sent    = $notif->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif );
+            $sent    = $notif->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif, $feries !== null );
             $en_file = $notif->en_file;
         }
         wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent, 'en_file' => $en_file ) );
@@ -1934,9 +1965,9 @@ class SpCalPro_Ajax {
         $this->nonce();
         $this->require_admin();
         global $wpdb;
-        list( $debut, $fin ) = $this->lot_periode();
+        list( $occurrences ) = $this->lot_cible();
         $n = 0;
-        foreach ( $this->lot_selection( $debut, $fin ) as $o ) {
+        foreach ( $this->lot_selection( $occurrences ) as $o ) {
             if ( empty( $o['annul_id'] ) ) continue;
             $n += (int) $wpdb->delete( $this->db->table_events(), array( 'id' => intval( $o['annul_id'] ), 'type' => 'annulation' ) );
         }

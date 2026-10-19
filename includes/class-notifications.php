@@ -1095,9 +1095,11 @@ class SpCalPro_Notifications {
     /**
      * @param array  $annules   occurrences annulées (get_slot_occurrences())
      * @param array  $maintenus occurrences de la période restées actives
+     * @param bool   $feries    raccourci « Jours fériés de la saison » (19/10/2026) : chaque cours annulé
+     *                          porte le nom de son jour férié ('ferie'), pas de liste de cours maintenus
      * @return int nombre d'emails envoyés
      */
-    public function send_annulation_lot( array $annules, array $maintenus, $debut, $fin, $motif = '' ) {
+    public function send_annulation_lot( array $annules, array $maintenus, $debut, $fin, $motif = '', $feries = false ) {
         if ( empty( $annules ) ) return 0;
         global $wpdb;
         $nom_club = get_option( 'blogname', 'Club' );
@@ -1112,9 +1114,11 @@ class SpCalPro_Notifications {
         };
         $ligne = static function ( $o, $style ) use ( $fmt_date ) {
             $h = substr( (string) $o['heure_debut'], 0, 5 ) . ( $o['heure_fin'] ? ' – ' . substr( (string) $o['heure_fin'], 0, 5 ) : '' );
-            return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] ) . '</li>';
+            return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] . ( ! empty( $o['ferie'] ) ? ' (' . $o['ferie'] . ')' : '' ) ) . '</li>';
         };
-        $periode = 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
+        $periode = $feries
+            ? 'les jours fériés de la saison'
+            : 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
         $envois  = array();
 
         foreach ( $eleves as $el ) {
@@ -1139,23 +1143,29 @@ class SpCalPro_Notifications {
             foreach ( $siens as $o ) $body .= $ligne( $o, 'text-decoration:line-through;' );
             $body .= '</ul></div>';
 
-            $body .= '<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
-                . '<div style="font-weight:600;color:#111;margin-bottom:6px;">✅ Vos cours maintenus sur cette période</div>';
-            if ( $gardes ) {
-                $body .= '<ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
-                foreach ( $gardes as $o ) $body .= $ligne( $o, '' );
-                $body .= '</ul>';
+            if ( $feries ) {
+                $body .= '<p style="color:#374151;font-size:14px;margin:0 0 14px;">Tous les autres cours ont lieu normalement.</p>';
             } else {
-                $body .= '<p style="margin:0;color:#374151;font-size:14px;">Aucun cours maintenu pour vous sur cette période : reprise après le ' . esc_html( gmdate( 'd/m', strtotime( $fin . ' 12:00:00 UTC' ) ) ) . '.</p>';
+                $body .= '<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
+                    . '<div style="font-weight:600;color:#111;margin-bottom:6px;">✅ Vos cours maintenus sur cette période</div>';
+                if ( $gardes ) {
+                    $body .= '<ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
+                    foreach ( $gardes as $o ) $body .= $ligne( $o, '' );
+                    $body .= '</ul>';
+                } else {
+                    $body .= '<p style="margin:0;color:#374151;font-size:14px;">Aucun cours maintenu pour vous sur cette période : reprise après le ' . esc_html( gmdate( 'd/m', strtotime( $fin . ' 12:00:00 UTC' ) ) ) . '.</p>';
+                }
+                $body .= '</div>';
             }
-            $body .= '</div>';
 
             $body .= '<p style="color:#6b7280;font-size:13px;margin-top:20px;">À bientôt sur le tatami&nbsp;! 🥋</p></td></tr>';
             $body .= '<tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;">'
                 . esc_html( $nom_club ) . ' · Gestion des cours</p></td></tr></table></body></html>';
 
-            $subject = '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
-                . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
+            $subject = $feries
+                ? '[' . $nom_club . '] Jours fériés de la saison — ' . count( $siens ) . ' cours annulé' . ( count( $siens ) > 1 ? 's' : '' )
+                : '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
+                    . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
             $envois[] = array( $dest, $subject, $body, $headers );
         }
         return $this->envoyer_lot( $envois, 'Annulation par lot ' . $periode );

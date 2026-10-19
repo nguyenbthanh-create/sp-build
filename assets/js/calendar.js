@@ -596,10 +596,15 @@
            ou 1 cours sur 2). On choisit une période, on coche les cours à annuler, un seul
            motif, un seul mail par adhérent (cours annulés + cours maintenus). */
         lotCours: [],
+        LOT_MOTIF_VACANCES: 'Pendant les vacances scolaires, une partie des cours est maintenue. Voici le détail de vos cours sur la période.',
+        LOT_MOTIF_FERIES: 'Le club ne donne pas cours les jours fériés. Voici vos cours annulés pour toute la saison.',
+        /** Raccourci « Jours fériés de la saison » choisi (19/10/2026) : le serveur prend les jours fériés d'aujourd'hui à la fin de saison. */
+        lotFeries: function () { return $('#sp-lot-vac').val() === 'feries'; },
 
         initLotModal: function () {
             if ($('#sp-lot-modal').length) return;
-            var opts = '<option value="">— Choisir des dates —</option>';
+            var opts = '<option value="">— Choisir des dates —</option>'
+                + '<option value="feries">🇫🇷 Jours fériés de la saison</option>';
             (CAL.vacances || []).forEach(function (v, i) {
                 if (v.end < CAL.todayStr) return; // périodes passées inutiles
                 opts += '<option value="' + i + '">' + CAL.esc((v.label || 'Vacances') + ' (' + v.start.split('-').reverse().join('/') + ' → ' + v.end.split('-').reverse().join('/') + ')') + '</option>';
@@ -616,7 +621,7 @@
                 + '<div id="sp-lot-raccourcis" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>'
                 + '<div id="sp-lot-liste" style="flex:1;overflow:auto;border:1px solid #e2e8f0;border-radius:8px;min-height:120px;max-height:46vh;flex-shrink:0;padding:4px 10px;font-size:13px;"><p style="color:#94a3b8;">Choisissez une période.</p></div>'
                 + '<label style="display:block;font-size:13px;font-weight:600;margin:12px 0 4px;">Motif (repris dans le mail)</label>'
-                + '<textarea id="sp-lot-motif" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;">Pendant les vacances scolaires, une partie des cours est maintenue. Voici le détail de vos cours sur la période.</textarea>'
+                + '<textarea id="sp-lot-motif" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:13px;">' + CAL.esc(CAL.LOT_MOTIF_VACANCES) + '</textarea>'
                 + '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;"><input type="checkbox" id="sp-lot-notifier" checked> 📧 Prévenir les adhérents : un seul email chacun, avec ses cours annulés et ses cours maintenus</label>'
                 + '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:16px;flex-wrap:wrap;">'
                 + '<button type="button" id="sp-lot-fermer" style="background:#f1f5f9;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;">Fermer</button>'
@@ -626,6 +631,13 @@
                 + '</span></div></div></div>'
             );
             $(document).on('change', '#sp-lot-vac', function () {
+                var motif = $('#sp-lot-motif'), feries = this.value === 'feries';
+                // Motif proposé selon le raccourci, seulement s'il n'a pas été modifié à la main.
+                if (motif.val() === CAL.LOT_MOTIF_VACANCES || motif.val() === CAL.LOT_MOTIF_FERIES) {
+                    motif.val(feries ? CAL.LOT_MOTIF_FERIES : CAL.LOT_MOTIF_VACANCES);
+                }
+                $('#sp-lot-debut, #sp-lot-fin').prop('disabled', feries);
+                if (feries) { $('#sp-lot-debut, #sp-lot-fin').val(''); CAL.lotPrecocher = true; CAL.loadLot(); return; }
                 var v = (CAL.vacances || [])[this.value];
                 if (v) { $('#sp-lot-debut').val(v.start); $('#sp-lot-fin').val(v.end); CAL.loadLot(); }
             });
@@ -661,10 +673,10 @@
         },
 
         loadLot: function () {
-            var debut = $('#sp-lot-debut').val(), fin = $('#sp-lot-fin').val();
-            if (!debut || !fin || fin < debut) { alert('Choisissez une date de début et une date de fin.'); return; }
+            var debut = $('#sp-lot-debut').val(), fin = $('#sp-lot-fin').val(), feries = CAL.lotFeries();
+            if (!feries && (!debut || !fin || fin < debut)) { alert('Choisissez une date de début et une date de fin.'); return; }
             $('#sp-lot-liste').html('<p style="color:#94a3b8;">Chargement…</p>');
-            $.post(SpCal.ajaxurl, { action: 'sp_cal_lot_occurrences', nonce: SpCal.nonce, debut: debut, fin: fin }, function (res) {
+            $.post(SpCal.ajaxurl, { action: 'sp_cal_lot_occurrences', nonce: SpCal.nonce, debut: debut, fin: fin, feries: feries ? 1 : '' }, function (res) {
                 if (!res.success) { $('#sp-lot-liste').html('<p style="color:#b91c1c;">' + CAL.esc(res.data || 'Erreur') + '</p>'); return; }
                 CAL.lotCours = res.data.cours;
                 CAL.renderLot();
@@ -672,9 +684,11 @@
         },
 
         renderLot: function () {
-            var cours = CAL.lotCours, html = '', jourCourant = '', semaines = [];
+            // Coche d'office seulement au premier affichage des jours fériés, pas au rechargement après une annulation.
+            var cours = CAL.lotCours, html = '', jourCourant = '', semaines = [], feries = CAL.lotFeries() && CAL.lotPrecocher;
+            CAL.lotPrecocher = false;
             if (!cours.length) {
-                $('#sp-lot-liste').html('<p style="color:#94a3b8;">Aucun cours récurrent sur cette période.</p>');
+                $('#sp-lot-liste').html('<p style="color:#94a3b8;">' + (CAL.lotFeries() ? 'Aucun cours ne tombe un jour férié d\'ici la fin de la saison.' : 'Aucun cours récurrent sur cette période.') + '</p>');
                 $('#sp-lot-raccourcis').hide(); CAL.majLotBoutons(); return;
             }
             cours.forEach(function (c) {
@@ -684,11 +698,14 @@
                     jourCourant = c.date;
                     var lib = new Date(c.date + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
                     html += '<div style="margin:10px 0 4px;padding-top:6px;border-top:1px solid #f1f5f9;font-weight:700;">'
-                        + '<label><input type="checkbox" class="sp-lot-jour" data-date="' + c.date + '"> ' + CAL.esc(lib.charAt(0).toUpperCase() + lib.slice(1)) + '</label></div>';
+                        + '<label><input type="checkbox" class="sp-lot-jour" data-date="' + c.date + '"' + (feries ? ' checked' : '') + '> ' + CAL.esc(lib.charAt(0).toUpperCase() + lib.slice(1)) + '</label>'
+                        + (c.ferie ? ' <span style="font-weight:400;font-size:12px;color:#b45309;background:#fef3c7;border-radius:6px;padding:1px 7px;">' + CAL.esc(c.ferie) + '</span>' : '')
+                        + '</div>';
                 }
                 var h = (c.heure_debut || '') + (c.heure_fin ? ' – ' + c.heure_fin : '');
+                // Jours fériés : tous les cours pas encore annulés sont cochés d'office (on décoche ceux à maintenir).
                 html += '<label style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 18px;' + (c.annule ? 'color:#94a3b8;' : '') + '">'
-                    + '<input type="checkbox" class="sp-lot-cours' + (c.annule ? ' sp-lot-deja' : '') + '" data-date="' + c.date + '" data-slot="' + c.slot_id + '" data-sem="' + sem + '">'
+                    + '<input type="checkbox" class="sp-lot-cours' + (c.annule ? ' sp-lot-deja' : '') + '" data-date="' + c.date + '" data-slot="' + c.slot_id + '" data-sem="' + sem + '"' + (feries && !c.annule ? ' checked' : '') + '>'
                     + '<span style="min-width:96px;">' + CAL.esc(h) + '</span><span' + (c.annule ? ' style="text-decoration:line-through;"' : '') + '>' + CAL.esc(c.titre) + '</span>'
                     + (c.libelle ? '<span style="font-size:11px;color:#64748b;">' + CAL.esc(c.libelle) + '</span>' : '')
                     + (c.annule ? '<span style="font-size:11px;background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 6px;">déjà annulé — cocher pour rétablir</span>' : '')
@@ -720,14 +737,17 @@
         envoyerLot: function (quoi) {
             var sel = CAL.lotSelection(quoi === 'retablir'), notifier = $('#sp-lot-notifier').is(':checked');
             if (!sel.length) return;
+            var feries = CAL.lotFeries();
             var msg = quoi === 'retablir'
                 ? 'Rétablir ' + sel.length + ' cours ? (aucun email n\'est envoyé)'
-                : 'Annuler ' + sel.length + ' cours ?' + (notifier ? '\nChaque adhérent concerné recevra un seul email avec ses cours annulés et ses cours maintenus.' : '\nAucun email ne sera envoyé.');
+                : 'Annuler ' + sel.length + ' cours ?' + (notifier
+                    ? (feries ? '\nChaque adhérent concerné recevra un seul email avec ses cours annulés les jours fériés.' : '\nChaque adhérent concerné recevra un seul email avec ses cours annulés et ses cours maintenus.')
+                    : '\nAucun email ne sera envoyé.');
             if (!confirm(msg)) return;
             $('#sp-lot-annuler, #sp-lot-retablir').prop('disabled', true);
             $.post(SpCal.ajaxurl, {
                 action: quoi === 'retablir' ? 'sp_cal_lot_retablir' : 'sp_cal_lot_annuler',
-                nonce: SpCal.nonce, debut: $('#sp-lot-debut').val(), fin: $('#sp-lot-fin').val(),
+                nonce: SpCal.nonce, debut: $('#sp-lot-debut').val(), fin: $('#sp-lot-fin').val(), feries: feries ? 1 : '',
                 cours: JSON.stringify(sel), motif: $('#sp-lot-motif').val(), notifier: notifier ? 1 : ''
             }, function (res) {
                 $('#sp-lot-retablir').prop('disabled', false);

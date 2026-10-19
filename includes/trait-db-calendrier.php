@@ -108,6 +108,46 @@ trait SpCalPro_DB_Calendrier {
     }
 
     /* ══════════════════════════════════════════════════════════
+       JOURS FÉRIÉS (19/10/2026) — raccourci « Jours fériés de la saison »
+       de l'annulation par lot (class-ajax.php). Les 11 jours fériés nationaux
+       (métropole hors Alsace-Moselle), Pâques par l'algorithme de Meeus/Jones/Butcher
+       (pas de dépendance à l'extension PHP calendar / easter_date()).
+    ══════════════════════════════════════════════════════════ */
+
+    /** Dimanche de Pâques (AAAA-MM-JJ) de l'année grégorienne $annee. */
+    public static function date_paques( $annee ) {
+        $a = $annee % 19; $b = intdiv( $annee, 100 ); $c = $annee % 100;
+        $d = intdiv( $b, 4 ); $e = $b % 4; $f = intdiv( $b + 8, 25 ); $g = intdiv( $b - $f + 1, 3 );
+        $h = ( 19 * $a + $b - $d - $g + 15 ) % 30;
+        $i = intdiv( $c, 4 ); $k = $c % 4;
+        $l = ( 32 + 2 * $e + 2 * $i - $h - $k ) % 7;
+        $m = intdiv( $a + 11 * $h + 22 * $l, 451 );
+        $mois = intdiv( $h + $l - 7 * $m + 114, 31 );
+        $jour = ( ( $h + $l - 7 * $m + 114 ) % 31 ) + 1;
+        return sprintf( '%04d-%02d-%02d', $annee, $mois, $jour );
+    }
+
+    /** Jours fériés compris dans [debut … fin], triés : AAAA-MM-JJ => libellé. */
+    public static function jours_feries( $debut, $fin ) {
+        $out = array();
+        for ( $a = (int) substr( $debut, 0, 4 ); $a <= (int) substr( $fin, 0, 4 ); $a++ ) {
+            $paques  = strtotime( self::date_paques( $a ) . ' 12:00:00 UTC' );
+            $mobiles = array( 1 => 'Lundi de Pâques', 39 => 'Ascension', 50 => 'Lundi de Pentecôte' );
+            $jours   = array(
+                "$a-01-01" => 'Jour de l\'an', "$a-05-01" => 'Fête du Travail', "$a-05-08" => 'Victoire 1945',
+                "$a-07-14" => 'Fête nationale', "$a-08-15" => 'Assomption', "$a-11-01" => 'Toussaint',
+                "$a-11-11" => 'Armistice 1918', "$a-12-25" => 'Noël',
+            );
+            foreach ( $mobiles as $decalage => $libelle ) $jours[ gmdate( 'Y-m-d', $paques + $decalage * 86400 ) ] = $libelle;
+            foreach ( $jours as $date => $libelle ) {
+                if ( $date >= $debut && $date <= $fin ) $out[ $date ] = $libelle;
+            }
+        }
+        ksort( $out );
+        return $out;
+    }
+
+    /* ══════════════════════════════════════════════════════════
        OCCURRENCES DES CRÉNEAUX RÉCURRENTS
     ══════════════════════════════════════════════════════════ */
 
