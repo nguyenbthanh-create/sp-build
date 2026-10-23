@@ -461,6 +461,22 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Vérifié sur le test (19/10/2026, Claude in Chrome)** : option présente, dates grisées, motif « jours fériés » ; 5 jours fériés avec cours (11/11, 29/03, 01/05, 06/05, 17/05 — la base du test n'a déjà plus de cours le vendredi en décembre, d'où rien le 25/12 ni le 01/01), 11 cours tous cochés. Un décoché → « Annuler 10 cours » → 10 annulés, **92 emails, un par adhérent**, sujet « [Taekwondo Claira] Jours fériés de la saison — N cours annulés » (bloqués à l'envoi par le test, comme prévu). Pas de recoche au rechargement ; « Rétablir » OK en mode jours fériés ; mode vacances inchangé. Les 10 annulations d'essai ont ensuite été rétablies : le test est revenu à son état initial.
 - **En prod le 19/10/2026** : fichiers envoyés par l'utilisateur ; vérifié (navigateur intégré, lecture seule) : `calendar.js` 128 090 octets servi, raccourci actif (12 cours sur 5 jours fériés : 11/11, 29/03, 01/05, 06/05, 17/05). **Annulation réelle faite par l'utilisateur lui-même, depuis un autre PC, à 15h31** : les 12 cours des jours fériés sont annulés en prod, emails « Jours fériés de la saison — N cours annulés » partis à 15h35 (un par adhérent ; 88 emails envoyés par le site ce jour-là au total, 0 échec).
 
+## 23/10/2026 — TKD Parcours : vidéothèque (en prod, commits `28e083c` et `307c521` de sp-build-addons, vérifié le 23/10/2026)
+
+> Plugin **claira-tkd-parcours** 1.11.0 (dépôt sp-build-addons) ; détail technique dans son `EVOLUTION.md`.
+
+- **Demande** : une page pour retrouver toutes les vidéos YouTube (aujourd'hui une vidéo Kukkiwon par grade, visible seulement en ouvrant la fiche du grade). Choix de l'utilisateur : vidéos des grades **et** vidéos hors grade, page **publique**, thèmes Poomsae / Techniques / Combat (Kyorugi) / Self-défense (Hosinsul) / Casse / Autres.
+- **Fait** : shortcode `[claira_tkd_videotheque]` — vignettes par thème, filtres thème / grade / recherche, grades de chaque vidéo groupés par tranche d'âge avec la pastille de ceinture ; lecteur `youtube-nocookie` chargé au clic dans une fenêtre et arrêté à la fermeture. Les liens vidéo des grades sont repris automatiquement, sans doublon (**11 vidéos pour 34 grades**), titres repris de YouTube (« Taegeuk 1 Jang »). Administration **TKD Parcours → Vidéothèque** : ajout de vidéos hors grade (lien, titre facultatif, thème, grades, description, ordre, masquer) et « Personnaliser » une vidéo de grade.
+- **Correction le jour même** (`307c521`) : Taegeuk 2 passait avant Taegeuk 1 (les grades Baby ont leur propre numérotation de keup) → comparaison dans une même tranche d'âge ; les trois « Rouge / Noire » Enfant affichent leur rang (Il / Yi / Sam Poom).
+- **Vérifié en prod (navigateur intégré, compte de l'utilisateur)** : page d'administration (11 vidéos, titres, grades) ; page publique **« Vidéothèque Poomsae »** (`/videotheque-poomsae/`, créée par l'utilisateur) : 11 vignettes dans l'ordre Taegeuk 1 → 8, Koryo, Keumgang, Taebaek ; lecture au clic, vidéo retirée à la fermeture ; pas de défilement horizontal. Fiches de grade, schéma et cahier de révision inchangés.
+
+### Reste à faire / pistes
+1. **Ajouter les premières vidéos hors grade** (techniques, combat, self-défense…) dans TKD Parcours → Vidéothèque : les pastilles de thème n'apparaissent sur la page qu'à partir de deux thèmes. Renommer alors la page « Vidéothèque Poomsae » en « Vidéothèque » si elle couvre tous les thèmes (ou une page par thème avec `theme="…"`).
+2. **Ajouter la page au menu** du site si ce n'est pas déjà fait.
+3. Passer `outils\verifier.ps1` sur le PC du travail (PHP écrit sans pouvoir l'exécuter ici).
+4. Connecté, la barre d'administration WordPress masque le haut de la fenêtre vidéo (comme pour les fiches de grade) ; sans effet pour les visiteurs. À corriger seulement si gênant.
+5. Piste : afficher dans la fiche d'un grade les autres vidéos qui lui sont rattachées depuis la vidéothèque (aujourd'hui, la fiche ne montre que son propre lien vidéo).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
