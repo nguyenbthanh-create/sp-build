@@ -477,6 +477,16 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 4. Connecté, la barre d'administration WordPress masque le haut de la fenêtre vidéo (comme pour les fiches de grade) ; sans effet pour les visiteurs. À corriger seulement si gênant.
 5. Piste : afficher dans la fiche d'un grade les autres vidéos qui lui sont rattachées depuis la vidéothèque (aujourd'hui, la fiche ne montre que son propre lien vidéo).
 
+## 24/10/2026 — Validation des demandes d'adhésion : pages « Forbidden » (corrigé, en prod et vérifié le 24/10/2026)
+
+- **Signalé** : le bureau tombait sur des pages « Forbidden » / « vous n'avez pas l'autorisation » en validant les demandes.
+- **Cause 1 — fichier pas à jour en prod** : `class-admin-adhesions.php` était resté dans sa version d'avant le 08/10 (`a61bb54` non reçu) : photo d'une demande affichée par son adresse directe dans `sp-adherents/` (fermé → 403 Apache) et **aucun rangement à la validation** (fichiers restés dans `demandes/<code>/`, photo cassée sur la fiche et la carte — ex. la demande validée le 23/10 à 8h05). Fichier recopié par l'utilisateur ; `SP_Cal_Docs_Adhesion::VERSION_MIGRATION` passe à `'3'` pour relancer une fois le rangement de toutes les fiches (idempotent).
+- **Cause 2 — droits** : en prod, aucun compte « Secrétaire (adhésions) » ; les 3 comptes « Trésorière » n'avaient pas `sp_gestion_adhesions`. **Décision de l'utilisateur** : le rôle Trésorière reçoit ce droit (`class-roles.php`) — demandes d'adhésion avec documents, fiches adhérents, Fin de saison & certificats, Photos à trier, Anniversaires, Doboks, Envois.
+- **Intitulés** : inchangés (décision de l'utilisateur : le problème venait de la version du fichier).
+- **Vérifié en prod** : demande du 23/10 → photo et certificat rangés dans le dossier de l'adhérent et servis par l'administration (200) ; fiche élève → photo signée affichée.
+- **Procédure rappelée au bureau** : SP Calendar → Demandes d'adhésion → En attente → 👁 Voir → contrôle des documents (nouvel onglet, compte connecté ; un lien de document rouvert plus tard ou transmis ne marche plus : recharger la demande) → « Valider & créer le compte » / « Valider le renouvellement » ou « Refuser » (motif) → paiement dans Cotisations.
+- **À faire** : une trésorière valide une vraie demande avec son compte (droit non testé avec un compte Trésorière) ; s'assurer que les autres fichiers de la prod sont à jour (préparer les déploiements avec `outils\preparer-deploiement.ps1` plutôt que fichier par fichier).
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.

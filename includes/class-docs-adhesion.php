@@ -68,7 +68,10 @@ class SP_Cal_Docs_Adhesion {
 
 	const VERSION           = '2';
 	const OPTION            = 'sp_cal_docs_adhesion_proteges';
-	const VERSION_MIGRATION = '2';
+	// '3' (24/10/2026) : nouveau passage pour les fiches validées en prod avec un ancien
+	// class-admin-adhesions.php (sans rangement à la validation) — leurs fichiers étaient restés
+	// dans demandes/<code>/, photo affichée « Forbidden ».
+	const VERSION_MIGRATION = '3';
 	const OPTION_MIGRATION  = 'sp_cal_docs_fiches_migres';
 	const OPTION_JOURNAL    = 'sp_cal_docs_fiches_journal';
 

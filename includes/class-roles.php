@@ -56,8 +56,8 @@ class SP_Cal_Roles {
 			$role->add_cap( self::CAP_VOIR_PLANNING );
 		}
 
-		// ── Trésorière : uniquement le lien planning (le module compta, plugin séparé,
-		// gère ses propres droits d'accès — cf. doleances.md 09/09/2026) ──
+		// ── Trésorière : lien planning + gestion des adhésions depuis le 24/10/2026 (le module
+		// compta, plugin séparé, gère ses propres droits d'accès — cf. doleances.md 09/09/2026) ──
 		$role_tres = get_role( self::ROLE_TRESORIERE );
 		if ( ! $role_tres ) {
 			add_role( self::ROLE_TRESORIERE, 'Trésorière', [
@@ -67,6 +67,11 @@ class SP_Cal_Roles {
 		}
 		if ( $role_tres && ! $role_tres->has_cap( self::CAP_VOIR_PLANNING ) ) {
 			$role_tres->add_cap( self::CAP_VOIR_PLANNING );
+		}
+		// Décision du 24/10/2026 : les trésorières valident aussi les demandes d'adhésion
+		// (fiches adhérents et documents personnels compris, comme la secrétaire).
+		if ( $role_tres && ! $role_tres->has_cap( self::CAP_GESTION_ADHESIONS ) ) {
+			$role_tres->add_cap( self::CAP_GESTION_ADHESIONS );
 		}
 
 		// Les administrateurs (manage_options) doivent aussi passer les nouveaux contrôles
