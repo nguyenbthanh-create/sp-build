@@ -169,7 +169,7 @@ class SP_Cal_Menu {
 		return [
 			'Pages publiques' => [
 				'sp_cal_planning'         => [ 'Planning hebdomadaire des cours (créneaux).', '' ],
-				'sp_cal_evenements'       => [ 'Liste des prochains événements du calendrier.', 'nb (10) · type · categorie · passes (1 = événements passés)' ],
+				'sp_cal_evenements'       => [ 'Liste des prochains événements du calendrier.', 'nb (10, 0 = tous) · type (evenement, competition, examen, stage) · categorie · passes (1 = inclut les 30 derniers jours)' ],
 				'sp_cal_palmares'         => [ 'Palmarès des compétitions (réglages dans Paramètres).', '' ],
 				'sp_top5_saison'          => [ 'Classement des meilleurs élèves de la saison.', 'nb (5) · saison · titre · categorie_age · discipline' ],
 				'sp_cal_bureau'           => [ 'Trombinoscope du bureau et des entraîneurs.', 'roles (bureau) · titre · colonnes (3) · taille_photo (130) · couleur_nom · couleur_fn' ],
