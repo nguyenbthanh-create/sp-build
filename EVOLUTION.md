@@ -485,7 +485,18 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 - **Intitulés** : inchangés (décision de l'utilisateur : le problème venait de la version du fichier).
 - **Vérifié en prod** : demande du 23/10 → photo et certificat rangés dans le dossier de l'adhérent et servis par l'administration (200) ; fiche élève → photo signée affichée.
 - **Procédure rappelée au bureau** : SP Calendar → Demandes d'adhésion → En attente → 👁 Voir → contrôle des documents (nouvel onglet, compte connecté ; un lien de document rouvert plus tard ou transmis ne marche plus : recharger la demande) → « Valider & créer le compte » / « Valider le renouvellement » ou « Refuser » (motif) → paiement dans Cotisations.
-- **À faire** : une trésorière valide une vraie demande avec son compte (droit non testé avec un compte Trésorière) ; s'assurer que les autres fichiers de la prod sont à jour (préparer les déploiements avec `outils\preparer-deploiement.ps1` plutôt que fichier par fichier).
+- **Commits** : `1801f01` (sp-build : droit Trésorière + `VERSION_MIGRATION` 3) ; `class-admin-adhesions.php` recopié tel quel (inchangé depuis `a61bb54`).
+
+### Même jour — TKD Cotisations : date des reçus (en prod, `5a3c452` de sp-build-addons, vérifié le 24/10/2026)
+
+- **Demande** : sur le reçu imprimé, le reçu de l'email et le PDF joint, remplacer la date du jour par la **date de finalisation du dossier** (dernier paiement).
+- **Fait** : `tkd_date_fait_recu()` (`tkd-cotisations/cotisations.php`) = `MAX(date_paiement)` des paiements de la cotisation (Pass'Sport compris), repli sur la date du paiement du reçu ; utilisée pour « Fait à Claira, le … » dans `tkd_html_recu()`, `tkd_envoyer_recu_paiement()` (dont la notification de dépôt de chèque) et `TkdPDF.php` (clé `date_fait`). « Date du paiement » inchangée. Dossier non soldé : date du dernier paiement enregistré à ce moment-là.
+- **Vérifié en prod** : aperçu d'un reçu existant → « Fait à Claira, le 12/09/2026 » (au lieu du 24/10/2026). Email et PDF non testés (aucun envoi déclenché) : à contrôler au prochain reçu envoyé.
+
+### Reste à faire (24/10/2026)
+1. Une trésorière valide une vraie demande avec **son** compte (nouveau droit non testé avec un compte Trésorière).
+2. Contrôler le « Fait à … le … » du prochain email de reçu et de son PDF.
+3. S'assurer que les autres fichiers de la prod sont à jour : préparer les déploiements avec `outils\preparer-deploiement.ps1` (PC du travail) plutôt que fichier par fichier — c'est un fichier resté ancien qui a causé les « Forbidden ».
 
 ## Comment tenir ce fichier à jour
 
