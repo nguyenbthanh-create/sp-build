@@ -35,6 +35,7 @@ class SpCalPro_DB {
 
     public function table( $name ) { global $wpdb; return $wpdb->prefix . self::PREFIX . $name; }
     public function table_trainer_dispos()         { return $this->table( 'trainer_dispos' ); }
+    public function table_dispos_journal()         { return $this->table( 'dispos_journal' ); } // créée par SP_Cal_Trainer_App
     public function table_exam_passages()            { return $this->table( 'exam_passages' ); }
     public function table_exam_grade_progression()   { return $this->table( 'exam_grade_progression' ); }
 

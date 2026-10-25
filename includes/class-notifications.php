@@ -472,11 +472,13 @@ class SpCalPro_Notifications {
      * @param int|null $avant  état avant l'enregistrement : 1, 0 ou null (non renseigné)
      * @param int|null $apres  état enregistré
      * @param string   $note
-     * @param string   $par    '' = l'entraîneur lui-même, sinon nom de l'admin qui a modifié
+     * @param string   $par    '' = l'entraîneur lui-même, sinon nom de celui qui a modifié
      * @param int      $allers_retours  1 ou 2 (journée à deux allers-retours), mentionné dans le mail
+     * @param string   $source 'admin' (calendrier admin) ou 'appli' (application entraîneur)
+     * @param int      $par_id entraîneur auteur de la modification (appli) : pas de mail à lui-même
      * @return int nombre de mails envoyés
      */
-    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '', $allers_retours = 1 ) {
+    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '', $allers_retours = 1, $source = 'admin', $par_id = 0 ) {
         $trainer_id = intval( $trainer_id );
         $avant      = $avant === null ? null : intval( $avant );
         $apres      = $apres === null ? null : intval( $apres );
@@ -528,7 +530,9 @@ class SpCalPro_Notifications {
         $body  = "Bonjour,\n\n";
         $body .= $nom . ' ' . $etat[2] . ' pour ' . $jour . ' (' . $quand . ').' . "\n";
         if ( $note !== '' ) $body .= 'Note : ' . $note . "\n";
-        $body .= $par !== '' ? 'Modification faite par ' . $par . " dans le calendrier admin.\n" : "Modification faite par l'entraîneur.\n";
+        $body .= $par !== ''
+            ? 'Modification faite par ' . $par . ( $source === 'appli' ? " depuis l'application entraîneur.\n" : " dans le calendrier admin.\n" )
+            : "Modification faite par l'entraîneur.\n";
         $body .= "\n";
         $body .= $encadrement
             ? 'Encadrement prévu ce jour : ' . implode( ', ', $encadrement ) . "\n\n"
@@ -541,10 +545,84 @@ class SpCalPro_Notifications {
         $sent = 0;
         foreach ( $bureau as $m ) {
             if ( $par === '' && intval( $m->id ) === $trainer_id ) continue; // pas de mail à soi-même
+            if ( $par_id && intval( $m->id ) === intval( $par_id ) ) continue; // ni au responsable qui vient de le faire
             if ( ! $m->email || ! is_email( $m->email ) ) continue;
             if ( wp_mail( $m->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) ) ) $sent++;
         }
         return $sent;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       ENTRAÎNEUR PRÉVENU — DISPO MODIFIÉE PAR UN RESPONSABLE (25/10/2026)
+    ══════════════════════════════════════════════════════════ */
+
+    /** Entraîneur (actif ou non) par id, null si absent. */
+    private function trainer_par_id( $id ) {
+        foreach ( $this->db->get_trainers( false ) as $t ) {
+            if ( intval( $t->id ) === intval( $id ) ) return $t;
+        }
+        return null;
+    }
+
+    /** « samedi 25/10 » */
+    private function libelle_jour( $date ) {
+        $jours = array( 1 => 'lundi', 2 => 'mardi', 3 => 'mercredi', 4 => 'jeudi', 5 => 'vendredi', 6 => 'samedi', 7 => 'dimanche' );
+        $ts    = strtotime( $date . ' 12:00:00 UTC' );
+        return $jours[ intval( gmdate( 'N', $ts ) ) ] . ' ' . gmdate( 'd/m', $ts );
+    }
+
+    /**
+     * Un responsable a changé la dispo d'un entraîneur depuis l'application (souvent après un
+     * appel téléphonique) : l'entraîneur reçoit un mail pour vérifier que c'est bien ce qu'il
+     * a annoncé. Toutes dates, sans fenêtre : c'est sa propre dispo qui a changé.
+     *
+     * @return bool mail envoyé
+     */
+    public function notifier_entraineur_dispo_modifiee( $trainer_id, $date, $apres, $note, $allers_retours, $par ) {
+        $t = $this->trainer_par_id( $trainer_id );
+        if ( ! $t || ! $t->email || ! is_email( $t->email ) ) return false;
+
+        $nom_club = get_option( 'blogname', 'Club' );
+        $jour     = $this->libelle_jour( $date );
+        if ( $apres === 1 )     $etat = 'disponible' . ( intval( $allers_retours ) === 2 ? ' (2 allers-retours)' : '' );
+        elseif ( $apres === 0 ) $etat = 'indisponible';
+        else                    $etat = 'sans réponse (ni disponible, ni indisponible)';
+
+        $subject = '[' . $nom_club . '] Votre disponibilité du ' . $jour . ' a été modifiée';
+        $body    = 'Bonjour ' . trim( $t->nom_public ?: $t->nom ) . ",\n\n"
+                 . $par . ' a enregistré pour vous : ' . $etat . ' le ' . $jour . ".\n"
+                 . ( $note !== '' ? 'Note : ' . $note . "\n" : '' )
+                 . "\nSi ce n'est pas ce que vous aviez annoncé, corrigez-le dans votre application (onglet « Mes dispos ») ou prévenez " . $par . ".\n\n"
+                 . "-- \n" . $nom_club . ' (notification automatique)';
+        return (bool) wp_mail( $t->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
+    }
+
+    /**
+     * Remplaçant désigné depuis l'application pour un entraîneur indisponible : il est prévenu.
+     *
+     * @return bool mail envoyé
+     */
+    public function notifier_remplacant( $remplacant_id, $trainer_id, $date, $par ) {
+        $r = $this->trainer_par_id( $remplacant_id );
+        if ( ! $r || ! $r->email || ! is_email( $r->email ) ) return false;
+        $t   = $this->trainer_par_id( $trainer_id );
+        $nom = $t ? trim( $t->nom_public ?: $t->nom ) : 'un entraîneur';
+
+        $nom_club = get_option( 'blogname', 'Club' );
+        $jour     = $this->libelle_jour( $date );
+        $cours    = $this->activites_du_jour( $date );
+
+        $subject = '[' . $nom_club . '] Remplacement de ' . $nom . ' — ' . ucfirst( $jour );
+        $body    = 'Bonjour ' . trim( $r->nom_public ?: $r->nom ) . ",\n\n"
+                 . $par . ' vous a désigné(e) pour remplacer ' . $nom . ' le ' . $jour . ".\n\n";
+        if ( $cours ) {
+            $body .= "Au programme ce jour :\n";
+            foreach ( $cours as $c ) $body .= '  • ' . $c . "\n";
+            $body .= "\n";
+        }
+        $body .= 'En cas d\'empêchement, prévenez ' . $par . " au plus vite.\n\n"
+               . "-- \n" . $nom_club . ' (notification automatique)';
+        return (bool) wp_mail( $r->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
     }
 
     /**

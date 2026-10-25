@@ -62,7 +62,9 @@ trait SpCalPro_Admin_Equipe {
                     <tr><th>Rôles</th><td>
                         <?php
                         $roles_val  = $edit->roles ?? '';
-                        $roles_list = array( 'entraineur' => '🥋 Entraîneur', 'bureau' => '🏛️ Bureau', 'eleve' => '🎓 Élève' );
+                        // « Responsable » (25/10/2026) : dans l'application entraîneur, peut modifier les
+                        // dispos des autres entraîneurs et désigner un remplaçant (SP_Cal_Trainer_App).
+                        $roles_list = array( 'entraineur' => '🥋 Entraîneur', 'bureau' => '🏛️ Bureau', 'eleve' => '🎓 Élève', 'responsable' => '🗂️ Responsable des dispos' );
                         foreach ( $roles_list as $rv => $rl ) {
                             $checked = ( strpos($roles_val, $rv) !== false ) ? ' checked' : '';
                             echo '<label style="display:inline-flex;align-items:center;gap:5px;margin-right:14px;cursor:pointer;">';
@@ -154,6 +156,7 @@ trait SpCalPro_Admin_Equipe {
                 'entraineur' => array('label'=>'Entraîneur', 'bg'=>'#1e3a5f','color'=>'#fff'),
                 'bureau'     => array('label'=>'Bureau',     'bg'=>'#7c3aed','color'=>'#fff'),
                 'eleve'      => array('label'=>'Élève',      'bg'=>'#15803d','color'=>'#fff'),
+                'responsable' => array('label'=>'Responsable dispos', 'bg'=>'#b45309','color'=>'#fff'),
             );
             ?>
             <table class="wp-list-table widefat striped">

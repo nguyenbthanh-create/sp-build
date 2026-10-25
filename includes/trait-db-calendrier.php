@@ -549,6 +549,68 @@ trait SpCalPro_DB_Calendrier {
         }
     }
 
+    /* ── Journal des modifications de dispos (25/10/2026) ───────────────────────
+       Qui a changé quelle dispo, quand, depuis l'application ou le calendrier admin.
+       Table créée par SP_Cal_Trainer_App::maybe_create_journal_table() ; tant qu'elle
+       n'existe pas sur un environnement, journaliser ne fait rien (pas d'erreur). */
+
+    private function journal_dispos_existe() {
+        static $ok = null;
+        if ( $ok === null ) {
+            global $wpdb;
+            $t  = $this->table_dispos_journal();
+            $ok = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $t ) ) === $t;
+        }
+        return $ok;
+    }
+
+    /**
+     * @param string $source   'appli' ou 'admin'
+     * @param int    $par_id   entraîneur auteur (application), 0 depuis l'admin
+     * @param string $par_nom  nom affiché de l'auteur
+     */
+    public function journaliser_dispo( $trainer_id, $date, $avant, $apres, $note, $remplacant_id, $allers_retours, $source, $par_id, $par_nom ) {
+        if ( ! $this->journal_dispos_existe() ) return;
+        global $wpdb;
+        $wpdb->insert( $this->table_dispos_journal(), array(
+            'trainer_id'     => intval( $trainer_id ),
+            'date'           => $date,
+            'avant'          => $avant === null ? null : intval( $avant ),
+            'apres'          => $apres === null ? null : intval( $apres ),
+            'allers_retours' => intval( $allers_retours ) === 2 ? 2 : 1,
+            'note'           => mb_substr( (string) $note, 0, 255 ),
+            'remplacant_id'  => $remplacant_id ? intval( $remplacant_id ) : null,
+            'source'         => $source === 'appli' ? 'appli' : 'admin',
+            'par_trainer_id' => $par_id ? intval( $par_id ) : null,
+            'par_nom'        => mb_substr( (string) $par_nom, 0, 100 ),
+            'created_at'     => current_time( 'mysql' ),
+        ) );
+    }
+
+    /**
+     * Dernière modification de chaque dispo du mois.
+     * Retourne [ 'YYYY-MM-DD' => [ trainer_id => ['par_id'=>int|null,'par'=>'','source'=>'','quand'=>'Y-m-d H:i:s'] ] ]
+     */
+    public function get_journal_dispos_for_month( $year, $month ) {
+        if ( ! $this->journal_dispos_existe() ) return array();
+        global $wpdb;
+        $start = sprintf( '%04d-%02d-01', $year, $month );
+        $rows  = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM {$this->table_dispos_journal()} WHERE date BETWEEN %s AND %s ORDER BY id ASC",
+            $start, date( 'Y-m-t', strtotime( $start ) )
+        ) );
+        $map = array();
+        foreach ( $rows as $r ) { // ordre croissant : la dernière ligne l'emporte
+            $map[ $r->date ][ intval( $r->trainer_id ) ] = array(
+                'par_id' => $r->par_trainer_id ? intval( $r->par_trainer_id ) : null,
+                'par'    => $r->par_nom,
+                'source' => $r->source,
+                'quand'  => $r->created_at,
+            );
+        }
+        return $map;
+    }
+
     /**
      * Traduit l'ancien texte libre « Catégorie » d'un créneau (« TKD, Boxe, Renfo… »,
      * « Enfant », « Renfo & Ados/Adultes »…) en discipline / tranche d'âge, fragment par
