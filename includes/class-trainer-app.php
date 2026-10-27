@@ -636,8 +636,9 @@ class SP_Cal_Trainer_App {
 				}
 
 				// Couleurs des cases : ses propres dispos, ou celles de l'entraîneur choisi par le responsable.
-				// Mode « Équipe » (responsable, 27/10/2026) : couverture du jour à la place — vert = au moins
-				// un entraîneur disponible ou un remplaçant désigné, orange = cours sans personne.
+				// Mode « Équipe » (responsable, 27/10/2026) : couverture des jours de cours à la place — vert =
+				// au moins un entraîneur disponible ou un remplaçant désigné, orange = cours sans personne ;
+				// un jour sans cours (ou dont les cours sont annulés, ex. jour férié) reste sans couleur.
 				// Point bleu (tous, hors mode Équipe) : un autre entraîneur est disponible ce jour-là.
 				var gid = cibleId();
 				var equipe = state.peut_gerer && state.vue === 'equipe';
@@ -653,8 +654,9 @@ class SP_Cal_Trainer_App {
 						if (x.disponible === 1) { couvert = true; if (t.id !== gid) autres = true; }
 						else if (x.disponible === 0 && x.remplacant_id) couvert = true;
 					});
-					var alerte = equipe && !couvert && !!state.cours[ds];
-					var etat = equipe ? (couvert ? ' sda-ok' : alerte ? ' sda-alerte' : '') : (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '');
+					var coursDuJour = !!state.cours[ds];
+					var alerte = equipe && coursDuJour && !couvert;
+					var etat = equipe ? (coursDuJour ? (couvert ? ' sda-ok' : ' sda-alerte') : '') : (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '');
 
 					var cell = document.createElement('div');
 					cell.className = 'sda-cell' + etat + (ds === todayStr() ? ' sda-today' : '') + (ds === state.selected ? ' sda-selected' : '');
