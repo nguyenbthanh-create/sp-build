@@ -306,9 +306,22 @@ class SP_Cal_Trainer_App {
 			];
 		}
 
+		// Jours du mois où il y a cours (créneaux non annulés) : mode « Équipe » du responsable, qui
+		// signale en orange un jour de cours sans entraîneur disponible (27/10/2026). Envoyé au seul
+		// responsable : les autres entraîneurs n'ont pas ce mode.
+		$peut_gerer = $this->est_responsable( $me );
+		$cours      = [];
+		if ( $peut_gerer ) {
+			$debut = sprintf( '%04d-%02d-01', $year, $month );
+			foreach ( $this->db->get_slot_occurrences( $debut, gmdate( 'Y-m-t', strtotime( $debut . ' 12:00:00 UTC' ) ) ) as $o ) {
+				if ( empty( $o['annul_id'] ) ) $cours[ $o['date'] ] = true;
+			}
+		}
+
 		wp_send_json_success( [
 			'me'       => [ 'id' => intval( $me->id ), 'nom_public' => $me->nom_public ?: $me->nom ],
-			'peut_gerer' => $this->est_responsable( $me ),
+			'peut_gerer' => $peut_gerer,
+			'cours'    => array_keys( $cours ),
 			'trainers' => $trainers_out,
 			'dispos'   => $this->db->get_dispos_for_month( $year, $month ),
 			'journal'  => $this->db->get_journal_dispos_for_month( $year, $month ),
@@ -462,6 +475,14 @@ class SP_Cal_Trainer_App {
 			.sda-remp { flex: 1.4; min-width: 0; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; color: inherit; }
 			.sda-back { margin-left: 8px; background: none; border: 1px solid #cbd5e1; border-radius: 14px; font-size: 11px; font-weight: 700; padding: 3px 10px; cursor: pointer; text-transform: none; letter-spacing: 0; color: inherit; font-family: inherit; }
 			.sda-trace { font-size: 11px; color: #6b7280; margin: 8px 0 0; text-align: center; }
+			/* 27/10/2026 : point « un autre entraîneur est disponible » ; mode « Équipe » du responsable */
+			.sda-dot { width: 6px; height: 6px; border-radius: 50%; background: #0f70b7; margin-top: 3px; }
+			.sda-cell.sda-alerte { background: #ffedd5; color: #9a3412; }
+			.sda-vues { display: flex; gap: 6px; padding: 10px 12px 0; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-bottom: none; }
+			.sda-vue { flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: inherit; }
+			.sda-vue.sda-active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
+			.sda-legende { grid-column: 1 / -1; font-size: 11px; color: #64748b; text-align: center; padding-top: 6px; }
+			.sda-legende i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin: 0 4px 0 10px; }
 
 			/* Ambiance sombre de l'application entraîneur (onglet « Mes dispos ») — 01/10/2026.
 			   Le nom est déjà dans l'en-tête de l'application : pas de bandeau ici. */
@@ -493,6 +514,12 @@ class SP_Cal_Trainer_App {
 			.sda-sombre .sda-remp { background: #262626; border-color: #333; color: #fff; }
 			.sda-sombre .sda-back { border-color: #4b4b4b; }
 			.sda-sombre .sda-trace { color: rgba(255,255,255,.45); }
+			.sda-sombre .sda-dot { background: #38bdf8; }
+			.sda-sombre .sda-cell.sda-alerte { background: rgba(234,88,12,.32); color: #fdba74; }
+			.sda-sombre .sda-vues { background: #1a1a1a; border: none; }
+			.sda-sombre .sda-vue { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-vue.sda-active { background: #0f70b7; border-color: #0f70b7; }
+			.sda-sombre .sda-legende { color: rgba(255,255,255,.45); }
 			</style>
 
 			<div class="sda-header">
@@ -503,6 +530,10 @@ class SP_Cal_Trainer_App {
 				<button type="button" id="sda-prev">‹</button>
 				<div class="sda-nav-title" id="sda-title">—</div>
 				<button type="button" id="sda-next">›</button>
+			</div>
+			<div class="sda-vues" id="sda-vues" style="display:none">
+				<button type="button" class="sda-vue" data-vue="perso" id="sda-vue-perso">👤 Mes dispos</button>
+				<button type="button" class="sda-vue" data-vue="equipe">👥 Équipe</button>
 			</div>
 			<div class="sda-grid" id="sda-grid"></div>
 			<div class="sda-panel" id="sda-panel">
@@ -522,7 +553,9 @@ class SP_Cal_Trainer_App {
 				me: null, trainers: [], dispos: {}, cloture: false,
 				selected: null,
 				peut_gerer: false, journal: {},
-				cible: null // responsable : entraîneur dont on modifie la dispo (null = soi-même)
+				cible: null, // responsable : entraîneur dont on modifie la dispo (null = soi-même)
+				vue: 'perso', // responsable : 'perso' (dispos d'un entraîneur) ou 'equipe' (couverture des cours)
+				cours: {}     // responsable : jours de cours du mois (AAAA-MM-JJ => true)
 			};
 
 			var MOIS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
@@ -553,12 +586,35 @@ class SP_Cal_Trainer_App {
 					state.cloture  = !!res.data.cloture; // mois clôturé : IK payées, plus de modification ici
 					state.peut_gerer = !!res.data.peut_gerer;
 					state.journal  = res.data.journal || {};
+					state.cours    = {};
+					(res.data.cours || []).forEach(function(c){ state.cours[c] = true; });
 					if (!state.peut_gerer || state.cloture) state.cible = null;
+					if (!state.peut_gerer) state.vue = 'perso';
 					state.selected = null;
+					renderVues();
 					renderGrid();
 					renderPanel();
 				});
 			}
+
+			/** Boutons « Mes dispos » / « Équipe » : responsable uniquement (27/10/2026). */
+			function renderVues() {
+				var bar = document.getElementById('sda-vues');
+				bar.style.display = state.peut_gerer ? 'flex' : 'none';
+				if (!state.peut_gerer) return;
+				document.getElementById('sda-vue-perso').textContent = '👤 ' + (state.cible ? nomDe(state.cible) : 'Mes dispos');
+				[].forEach.call(bar.querySelectorAll('.sda-vue'), function(b){
+					b.classList.toggle('sda-active', b.getAttribute('data-vue') === state.vue);
+				});
+			}
+			[].forEach.call(document.querySelectorAll('#sda-vues .sda-vue'), function(b){
+				b.addEventListener('click', function(){
+					state.vue = this.getAttribute('data-vue');
+					renderVues();
+					renderGrid();
+					if (!state.selected) renderPanel();
+				});
+			});
 
 			function renderGrid() {
 				var grid = document.getElementById('sda-grid');
@@ -580,26 +636,44 @@ class SP_Cal_Trainer_App {
 				}
 
 				// Couleurs des cases : ses propres dispos, ou celles de l'entraîneur choisi par le responsable.
+				// Mode « Équipe » (responsable, 27/10/2026) : couverture du jour à la place — vert = au moins
+				// un entraîneur disponible ou un remplaçant désigné, orange = cours sans personne.
+				// Point bleu (tous, hors mode Équipe) : un autre entraîneur est disponible ce jour-là.
 				var gid = cibleId();
+				var equipe = state.peut_gerer && state.vue === 'equipe';
 				for (var d = 1; d <= daysInMonth; d++) {
 					var ds = state.year + '-' + pad(state.month) + '-' + pad(d);
 					var dayDispos = state.dispos[ds] || {};
 					var mine = gid && dayDispos[gid] ? dayDispos[gid].disponible : null;
 
+					var couvert = false, autres = false;
+					state.trainers.forEach(function(t){
+						var x = dayDispos[t.id];
+						if (!x) return;
+						if (x.disponible === 1) { couvert = true; if (t.id !== gid) autres = true; }
+						else if (x.disponible === 0 && x.remplacant_id) couvert = true;
+					});
+					var alerte = equipe && !couvert && !!state.cours[ds];
+					var etat = equipe ? (couvert ? ' sda-ok' : alerte ? ' sda-alerte' : '') : (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '');
+
 					var cell = document.createElement('div');
-					cell.className = 'sda-cell' + (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '') + (ds === todayStr() ? ' sda-today' : '') + (ds === state.selected ? ' sda-selected' : '');
+					cell.className = 'sda-cell' + etat + (ds === todayStr() ? ' sda-today' : '') + (ds === state.selected ? ' sda-selected' : '');
 					cell.setAttribute('data-date', ds);
+					if (alerte) cell.title = 'Cours sans entraîneur disponible';
 
-					var nb = 0;
-					state.trainers.forEach(function(t){ if (dayDispos[t.id] && dayDispos[t.id].disponible === 1) nb++; });
-
-					cell.innerHTML = '<span>' + d + '</span>' + (state.trainers.length > 1 ? '<span class="sda-cell-count">' + nb + '/' + state.trainers.length + '</span>' : '');
+					cell.innerHTML = '<span>' + d + '</span>' + (!equipe && autres ? '<span class="sda-dot" title="Un autre entraîneur est disponible"></span>' : '');
 					cell.addEventListener('click', function(){
 						state.selected = this.getAttribute('data-date');
 						renderGrid();
 						renderPanel();
 					});
 					grid.appendChild(cell);
+				}
+				if (equipe) {
+					var leg = document.createElement('div');
+					leg.className = 'sda-legende';
+					leg.innerHTML = '<i style="background:#22c55e"></i>couvert<i style="background:#f97316"></i>cours sans entraîneur';
+					grid.appendChild(leg);
 				}
 			}
 
@@ -642,9 +716,10 @@ class SP_Cal_Trainer_App {
 				if (!state.selected) {
 					panel.innerHTML = pourAutre
 						? '<p class="sda-hint">Calendrier de <strong>' + esc(nomDe(cid)) + '</strong> : touchez un jour pour modifier sa disponibilité.<br><button type="button" class="sda-back" id="sda-back">↩ Revenir à mes dispos</button></p>'
-						: '<p class="sda-hint">Touchez un jour pour voir ou déclarer une disponibilité.</p>';
+						: '<p class="sda-hint">Touchez un jour pour voir ou déclarer une disponibilité.'
+							+ (state.trainers.length > 1 && state.vue !== 'equipe' ? '<br><span class="sda-dot" style="display:inline-block;vertical-align:middle;margin:0 4px 0 0"></span>un autre entraîneur est disponible ce jour-là.' : '') + '</p>';
 					var back0 = document.getElementById('sda-back');
-					if (back0) back0.addEventListener('click', function(){ state.cible = null; renderGrid(); renderPanel(); });
+					if (back0) back0.addEventListener('click', function(){ state.cible = null; renderVues(); renderGrid(); renderPanel(); });
 					return;
 				}
 				var ds = state.selected;
@@ -740,12 +815,14 @@ class SP_Cal_Trainer_App {
 					row.addEventListener('click', function(){
 						var tid = parseInt(this.getAttribute('data-tid'), 10);
 						state.cible = tid === state.me.id ? null : tid;
+						state.vue = 'perso'; // choisir un entraîneur montre son calendrier
+						renderVues();
 						renderGrid();
 						renderPanel();
 					});
 				});
 				var back = document.getElementById('sda-back');
-				if (back) back.addEventListener('click', function(){ state.cible = null; renderGrid(); renderPanel(); });
+				if (back) back.addEventListener('click', function(){ state.cible = null; renderVues(); renderGrid(); renderPanel(); });
 				var rempEl = document.getElementById('sda-remp');
 				if (rempEl) rempEl.addEventListener('change', function(){ save(0, true, undefined, parseInt(this.value, 10) || 0); });
 
