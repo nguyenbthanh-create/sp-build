@@ -617,6 +617,7 @@ window.addEventListener('error', function(e) {
                             <div id="spcal-scan-overlay" class="spcal-scan-overlay" onclick="spCalScanReprendre()" style="display:none;">
                                 <div id="spcal-scan-ov-nom" class="spcal-scan-ov-nom"></div>
                                 <div id="spcal-scan-ov-msg" class="spcal-scan-ov-msg"></div>
+                                <div id="spcal-scan-ov-sante" class="spcal-scan-ov-sante" style="display:none;"></div>
                                 <div class="spcal-scan-ov-hint">Toucher pour scanner l'élève suivant</div>
                             </div>
                         </div>
@@ -636,7 +637,10 @@ window.addEventListener('error', function(e) {
 
             <!-- Anniversaires du mois (class-anniversaires.php, route /anniversaires) : onglet 🎂 à part,
                  pour ne pas mêler ces prénoms aux présences du pointage (choix de l'utilisateur, 01/10/2026) -->
+            <!-- 29/10/2026 : onglet renommé « 👥 Adhérents » — infos santé de tout le club (route
+                 /pointage/sante sans créneau), groupées par catégorie et repliées, au-dessus des anniversaires. -->
             <section id="spcal-anniv" class="spcal-screen">
+                <div id="spcal-sante-club"></div>
                 <div id="spcal-ptg-anniv"><div class="spcal-empty">Chargement…</div></div>
             </section>
 
@@ -683,8 +687,8 @@ window.addEventListener('error', function(e) {
                 <span>Pointage</span>
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-anniv" style="display:none" onclick="spCalNav('anniv',this)">
-                <span class="spcal-nav-ico">🎂</span>
-                <span>Anniversaires</span>
+                <span class="spcal-nav-ico">👥</span>
+                <span>Adhérents</span>
             </button>
             <button class="spcal-nav-btn" id="spcal-nav-saisie" style="display:none" onclick="spCalNav('saisie',this)">
                 <span class="spcal-nav-ico">💶</span>

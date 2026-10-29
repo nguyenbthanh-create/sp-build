@@ -232,6 +232,14 @@
 .spcal-sante-ligne{padding:8px 0 0;font-size:13px;}
 .spcal-sante-nom{font-weight:600;}
 .spcal-sante-texte{color:rgba(255,255,255,.7);white-space:pre-line;}
+/* Onglet « 👥 Adhérents » : infos santé de tout le club, un groupe replié par catégorie */
+.spcal-sante-club{margin:0 0 14px;}
+.spcal-sante-club .spcal-sante{margin:0 0 8px;}
+/* Repère 🩺 au scan : info dans le bandeau de la caméra, puis dans la liste des présences (toucher la ligne) */
+.spcal-scan-ov-sante{margin-top:8px;padding:6px 10px;border-radius:8px;background:rgba(0,0,0,.45);font-size:13px;font-weight:600;white-space:pre-line;max-width:100%;}
+.spcal-ptg-log-entry.avec-sante{flex-wrap:wrap;cursor:pointer;}
+.spcal-ptg-log-sante{display:none;width:100%;margin-top:6px;font-size:13px;color:rgba(255,255,255,.75);white-space:pre-line;border-left:3px solid #f59e0b;padding-left:8px;}
+.spcal-ptg-log-entry.ouvert .spcal-ptg-log-sante{display:block;}
 .spcal-ptg-cours-btn:active{opacity:.7;}
 .spcal-ptg-cours-left{flex:1;min-width:0;}
 .spcal-ptg-cours-btn-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

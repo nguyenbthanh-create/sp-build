@@ -881,6 +881,7 @@ function spCalShowPointageDashboard(cours, date) {
     }
     document.getElementById('spcal-ptg-cours-list').innerHTML = html;
     spCalLoadAnniv(date);
+    spCalLoadSanteClub();
 }
 
 /* ── Anniversaires du mois (class-anniversaires.php) ─────────────
@@ -946,13 +947,49 @@ function spCalShowAnnivCours(cours) {
         : '';
 }
 
+/* ── Infos santé de tout le club (onglet « 👥 Adhérents », route /pointage/sante sans créneau) ──
+   Un groupe replié par catégorie, avec son nombre : lisible même avec beaucoup d'adhérents. */
+function spCalLoadSanteClub() {
+    var box = document.getElementById('spcal-sante-club');
+    if (!box || !gPin) return;
+    fetch(CFG.apiBase + '/pointage/sante', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({pin: gPin})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(r) {
+        if (!r || !r.success) { box.innerHTML = ''; return; }
+        var h = '<div class="spcal-sante-club"><div class="spcal-anniv-titre">🩺 Infos santé</div>';
+        if (!r.data.length) {
+            box.innerHTML = h + '<div class="spcal-anniv-vide">Aucune information santé saisie.</div></div>';
+            return;
+        }
+        var groupes = {};
+        r.data.forEach(function(e) { (groupes[e.groupe] = groupes[e.groupe] || []).push(e); });
+        Object.keys(groupes).sort(function(a, b){ return a.localeCompare(b); }).forEach(function(g) {
+            h += '<details class="spcal-sante"><summary>' + esc(g) + ' (' + groupes[g].length + ')</summary>' +
+                 groupes[g].map(spCalSanteLigne).join('') + '</details>';
+        });
+        box.innerHTML = h + '</div>';
+    })
+    .catch(function(){ box.innerHTML = ''; });
+}
+function spCalSanteLigne(e) {
+    return '<div class="spcal-sante-ligne"><div class="spcal-sante-nom">' + esc(e.nom) + '</div>' +
+           '<div class="spcal-sante-texte">' + esc(e.texte) + '</div></div>';
+}
+
 /* ── Infos santé des adhérents du cours (route /pointage/sante) ──
-   Repliées par défaut (l'écran peut être vu par les élèves) ; bloc vide si personne. */
+   Repliées par défaut (l'écran peut être vu par les élèves) ; bloc vide si personne.
+   gSanteCours : empreinte SHA-256 du jeton de carte → info, pour le repère 🩺 au scan. */
 var gSanteEssai = 0;
+var gSanteCours = {};
 function spCalLoadSante(cours) {
     var box = document.getElementById('spcal-ptg-sante');
     if (!box) return;
     box.innerHTML = '';
+    gSanteCours = {};
     if (!gPin || !cours) return;
     var essai = ++gSanteEssai;
     fetch(CFG.apiBase + '/pointage/sante', {
@@ -963,11 +1000,9 @@ function spCalLoadSante(cours) {
     .then(function(r){ return r.json(); })
     .then(function(r) {
         if (essai !== gSanteEssai || !r || !r.success || !r.data || !r.data.length) return;
+        r.data.forEach(function(e) { if (e.cle) gSanteCours[e.cle] = e; });
         box.innerHTML = '<details class="spcal-sante"><summary>🩺 Infos santé (' + r.data.length + ')</summary>' +
-            r.data.map(function(e) {
-                return '<div class="spcal-sante-ligne"><div class="spcal-sante-nom">' + esc(e.nom) + '</div>' +
-                       '<div class="spcal-sante-texte">' + esc(e.texte) + '</div></div>';
-            }).join('') + '</details>';
+            r.data.map(spCalSanteLigne).join('') + '</details>';
     })
     .catch(function(){});
 }
@@ -1201,6 +1236,7 @@ function spCalHandleScanResult(raw) {
     // arrivée après ce délai est ignorée (sinon elle remettrait en pause le scan de l'élève
     // suivant) : la carte rescannée affichera « déjà relevé » si la présence est passée.
     var essai = ++gScanEssai;
+    var santeP = spCalSanteDuJeton(token);
     var attente = setTimeout(function() {
         gScanEssai++;
         spCalShowFeedback('Pas de réponse du serveur', 'Rescannez la carte.', 'err');
@@ -1223,8 +1259,12 @@ function spCalHandleScanResult(raw) {
         if (essai !== gScanEssai) return; // réponse trop tardive ou cours quitté
         clearTimeout(attente);
         gScanVus[token] = true; // le serveur a répondu : cette carte est traitée pour ce cours
-        spCalShowFeedback(nom, msg, status);
-        if (r.success) spCalAddLog(nom, status);
+        // Repère 🩺 : info santé de l'adhérent scanné (empreinte du jeton, cf. spCalLoadSante).
+        santeP.then(function(sante) {
+            if (essai !== gScanEssai) return;
+            spCalShowFeedback(nom, msg, status, sante);
+            if (r.success) spCalAddLog(nom, status, sante);
+        });
     })
     // Erreur réseau : la carte n'est pas marquée, on pourra la rescanner.
     .catch(function() {
@@ -1234,22 +1274,37 @@ function spCalHandleScanResult(raw) {
     });
 }
 
-/* Résultat affiché dans l'image de la caméra, lecture en pause, reprise automatique. */
-function spCalShowFeedback(nom, msg, status) {
+/* Info santé (texte ou '') de la carte scannée : empreinte SHA-256 du jeton comparée à celles
+   du cours. Sans crypto.subtle (page non sécurisée) : pas de repère, le pointage continue. */
+function spCalSanteDuJeton(token) {
+    try {
+        if (!token || !window.crypto || !crypto.subtle || !Object.keys(gSanteCours).length) return Promise.resolve('');
+        return crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)).then(function(buf) {
+            var hex = Array.prototype.map.call(new Uint8Array(buf), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+            return gSanteCours[hex] ? gSanteCours[hex].texte : '';
+        }).catch(function(){ return ''; });
+    } catch (e) { return Promise.resolve(''); }
+}
+
+/* Résultat affiché dans l'image de la caméra, lecture en pause, reprise automatique
+   (plus tard quand une info santé s'affiche, pour laisser le temps de la lire). */
+function spCalShowFeedback(nom, msg, status, sante) {
     var st = status === 'ok' ? 'ok' : (status === 'already' ? 'already' : 'err');
-    spCalScanOverlay((st === 'ok' ? '✅ ' : (st === 'already' ? '⚠️ ' : '❌ ')) + nom, msg, st);
+    spCalScanOverlay((st === 'ok' ? '✅ ' : (st === 'already' ? '⚠️ ' : '❌ ')) + nom + (sante ? ' 🩺' : ''), msg, st, sante);
     spCalScanFlash(status);
     gScanPause = true;
     clearTimeout(gScanRepriseTimer);
-    gScanRepriseTimer = setTimeout(spCalScanReprendre, SPCAL_SCAN_REPRISE_MS);
+    gScanRepriseTimer = setTimeout(spCalScanReprendre, sante ? 5000 : SPCAL_SCAN_REPRISE_MS);
 }
 
-function spCalScanOverlay(nom, msg, cls) {
+function spCalScanOverlay(nom, msg, cls, sante) {
     var ov = document.getElementById('spcal-scan-overlay');
     if (!ov) return;
     ov.className = 'spcal-scan-overlay ' + cls;
     document.getElementById('spcal-scan-ov-nom').textContent = nom;
     document.getElementById('spcal-scan-ov-msg').textContent = msg;
+    var s = document.getElementById('spcal-scan-ov-sante');
+    if (s) { s.textContent = sante ? '🩺 ' + sante : ''; s.style.display = sante ? 'block' : 'none'; }
     ov.style.display = 'flex';
 }
 
@@ -1277,15 +1332,17 @@ function spCalScanFlash(status) {
     try { if (navigator.vibrate) navigator.vibrate(status === 'ok' ? 80 : [60, 60, 60]); } catch (e) {}
 }
 
-function spCalAddLog(nom, status) {
+function spCalAddLog(nom, status, sante) {
     var now = new Date();
     var heure = now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-    var entry = {nom: nom, heure: heure, status: status};
+    var entry = {nom: nom, heure: heure, status: status, sante: sante || ''};
     gPtgLog.unshift(entry);
+    // Présent avec une info santé : 🩺 après le nom, toucher la ligne affiche l'info.
     var html = gPtgLog.map(function(e) {
-        return '<div class="spcal-ptg-log-entry">'+
-            '<span class="spcal-ptg-log-nom">'+(e.status==='ok'?'✅ ':'⚠️ ')+esc(e.nom)+'</span>'+
+        return '<div class="spcal-ptg-log-entry' + (e.sante ? ' avec-sante" onclick="this.classList.toggle(\'ouvert\')' : '') + '">'+
+            '<span class="spcal-ptg-log-nom">'+(e.status==='ok'?'✅ ':'⚠️ ')+esc(e.nom)+(e.sante ? ' 🩺' : '')+'</span>'+
             '<span class="spcal-ptg-log-time">'+esc(e.heure)+'</span>'+
+            (e.sante ? '<div class="spcal-ptg-log-sante">'+esc(e.sante)+'</div>' : '')+
             '</div>';
     }).join('');
     document.getElementById('spcal-ptg-log').innerHTML = html;

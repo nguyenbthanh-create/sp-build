@@ -51,7 +51,9 @@ trait SpCalPro_Admin_Pointage {
     /**
      * Infos santé des adhérents d'un cours (29/10/2026) — écran de pointage de l'appli, même PIN.
      * Adhérents actifs et à jour pour la saison, visés par le créneau (creneau_concerne(), comme
-     * le mail d'annulation), avec une information santé saisie. Créneau introuvable : tous.
+     * le mail d'annulation), avec une information santé saisie. Créneau introuvable ou absent : tous
+     * (onglet « 👥 Adhérents », groupés par « groupe »). « cle » = empreinte SHA-256 du jeton de la
+     * carte, pour reconnaître l'adhérent au scan sans transmettre le jeton lui-même.
      */
     public function rest_pointage_sante( WP_REST_Request $req ) {
         if ( ! SP_Cal_Pin_Garde::verifier( sanitize_text_field( (string) $req->get_param( 'pin' ) ), SP_Cal_Pin_Garde::pin() ) ) {
@@ -69,9 +71,14 @@ trait SpCalPro_Admin_Pointage {
         foreach ( (array) $wpdb->get_results( "SELECT * FROM $tel WHERE actif = 1 AND infos_sante IS NOT NULL AND TRIM(infos_sante) != '' ORDER BY prenom, nom" ) as $el ) {
             if ( SpCalPro_DB::statut_saison_eleve( $el )['code'] === 'a_renouveler' ) continue;
             if ( $slot && ! $this->db->creneau_concerne( $slot, trim( (string) $el->categorie_saisie ), trim( (string) $el->categorie_age ) ) ) continue;
+            $groupe     = trim( (string) $el->categorie_age ) ?: 'Sans catégorie';
+            $discipline = $this->db->label_discipline( trim( (string) $el->categorie_saisie ) );
+            if ( $discipline !== '' && $discipline !== 'Taekwondo' ) $groupe .= ' · ' . $discipline;
             $data[] = array(
-                'nom'   => trim( $el->prenom . ' ' . $el->nom ),
-                'texte' => (string) $el->infos_sante,
+                'nom'    => trim( $el->prenom . ' ' . $el->nom ),
+                'texte'  => (string) $el->infos_sante,
+                'groupe' => $groupe,
+                'cle'    => ! empty( $el->token ) ? hash( 'sha256', (string) $el->token ) : '',
             );
         }
         return new WP_REST_Response( array( 'success' => true, 'data' => $data ), 200 );
