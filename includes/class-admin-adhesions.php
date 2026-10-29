@@ -235,6 +235,7 @@ class SP_Admin_Adhesions {
 		$back = esc_url( add_query_arg( 'page', 'sp_adhesions', admin_url( 'admin.php' ) ) );
 		echo "<p style='margin-top:1rem;'><a href='{$back}' class='button'>← Retour à la liste</a></p>";
 
+		$this->styles_fiche();
 		echo '<div class="sp-adh-fiche">';
 
 		// Bandeau très visible côté admin quand c'est un renouvellement (cf. doléance renouvellement) :
@@ -263,13 +264,17 @@ class SP_Admin_Adhesions {
 		}
 
 		printf(
-			'<h2>Demande #%d — %s %s</h2>',
+			'<div class="sp-adh-entete"><h2>Demande #%d — %s %s</h2>%s<p class="sp-adh-meta">Soumise le %s · %s · %s</p></div>',
 			$row->id,
 			esc_html( $row->prenom ),
-			esc_html( $row->nom )
+			esc_html( $row->nom ),
+			$this->badge_statut( $row->statut ),
+			esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ),
+			esc_html( SP_Front_Adhesion::discipline_label( $row->discipline ) ),
+			esc_html( $row->categorie )
 		);
-		echo $this->badge_statut( $row->statut );
-		echo '<p class="sp-adh-meta">Soumise le ' . esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ) . '</p>';
+		// Cartes des sections, sur deux colonnes en grand écran (styles_fiche()).
+		echo '<div class="sp-adh-grille">';
 
 		// ── Sections de données ──────────────────────────────────────────────
 		$representants = $this->decode_personnes( $row->representants_legaux ?? '' );
@@ -360,10 +365,12 @@ class SP_Admin_Adhesions {
 		foreach ( $sections2 as $title => $fields ) {
 			echo "<div class='sp-adh-section'><h3>{$title}</h3><table class='form-table'>";
 			foreach ( $fields as $label => $value ) {
+				// Message et infos santé : texte libre sur plusieurs lignes ; infos santé saisies mises en avant.
 				printf(
-					'<tr><th scope="row">%s</th><td>%s</td></tr>',
+					'<tr%s><th scope="row">%s</th><td>%s</td></tr>',
+					$label === '🩺 Infos santé' && $value !== '—' ? ' class="sp-adh-sante"' : '',
 					esc_html( $label ),
-					esc_html( $value )
+					nl2br( esc_html( $value ) )
 				);
 			}
 			echo '</table></div>';
@@ -411,6 +418,8 @@ class SP_Admin_Adhesions {
 		}
 		echo '</table></div>';
 
+		echo '</div>'; // .sp-adh-grille
+
 		// Motif de refus éventuel
 		if ( $row->statut === 'refuse' && $row->refus_motif ) {
 			echo '<div class="sp-adh-section sp-adh-section-refus">';
@@ -425,6 +434,39 @@ class SP_Admin_Adhesions {
 		}
 
 		echo '</div>'; // .sp-adh-fiche
+	}
+
+	// ─── Styles de la fiche détail (29/10/2026) ──────────────────────────────
+	// Avant : aucune règle pour .sp-adh-* — tableaux WordPress bruts les uns sous les autres.
+	// Cartes blanches, libellés à gauche, deux colonnes en grand écran, une seule sur téléphone.
+	private function styles_fiche(): void {
+		?>
+		<style>
+		.sp-adh-fiche{max-width:1100px;}
+		.sp-adh-entete{background:#fff;border:1px solid #dcdcde;border-left:4px solid #2271b1;border-radius:8px;padding:14px 18px;margin:1rem 0;}
+		.sp-adh-entete h2{margin:0 0 6px;font-size:1.35em;}
+		.sp-adh-entete .sp-adh-meta{margin:8px 0 0;color:#646970;}
+		.sp-adh-grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;align-items:start;}
+		.sp-adh-section{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:4px 16px 10px;margin:0;}
+		.sp-adh-section h3{font-size:14px;margin:10px 0 6px;padding-bottom:8px;border-bottom:1px solid #f0f0f1;}
+		.sp-adh-section h4{font-size:13px;color:#2271b1;margin:10px 0 2px !important;}
+		.sp-adh-section .form-table{margin:0;}
+		.sp-adh-section .form-table th,.sp-adh-section .form-table td{padding:6px 0;font-size:13px;line-height:1.45;vertical-align:top;}
+		.sp-adh-section .form-table th{width:42%;font-weight:600;color:#50575e;padding-right:10px;}
+		.sp-adh-section .form-table tr+tr th,.sp-adh-section .form-table tr+tr td{border-top:1px solid #f6f7f7;}
+		.sp-adh-section .form-table td{word-break:break-word;}
+		.sp-adh-section .form-table tr.sp-adh-sante td{background:#fff8e5;border-radius:4px;padding-left:8px;}
+		.sp-adh-section-refus{border-left:4px solid #d63638;margin-top:14px;}
+		.sp-adh-actions{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:4px 18px 16px;margin-top:14px;}
+		.sp-adh-actions h3{font-size:14px;margin:12px 0 10px;}
+		.sp-adh-action-block{border:1px solid #dcdcde;border-radius:6px;padding:10px 14px;margin-bottom:12px;}
+		.sp-adh-action-block h4{margin:4px 0 6px;}
+		.sp-adh-action-block p{margin:0 0 10px;color:#50575e;}
+		.sp-adh-action-valider{border-left:4px solid #00a32a;background:#f6fbf7;}
+		.sp-adh-action-refuser{border-left:4px solid #d63638;background:#fcf6f6;margin-bottom:0;}
+		@media (max-width:782px){.sp-adh-grille{grid-template-columns:1fr;}.sp-adh-section .form-table th{width:auto;display:block;padding-bottom:0;}.sp-adh-section .form-table td{display:block;padding-top:2px;}}
+		</style>
+		<?php
 	}
 
 	// ─── Boutons d'action ─────────────────────────────────────────────────────
