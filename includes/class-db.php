@@ -189,6 +189,8 @@ class SpCalPro_DB {
                 taille_tshirt varchar(20) NOT NULL DEFAULT '',
                 taille_pantalon varchar(20) NOT NULL DEFAULT '',
                 droit_image tinyint(1) NOT NULL DEFAULT 1,
+                autorisation_seul tinyint(1) NOT NULL DEFAULT 0,
+                infos_sante text DEFAULT NULL,
                 PRIMARY KEY (id)
             ) $charset;",
 
@@ -572,6 +574,27 @@ class SpCalPro_DB {
             // 05/10/2026 : 1 ou 2 allers-retours dans la journée (deux interventions trop éloignées)
             if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tdispos` LIKE 'allers_retours'" ) )
                 $wpdb->query( "ALTER TABLE `$tdispos` ADD COLUMN `allers_retours` tinyint(1) NOT NULL DEFAULT 1" );
+        }
+
+        // 29/10/2026 : « Repartir seul(e) » n'avait pas de colonne sur la fiche — la case restait
+        // toujours décochée et son enregistrement était ignoré ; la valeur n'existait que dans
+        // extra_data (copie de la demande d'adhésion), reprise ici une seule fois, à la création
+        // de la colonne. Infos santé : saisies dans la demande d'adhésion, visibles des admins
+        // (fiche) et des entraîneurs (appli, écran de pointage du cours).
+        $tel = $this->table_eleves();
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '$tel'" ) ) {
+            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE 'autorisation_seul'" ) ) {
+                $wpdb->query( "ALTER TABLE `$tel` ADD COLUMN `autorisation_seul` tinyint(1) NOT NULL DEFAULT 0" );
+                if ( $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE 'autorisation_seul'" ) ) {
+                    foreach ( (array) $wpdb->get_results( "SELECT id, extra_data FROM `$tel` WHERE extra_data LIKE '%autorisation_seul%'" ) as $r ) {
+                        $x = json_decode( (string) $r->extra_data, true );
+                        if ( is_array( $x ) && ! empty( $x['autorisation_seul'] ) )
+                            $wpdb->update( $tel, array( 'autorisation_seul' => 1 ), array( 'id' => intval( $r->id ) ) );
+                    }
+                }
+            }
+            if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE 'infos_sante'" ) )
+                $wpdb->query( "ALTER TABLE `$tel` ADD COLUMN `infos_sante` text DEFAULT NULL" );
         }
 
         // v10.17 : prénoms + téléphone contacts sur les élèves

@@ -48,6 +48,10 @@ trait SP_Cal_Members_Eleves {
             'pointure'               => 'Pointure',
             'taille_tshirt'          => 'T-shirt',
             'taille_pantalon'        => 'Pantalon',
+            'droit_image'            => 'Droit à l\'image',
+            'autorisation_seul'      => 'Repartir seul(e)',
+            // Donnée sensible : jamais cochée par défaut ($csv_defaut, panneau d'export).
+            'infos_sante'            => 'Infos santé',
         );
     }
 
@@ -87,6 +91,8 @@ trait SP_Cal_Members_Eleves {
                     $line[] = trim( $el->date_naissance . ( $el->annee_naissance ? '/' . $el->annee_naissance : '' ), '/' );
                 } elseif ( $key === 'actif' ) {
                     $line[] = intval( $el->actif ) ? 'Actif' : 'Inactif';
+                } elseif ( $key === 'droit_image' || $key === 'autorisation_seul' ) {
+                    $line[] = intval( $el->$key ?? 0 ) ? 'Oui' : 'Non';
                 } else {
                     $line[] = wp_unslash( $el->$key ?? '' );
                 }
@@ -945,6 +951,14 @@ trait SP_Cal_Members_Eleves {
                         <input type="checkbox" name="eleve_autorisation_seul" value="1" <?php checked(intval($edit->autorisation_seul ?? 0), 1); ?>>
                         <span>🚶 Autorisé(e) à repartir seul(e) après les entraînements</span>
                     </label>
+                </div>
+
+                <!-- Infos santé (29/10/2026) : saisies dans la demande d'adhésion ; visibles aussi des
+                     entraîneurs dans l'appli, à l'écran de pointage du cours. -->
+                <div style="max-width:860px;margin-bottom:12px;">
+                    <label for="eleve_infos_sante" style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">🩺 Informations santé utiles à l'encadrement <span style="font-weight:400;color:#888;">(visibles des entraîneurs dans l'appli, au pointage)</span></label>
+                    <textarea id="eleve_infos_sante" name="eleve_infos_sante" rows="2" maxlength="2000" style="width:100%;font-family:inherit;"
+                              placeholder="Allergies, asthme, traitement, contre-indication…"><?php echo esc_textarea($edit->infos_sante ?? ''); ?></textarea>
                 </div>
 
                 <!-- Palmarès (pleine largeur) -->

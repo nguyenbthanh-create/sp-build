@@ -946,6 +946,32 @@ function spCalShowAnnivCours(cours) {
         : '';
 }
 
+/* ── Infos santé des adhérents du cours (route /pointage/sante) ──
+   Repliées par défaut (l'écran peut être vu par les élèves) ; bloc vide si personne. */
+var gSanteEssai = 0;
+function spCalLoadSante(cours) {
+    var box = document.getElementById('spcal-ptg-sante');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!gPin || !cours) return;
+    var essai = ++gSanteEssai;
+    fetch(CFG.apiBase + '/pointage/sante', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({pin: gPin, slot_id: cours.slot_id || 0})
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(r) {
+        if (essai !== gSanteEssai || !r || !r.success || !r.data || !r.data.length) return;
+        box.innerHTML = '<details class="spcal-sante"><summary>🩺 Infos santé (' + r.data.length + ')</summary>' +
+            r.data.map(function(e) {
+                return '<div class="spcal-sante-ligne"><div class="spcal-sante-nom">' + esc(e.nom) + '</div>' +
+                       '<div class="spcal-sante-texte">' + esc(e.texte) + '</div></div>';
+            }).join('') + '</details>';
+    })
+    .catch(function(){});
+}
+
 window.spCalSelectCours = function(cours) {
     gPtgCours = cours;
     gPtgLog = [];
@@ -954,6 +980,7 @@ window.spCalSelectCours = function(cours) {
     document.getElementById('spcal-ptg-cours-title').textContent =
         cours.titre + (cours.heure_debut ? ' · ' + fmtHeure(cours.heure_debut) : '');
     spCalShowAnnivCours(cours);
+    spCalLoadSante(cours);
     document.getElementById('spcal-ptg-log').innerHTML = '';
     document.getElementById('spcal-scan-feedback').style.display = 'none';
     // Nouveau cours : aucune carte encore traitée, pas de pause en cours.

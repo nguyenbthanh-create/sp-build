@@ -226,6 +226,12 @@
 .spcal-anniv-ligne.aujourdhui .spcal-anniv-nom{font-weight:700;}
 .spcal-anniv-age{margin-left:auto;font-size:12px;color:rgba(255,255,255,.5);}
 .spcal-anniv-vide{font-size:13px;color:rgba(255,255,255,.4);}
+/* Infos santé du cours (écran de pointage), repliées par défaut */
+.spcal-sante{background:#1a1a1a;border-radius:12px;padding:10px 14px;margin:0 0 14px;border-left:3px solid #f59e0b;}
+.spcal-sante summary{font-size:13px;font-weight:700;cursor:pointer;}
+.spcal-sante-ligne{padding:8px 0 0;font-size:13px;}
+.spcal-sante-nom{font-weight:600;}
+.spcal-sante-texte{color:rgba(255,255,255,.7);white-space:pre-line;}
 .spcal-ptg-cours-btn:active{opacity:.7;}
 .spcal-ptg-cours-left{flex:1;min-width:0;}
 .spcal-ptg-cours-btn-titre{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

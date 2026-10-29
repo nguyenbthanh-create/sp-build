@@ -333,6 +333,7 @@ class SP_Admin_Adhesions {
 				'Discipline'         => SP_Front_Adhesion::discipline_label( $row->discipline ),
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
+				'🩺 Infos santé'     => trim( (string) ( $row->infos_sante ?? '' ) ) ?: '—',
 				'Questionnaire QS-Sport' => $row->discipline === 'RENFO'
 					? ( ($row->qs_sport_confirme ?? 0) ? '✅ Confirmé (toutes réponses négatives)' : ( $row->doc_certificat_medical ? 'Non — certificat médical fourni à la place' : '⚠️ Ni confirmé ni certificat fourni' ) )
 					: '—',
@@ -713,6 +714,7 @@ class SP_Admin_Adhesions {
 			'licence'                => $row->ancien_licence    ?? '',
 			'droit_image'            => (int) ($row->droit_image ?? 0),
 			'autorisation_seul'      => (int) ($row->autorisation_seul ?? 0),
+			'infos_sante'            => (string) ( $row->infos_sante ?? '' ),
 			'representant_nom'       => $repres1['nom']         ?? '',
 			'representant_prenom'    => $repres1['prenom']      ?? '',
 			'representant_telephone' => $repres1['telephone']   ?? '',
@@ -742,6 +744,7 @@ class SP_Admin_Adhesions {
 			'%s','%s',
 			'%d',  // droit_image
 			'%d',  // autorisation_seul
+			'%s',  // infos_sante
 			'%s','%s','%s',
 			'%s','%s','%s','%s','%s',
 			'%s','%s','%s',
@@ -857,6 +860,8 @@ class SP_Admin_Adhesions {
 			'licence'                => $row->ancien_licence    ?? '',
 			'droit_image'            => (int) ( $row->droit_image ?? 0 ),
 			'autorisation_seul'      => (int) ( $row->autorisation_seul ?? 0 ),
+			// Formulaire de renouvellement prérempli avec la fiche : la valeur reçue fait foi (vidée = effacée).
+			'infos_sante'            => (string) ( $row->infos_sante ?? '' ),
 			'representant_nom'       => $repres1['nom']         ?? '',
 			'representant_prenom'    => $repres1['prenom']      ?? '',
 			'representant_telephone' => $repres1['telephone']   ?? '',
@@ -885,7 +890,7 @@ class SP_Admin_Adhesions {
 			'%s','%s','%s',
 			'%s','%s','%s',
 			'%s','%s',
-			'%d','%d',
+			'%d','%d','%s',
 			'%s','%s','%s',
 			'%s','%s','%s','%s','%s',
 			'%s',

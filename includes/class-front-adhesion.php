@@ -45,7 +45,7 @@ class SP_Front_Adhesion {
 		'poids_kg', 'pointure', 'taille_tshirt', 'taille_pantalon', 'doc_certificat_medical',
 		'date_certificat_medical', 'qs_sport_confirme', 'doc_attestation_rc', 'doc_decharge_honneur',
 		'photo_url', 'autorisation_photo', 'autorisation_seul', 'droit_image', 'reglement_accepte',
-		'statut', 'refus_motif', 'ip_address', 'created_at', 'updated_at',
+		'infos_sante', 'statut', 'refus_motif', 'ip_address', 'created_at', 'updated_at',
 	];
 
 	public static function get_instance(): self {
@@ -289,6 +289,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'autorisation_photo' => ! empty( $extra['autorisation_photo'] ) ? 1 : 0,
 			'droit_image'        => (int) ( $el->droit_image ?? 0 ),
 			'autorisation_seul'  => (int) ( $el->autorisation_seul ?? 0 ),
+			'infos_sante'        => (string) ( $el->infos_sante ?? '' ),
 		];
 	}
 
@@ -317,6 +318,9 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		$discipline = sanitize_text_field( $_POST['discipline'] ?? '' );
 		$categorie  = sanitize_text_field( $_POST['categorie']  ?? '' );
 		$message    = sanitize_textarea_field( $_POST['message'] ?? '' );
+		// Infos santé (29/10/2026) : champ à part du message, reporté sur la fiche (admins et
+		// entraîneurs). Donnée sensible : jamais recopiée dans les e-mails de notification.
+		$infos_sante = mb_substr( sanitize_textarea_field( $_POST['infos_sante'] ?? '' ), 0, 2000 );
 
 		// Pass'Sport : simple champ déclaratif, aucune vérification/calcul (cf. md/08-passsport-etat-des-lieux.md
 		// — pas d'API de vérification accessible à un tiers, le club continue de traiter ça manuellement).
@@ -599,6 +603,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'autorisation_seul'      => $autorisation_seul,
 			'droit_image'            => $droit_image,
 			'reglement_accepte'      => $reglement_accepte,
+			'infos_sante'            => $infos_sante,
 			'statut'                 => 'pending',
 			'ip_address'             => $_SERVER['REMOTE_ADDR'] ?? '',
 			'created_at'             => current_time( 'mysql' ),
@@ -612,6 +617,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'%s','%s','%s','%s','%s',
 			'%s','%s','%d','%s','%s','%s',
 			'%d','%d','%d','%d',
+			'%s',
 			'%s','%s','%s',
 		];
 
@@ -1024,6 +1030,22 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 							<input type="file" id="sp_doc_renfo_qs_certif" name="doc_certificat_medical_renfo_qs" accept=".pdf,.jpg,.jpeg,.png">
 							<label for="sp_date_renfo_qs_certif" style="margin-top:.5rem;display:block;">Date du certificat <span class="sp-optional">(si fourni)</span></label>
 							<input type="date" id="sp_date_renfo_qs_certif" name="date_certificat_medical_renfo_qs" value="<?= $v('date_certificat_medical_renfo_qs') ?>" max="<?= esc_attr( date('Y-m-d') ) ?>">
+						</div>
+					</div>
+				</div>
+
+				<!-- ══ SANTÉ (29/10/2026) ════════════════════════════════════
+				     Champ à part du « Message » : reporté sur la fiche (admins) et dans l'appli des
+				     entraîneurs au pointage du cours. Jamais recopié dans les e-mails. -->
+				<div class="sp-adh-group">
+					<h3 class="sp-adh-group-title">Santé</h3>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_infos_sante">Informations santé utiles à l'encadrement <span class="sp-optional">(optionnel)</span></label>
+							<textarea id="sp_infos_sante" name="infos_sante" rows="3" maxlength="2000"
+							          placeholder="Allergies, asthme, traitement, contre-indication, consignes en cas de malaise…"
+							><?= esc_textarea( $data['infos_sante'] ?? '' ) ?></textarea>
+							<p class="sp-optional">Uniquement communiquées aux entraîneurs et au bureau du club, pour encadrer les séances en sécurité.</p>
 						</div>
 					</div>
 				</div>
@@ -1559,6 +1581,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			autorisation_seul       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			droit_image             TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			reglement_accepte       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			infos_sante             TEXT,
 			statut                  ENUM('pending','valide','refuse') NOT NULL DEFAULT 'pending',
 			refus_motif             TEXT,
 			ip_address              VARCHAR(45)   NOT NULL DEFAULT '',

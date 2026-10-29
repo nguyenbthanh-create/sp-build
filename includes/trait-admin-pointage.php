@@ -20,7 +20,7 @@ trait SpCalPro_Admin_Pointage {
 
     // Enregistre les routes REST de pointage (accessibles sans login)
     public function register_pointage_rest() {
-        $routes = array( 'cours', 'scan', 'cours_eleve', 'lot' );
+        $routes = array( 'cours', 'scan', 'cours_eleve', 'lot', 'sante' );
         foreach ( $routes as $r ) {
             register_rest_route( 'spcal/v1', '/pointage/' . $r, array(
                 'methods'             => 'POST',
@@ -46,6 +46,35 @@ trait SpCalPro_Admin_Pointage {
     }
     public function rest_pointage_lot( WP_REST_Request $req ) {
         $this->rest_params_to_post( $req ); $this->ajax_pointage_lot(); exit;
+    }
+
+    /**
+     * Infos santé des adhérents d'un cours (29/10/2026) — écran de pointage de l'appli, même PIN.
+     * Adhérents actifs et à jour pour la saison, visés par le créneau (creneau_concerne(), comme
+     * le mail d'annulation), avec une information santé saisie. Créneau introuvable : tous.
+     */
+    public function rest_pointage_sante( WP_REST_Request $req ) {
+        if ( ! SP_Cal_Pin_Garde::verifier( sanitize_text_field( (string) $req->get_param( 'pin' ) ), SP_Cal_Pin_Garde::pin() ) ) {
+            return new WP_REST_Response( array( 'success' => false, 'data' => SP_Cal_Pin_Garde::message() ), 403 );
+        }
+        global $wpdb;
+        $tel = $this->db->table_eleves();
+        if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE 'infos_sante'" ) ) {
+            return new WP_REST_Response( array( 'success' => true, 'data' => array() ), 200 );
+        }
+        $slot = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$this->db->table_slots()} WHERE id = %d", intval( $req->get_param( 'slot_id' ) )
+        ) );
+        $data = array();
+        foreach ( (array) $wpdb->get_results( "SELECT * FROM $tel WHERE actif = 1 AND infos_sante IS NOT NULL AND TRIM(infos_sante) != '' ORDER BY prenom, nom" ) as $el ) {
+            if ( SpCalPro_DB::statut_saison_eleve( $el )['code'] === 'a_renouveler' ) continue;
+            if ( $slot && ! $this->db->creneau_concerne( $slot, trim( (string) $el->categorie_saisie ), trim( (string) $el->categorie_age ) ) ) continue;
+            $data[] = array(
+                'nom'   => trim( $el->prenom . ' ' . $el->nom ),
+                'texte' => (string) $el->infos_sante,
+            );
+        }
+        return new WP_REST_Response( array( 'success' => true, 'data' => $data ), 200 );
     }
 
     /* ══════════════════════════════════════════════════════════

@@ -602,6 +602,9 @@ window.addEventListener('error', function(e) {
                             <button onclick="spCalBackToCours()" style="background:#1a1a1a;border:none;border-radius:8px;padding:8px 12px;color:rgba(255,255,255,.6);font-size:13px;cursor:pointer;">← Cours</button>
                             <div id="spcal-ptg-cours-title" style="font-size:14px;font-weight:600;"></div>
                         </div>
+                        <!-- Infos santé des adhérents du cours (route /pointage/sante, 29/10/2026) : repliées
+                             par défaut, rien d'affiché si personne n'a d'information. -->
+                        <div id="spcal-ptg-sante"></div>
                         <!-- Caméra QR -->
                         <div style="position:relative;width:100%;max-width:320px;margin:0 auto 16px;border-radius:12px;overflow:hidden;background:#000;">
                             <video id="spcal-qr-video" style="width:100%;display:block;" playsinline autoplay muted></video>
