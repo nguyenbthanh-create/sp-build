@@ -11,6 +11,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-roles.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-trainer-app.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-tenues.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-sante-front.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-carte.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
@@ -105,6 +106,7 @@ class SpCalPro_Admin {
         SP_Cal_Trainer_App::get_instance( $this->db );
         SP_Cal_Dobok::get_instance( $this->db );
         SP_Cal_Tenues::get_instance( $this->db );
+        SP_Cal_Sante_Front::get_instance( $this->db );
         SP_Cal_Anniversaires::get_instance( $this->db );
         SP_Cal_Passages::get_instance( $this->db );
         SP_Cal_IK_Cloture::get_instance( $this->db );
