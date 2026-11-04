@@ -112,10 +112,16 @@ trait SpCalPro_Admin_Pwa {
         return true;
     }
     private function pwa_require_auth( WP_REST_Request $req ) {
-        $auth = $req->get_header( 'Authorization' ) ?? '';
-        $raw_jwt = strncmp( $auth, 'Bearer ', 7 ) === 0
-            ? substr( $auth, 7 )
-            : sanitize_text_field( wp_unslash( $req->get_param( 'jwt' ) ?? '' ) );
+        // En-tête dédié : « Authorization » sert déjà au mot de passe du site de test, le remplacer y
+        // provoquait une demande de connexion sans fin. Bearer reste accepté pour une application
+        // encore ouverte avec l'ancien script.
+        $raw_jwt = (string) $req->get_header( 'X-Spcal-Jwt' );
+        if ( ! $raw_jwt ) {
+            $auth = $req->get_header( 'Authorization' ) ?? '';
+            $raw_jwt = strncmp( $auth, 'Bearer ', 7 ) === 0
+                ? substr( $auth, 7 )
+                : sanitize_text_field( wp_unslash( $req->get_param( 'jwt' ) ?? '' ) );
+        }
         if ( ! $raw_jwt ) return new WP_Error( 'spcal_no_auth', 'Authentification requise.', array( 'status' => 401 ) );
         $payload = $this->jwt_decode( $raw_jwt );
         if ( ! $payload || empty( $payload['eid'] ) ) return new WP_Error( 'spcal_invalid_jwt', 'Session expirée. Reconnectez-vous.', array( 'status' => 401 ) );

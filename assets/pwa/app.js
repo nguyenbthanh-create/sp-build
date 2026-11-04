@@ -89,7 +89,7 @@ function auth(token) {
 /* ── API calls ───────────────────────────────────────────────── */
 function apiFetch(path) {
     var jwt = getJwt();
-    return fetch(API+path, { headers: { 'Authorization': 'Bearer '+jwt } }).then(function(r){ return r.json(); });
+    return fetch(API+path, { headers: { 'X-Spcal-Jwt': jwt } }).then(function(r){ return r.json(); });
 }
 
 /* ── Initialisation ──────────────────────────────────────────── */
@@ -1587,7 +1587,7 @@ function spCalSetupPush() {
         if (!jwt) return;
         fetch(CFG.apiBase + '/push/subscribe', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt },
+            headers: { 'Content-Type': 'application/json', 'X-Spcal-Jwt': jwt },
             body: JSON.stringify({
                 endpoint: sub.endpoint,
                 p256dh:   spCalBufToB64u(sub.getKey('p256dh')),
