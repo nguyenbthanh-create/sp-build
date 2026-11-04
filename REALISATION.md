@@ -280,6 +280,8 @@ Ajout : à l'enregistrement d'une fiche admin, un « Email parent » vide repren
 
 Correctif : la session de l'application passe par l'en-tête X-Spcal-Jwt au lieu de « Authorization », déjà utilisé par le mot de passe du site de test (demande de connexion sans fin en mode adhérent). Bearer reste accepté côté serveur.
 
+**En prod le 04/11/2026 (21db974, 8 fichiers).** Essai sur le test par l'utilisateur : espace famille et changement d'enfant conformes. Contrôle des réponses publiques en prod conforme. Reste à essayer en prod : mail unique, code, révocation, icône sur vrai iPhone et Android.
+
 Constats non traités : aucune notification push n'est envoyée par le serveur (SpCalPro_WebPush n'existe pas) ; à la validation d'une nouvelle adhésion, send_token_or_welcome() cherche une classe SP_Token inexistante (la classe est SpCalPro_Token) et semble envoyer un simple mail de bienvenue sans lien — à confirmer.
 
 *Dernière mise à jour de ce fichier : 04/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
