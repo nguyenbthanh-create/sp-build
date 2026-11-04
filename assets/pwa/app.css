@@ -16,6 +16,19 @@
 #spcal-error .spcal-err-ico{font-size:48px;}
 #spcal-error h2{margin:0;font-size:18px;}
 #spcal-error p{margin:0;font-size:14px;color:rgba(255,255,255,.5);line-height:1.6;}
+#spcal-error{overflow-y:auto;}
+#spcal-acces{width:100%;max-width:320px;margin-top:8px;}
+#spcal-acces-msg{margin-top:12px;color:#fca5a5;}
+#spcal-acces-code-etape p{margin-bottom:12px;}
+.spcal-acces-champ{display:block;width:100%;background:#1a1a1a;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 14px;color:#fff;font-size:16px;margin-bottom:10px;outline:none;text-align:center;}
+.spcal-acces-btn{display:block;width:100%;background:#0f70b7;border:none;border-radius:10px;padding:12px 16px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+.spcal-acces-lien{display:block;width:100%;background:none;border:none;margin-top:10px;padding:8px;color:rgba(255,255,255,.6);font-size:13px;text-decoration:underline;cursor:pointer;}
+#spcal-error-retry{max-width:320px;margin-top:8px;}
+
+/* ── ESPACE FAMILLE ───────────────────────────────────────────── */
+#spcal-famille{flex-shrink:0;display:flex;gap:8px;padding:8px 16px;background:#111;border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto;}
+.spcal-famille-btn{flex-shrink:0;background:#1a1a1a;border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:8px 16px;color:rgba(255,255,255,.75);font-size:14px;font-weight:600;cursor:pointer;}
+.spcal-famille-btn.active{background:#0f70b7;border-color:#0f70b7;color:#fff;cursor:default;}
 
 /* ── APP SHELL ───────────────────────────────────────────────── */
 #spcal-app{display:none;flex-direction:column;height:100%;}

@@ -54,9 +54,12 @@ function getToken() {
     // 1. URL param ?token=
     var params = new URLSearchParams(location.search);
     var t = params.get('token');
+    var stocke = STORE.get('spcal_token');
+    // Icône de l'écran d'accueil (source=pwa) : rouvrir le dernier membre choisi, pas celui de l'installation.
+    if (t && params.get('source') === 'pwa' && stocke) return stocke;
     if (t) { STORE.set('spcal_token', t); return t; }
     // 2. Stockage local
-    return STORE.get('spcal_token');
+    return stocke;
 }
 
 function getJwt() { return STORE.get('spcal_jwt'); }
@@ -65,6 +68,14 @@ function jwtExpired(jwt) {
         var p = JSON.parse(atob(jwt.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
         return !p.exp || p.exp < Math.floor(Date.now()/1000) + 60;
     } catch(e){ return true; }
+}
+
+/* La session ouverte appartient-elle à ce lien ? Sinon le lien d'un enfant affichait le frère ou la
+   sœur tant que sa session (24 h) n'avait pas expiré. */
+function jwtEstPour(jwt, token) {
+    try {
+        return JSON.parse(atob(jwt.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub === token;
+    } catch(e){ return false; }
 }
 
 function auth(token) {
@@ -118,16 +129,25 @@ function init() {
 function initEleve() {
     var token = getToken();
     if (!token) {
-        showError('Aucun lien d\'accès trouvé.<br>Utilisez le lien reçu par email.');
+        showAcces('Retrouver mon accès', 'Entrez l\'adresse email connue du club : vous recevrez un code à taper ici.');
         return;
     }
+    ouvrirSession(token);
+}
 
+function erreurApi(r, defaut) {
+    var e = new Error((r && r.message) || defaut);
+    e.code = r && r.code;
+    return e;
+}
+
+function ouvrirSession(token) {
     var jwt = getJwt();
-    var needAuth = !jwt || jwtExpired(jwt);
+    var needAuth = !jwt || jwtExpired(jwt) || !jwtEstPour(jwt, token);
 
     var authPromise = needAuth
         ? auth(token).then(function(r) {
-            if (!r.success) throw new Error(r.message || 'Authentification échouée');
+            if (!r.success) throw erreurApi(r, 'Authentification échouée');
             STORE.set('spcal_jwt', r.jwt);
           })
         : Promise.resolve();
@@ -141,16 +161,38 @@ function initEleve() {
         })
         .then(function(results) {
             var eleve = results[0], cal = results[1];
-            if (eleve.code) throw new Error(eleve.message || 'Profil introuvable');
+            if (eleve.code) throw erreurApi(eleve, 'Profil introuvable');
             gEleve = eleve;
             gCours = (cal.cours || []);
+            spCalManifestPour(token);
             renderApp();
             registerSW();
             spCalSetupPush();
         })
         .catch(function(err) {
             STORE.del('spcal_jwt');
-            showError(esc(err.message || 'Erreur de connexion'));
+            // Session refusée (lien révoqué, compte désactivé) : refaire une authentification pour connaître la vraie raison.
+            if (!needAuth) { ouvrirSession(token); return; }
+            var code = err.code || '';
+            var refuse = code === 'spcal_inactive' || code === 'spcal_not_found' || code === 'spcal_invalid_token';
+            // Dernier membre choisi plus valable : revenir au membre de l'icône avant de déclarer l'accès perdu.
+            var deLUrl = new URLSearchParams(location.search).get('token');
+            if (refuse && deLUrl && deLUrl !== token) {
+                STORE.set('spcal_token', deLUrl);
+                ouvrirSession(deLUrl);
+                return;
+            }
+            if (code === 'spcal_inactive') {
+                showAcces('Compte inactif', 'Ce compte n\'est plus actif : contactez le club pour le renouvellement. Si un autre membre de la famille est actif, un code par email vous donne accès à son espace.');
+            } else if (refuse) {
+                showAcces('Lien expiré', 'Ce lien n\'est plus valable. Entrez l\'adresse email connue du club : vous recevrez un code à taper ici.');
+            } else if (code) {
+                showError(esc(err.message || 'Erreur de connexion'));
+            } else {
+                showError('Vérifiez votre connexion et réessayez.', 'Connexion impossible');
+                var retry = document.getElementById('spcal-error-retry');
+                if (retry) retry.style.display = 'block';
+            }
         });
 }
 
@@ -246,6 +288,7 @@ function renderApp() {
     var navPtg = document.getElementById('spcal-nav-pointage');
     if (navPtg) navPtg.style.display = 'none';
     renderHeader();
+    renderFamille();
     renderAccueil();
     renderCarte();
     renderCalendrier();
@@ -272,6 +315,39 @@ function renderHeader() {
         pill.textContent = el.grade;
         pill.style.display = 'block';
     }
+}
+
+/* Espace famille : un bouton par membre. Le changement recharge la page : aucun affichage de l'enfant
+   précédent ne peut rester à l'écran. */
+function renderFamille() {
+    var box = document.getElementById('spcal-famille');
+    var membres = (gEleve && gEleve.famille) || [];
+    if (!box || membres.length < 2) return;
+    box.innerHTML = '';
+    membres.forEach(function(m) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'spcal-famille-btn' + (m.courant ? ' active' : '');
+        b.setAttribute('aria-pressed', m.courant ? 'true' : 'false');
+        b.textContent = m.prenom;
+        if (!m.courant) b.addEventListener('click', function() { spCalOuvrirLien(m.token); });
+        box.appendChild(b);
+    });
+    box.style.display = 'flex';
+}
+
+function spCalOuvrirLien(token) {
+    STORE.set('spcal_token', token);
+    STORE.del('spcal_jwt');
+    location.replace(location.pathname + '?token=' + encodeURIComponent(token));
+}
+
+/* L'icône ajoutée à l'écran d'accueil garde le lien personnel, même si la page a été ouverte sans ?token=. */
+function spCalManifestPour(token) {
+    var link = document.querySelector('link[rel="manifest"]');
+    if (!link) return;
+    var base = (link.getAttribute('href') || '').split('&t=')[0];
+    if (base) link.setAttribute('href', base + '&t=' + encodeURIComponent(token));
 }
 
 function renderAccueil() {
@@ -778,14 +854,64 @@ function spCalQrFermer() {
 }
 
 /* ── Erreur ──────────────────────────────────────────────────── */
-function showError(msg) {
+function showError(msg, titre) {
     hide('spcal-loading');
     hide('spcal-app');
     var err = document.getElementById('spcal-error');
     if (err) err.style.display = 'flex';
     var msgEl = document.getElementById('spcal-error-msg');
     if (msgEl) msgEl.innerHTML = msg;
+    var titreEl = document.getElementById('spcal-error-titre');
+    if (titreEl) titreEl.textContent = titre || 'Accès invalide';
 }
+
+/* ── Retrouver son accès par un code reçu par email ──────────── */
+function showAcces(titre, msg) {
+    showError(esc(msg), titre);
+    showBlock('spcal-acces');
+}
+function accesMessage(txt) {
+    var el = document.getElementById('spcal-acces-msg');
+    if (el) el.textContent = txt || '';
+}
+function accesAppel(chemin, corps) {
+    return fetch(API + chemin, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(corps)
+    }).then(function(r){ return r.json(); });
+}
+window.spCalAccesDemander = function() {
+    var email = document.getElementById('spcal-acces-email').value.trim();
+    if (!email) { accesMessage('Entrez votre adresse email.'); return; }
+    accesMessage('Envoi en cours…');
+    accesAppel('/acces/demander', {email: email})
+        .then(function(r) {
+            if (!r.success) { accesMessage(r.message || 'Envoi impossible. Réessayez.'); return; }
+            accesMessage('');
+            hide('spcal-acces-email-etape');
+            showBlock('spcal-acces-code-etape');
+        })
+        .catch(function() { accesMessage('Vérifiez votre connexion et réessayez.'); });
+};
+window.spCalAccesVerifier = function() {
+    var email = document.getElementById('spcal-acces-email').value.trim();
+    var code  = document.getElementById('spcal-acces-code').value.trim();
+    if (!code) { accesMessage('Entrez le code reçu par email.'); return; }
+    accesMessage('Vérification…');
+    accesAppel('/acces/verifier', {email: email, code: code})
+        .then(function(r) {
+            if (!r.success || !r.token) { accesMessage(r.message || 'Code incorrect ou expiré.'); return; }
+            spCalOuvrirLien(r.token);
+        })
+        .catch(function() { accesMessage('Vérifiez votre connexion et réessayez.'); });
+};
+window.spCalAccesRetour = function() {
+    accesMessage('');
+    document.getElementById('spcal-acces-code').value = '';
+    hide('spcal-acces-code-etape');
+    showBlock('spcal-acces-email-etape');
+};
 
 /* ── Service Worker ──────────────────────────────────────────── */
 function registerSW() {

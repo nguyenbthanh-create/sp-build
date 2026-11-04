@@ -13,6 +13,45 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 trait SpCalPro_DB_Membres {
 
+    /**
+     * Clé de famille d'un adhérent : l'adresse qui reçoit ses mails (email du parent, sinon le sien),
+     * en minuscules. Seul critère retenu : cette adresse reçoit déjà tous les liens, personne n'accède
+     * donc à plus qu'aujourd'hui. La table famille_liens n'est pas utilisée ici : elle peut rapprocher
+     * par le nom de famille (parents séparés, homonymes).
+     */
+    public static function cle_famille( $el ) {
+        $email = ! empty( $el->email_parent ) ? $el->email_parent : ( $el->email ?? '' );
+        return strtolower( trim( (string) $email ) );
+    }
+
+    /**
+     * Membres actifs d'une famille (même adresse, voir cle_famille()), triés par prénom. Un membre sans
+     * lien personnel en reçoit un ici, sans mail : le changement de membre en a besoin.
+     *
+     * @return object[] id, prenom, nom, token
+     */
+    public function get_famille_par_email( $email ) {
+        global $wpdb;
+        $cle = strtolower( trim( (string) $email ) );
+        if ( ! is_email( $cle ) ) return array();
+        $tel  = $this->table_eleves();
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT id, prenom, nom, token FROM $tel
+             WHERE actif = 1
+               AND ( LOWER( TRIM( email_parent ) ) = %s
+                     OR ( ( email_parent IS NULL OR TRIM( email_parent ) = '' ) AND LOWER( TRIM( email ) ) = %s ) )
+             ORDER BY prenom, nom",
+            $cle, $cle
+        ) );
+        foreach ( (array) $rows as $m ) {
+            if ( empty( $m->token ) ) {
+                $m->token = bin2hex( random_bytes( 32 ) );
+                $wpdb->update( $tel, array( 'token' => $m->token ), array( 'id' => intval( $m->id ) ) );
+            }
+        }
+        return (array) $rows;
+    }
+
 
     /**
      * Retourne les membres filtrés par rôle pour l'affichage frontend.

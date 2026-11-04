@@ -47,6 +47,17 @@ trait SpCalPro_Admin_Pwa {
             'callback'            => array( $this, 'rest_pwa_calendrier_club' ),
             'permission_callback' => '__return_true',
         ) );
+        // Retrouver son accès par un code reçu par email (écran d'erreur de l'application)
+        register_rest_route( 'spcal/v1', '/acces/demander', array(
+            'methods'             => 'POST',
+            'callback'            => array( $this, 'rest_pwa_acces_demander' ),
+            'permission_callback' => '__return_true',
+        ) );
+        register_rest_route( 'spcal/v1', '/acces/verifier', array(
+            'methods'             => 'POST',
+            'callback'            => array( $this, 'rest_pwa_acces_verifier' ),
+            'permission_callback' => '__return_true',
+        ) );
         // Push subscriptions
         register_rest_route( 'spcal/v1', '/push/vapid-public', array(
             'methods'             => 'GET',
@@ -108,6 +119,13 @@ trait SpCalPro_Admin_Pwa {
         if ( ! $raw_jwt ) return new WP_Error( 'spcal_no_auth', 'Authentification requise.', array( 'status' => 401 ) );
         $payload = $this->jwt_decode( $raw_jwt );
         if ( ! $payload || empty( $payload['eid'] ) ) return new WP_Error( 'spcal_invalid_jwt', 'Session expirée. Reconnectez-vous.', array( 'status' => 401 ) );
+        // Un lien révoqué coupe aussi les sessions déjà ouvertes : la session garde dans « sub » le lien qui l'a ouverte.
+        global $wpdb;
+        $tel     = $this->db->table_eleves();
+        $courant = (string) $wpdb->get_var( $wpdb->prepare( "SELECT token FROM $tel WHERE id = %d", intval( $payload['eid'] ) ) );
+        if ( '' === $courant || ! hash_equals( $courant, (string) ( $payload['sub'] ?? '' ) ) ) {
+            return new WP_Error( 'spcal_invalid_jwt', 'Session expirée. Reconnectez-vous.', array( 'status' => 401 ) );
+        }
         return intval( $payload['eid'] );
     }
 
@@ -131,6 +149,66 @@ trait SpCalPro_Admin_Pwa {
             'success' => true, 'jwt' => $jwt, 'expires_at' => $exp, 'ttl' => DAY_IN_SECONDS,
             'eleve'   => array( 'id' => intval( $el->id ), 'prenom' => $el->prenom, 'nom' => mb_strtoupper( $el->nom ) ),
         ) );
+    }
+
+    /**
+     * POST /acces/demander { email } : envoie un code à 6 chiffres à une adresse connue. Réponse identique
+     * que l'adresse soit connue ou non, pour ne pas révéler qui est adhérent. Le code se tape dans
+     * l'application : c'est ce qui répare une icône sur iPhone, où un lien s'ouvrirait dans Safari.
+     */
+    public function rest_pwa_acces_demander( WP_REST_Request $req ) {
+        $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) );
+        if ( ! $this->pwa_rate_limit( 'acces_ip_' . $ip, 5, 10 * MINUTE_IN_SECONDS ) ) {
+            return new WP_Error( 'spcal_rate_limit', 'Trop de demandes. Réessayez dans quelques minutes.', array( 'status' => 429 ) );
+        }
+        $json  = $req->get_json_params() ?: array();
+        $email = strtolower( trim( sanitize_email( wp_unslash( (string) ( $json['email'] ?? '' ) ) ) ) );
+        $ok    = rest_ensure_response( array( 'success' => true ) );
+        if ( ! is_email( $email ) ) return $ok;
+        if ( ! $this->pwa_rate_limit( 'acces_mail_' . $email, 3, HOUR_IN_SECONDS ) ) return $ok;
+        $famille = $this->db->get_famille_par_email( $email );
+        if ( ! $famille ) return $ok;
+
+        $code = sprintf( '%06d', random_int( 0, 999999 ) );
+        set_transient( 'spcal_ac_' . md5( $email ), array(
+            'h' => hash_hmac( 'sha256', $code, $this->jwt_secret() ),
+            'e' => 0,
+        ), 10 * MINUTE_IN_SECONDS );
+
+        $club    = get_option( 'blogname', 'Club' );
+        $prenoms = implode( ', ', wp_list_pluck( $famille, 'prenom' ) );
+        $body    = "Bonjour,\n\nVotre code d'accès à l'espace membre de $club ($prenoms) :\n\n";
+        $body   .= "    $code\n\n";
+        $body   .= "Tapez-le dans l'application. Il reste valable 10 minutes.\n\n";
+        $body   .= "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message : rien n'a changé.\n";
+        $body   .= "\n-- \n" . $club;
+        wp_mail( $email, '[' . $club . '] Votre code d\'accès', $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
+        return $ok;
+    }
+
+    /** POST /acces/verifier { email, code } : renvoie le lien personnel du premier membre de la famille. 5 essais par code. */
+    public function rest_pwa_acces_verifier( WP_REST_Request $req ) {
+        $ip = sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ?? 'unknown' ) );
+        if ( ! $this->pwa_rate_limit( 'acces_verif_' . $ip, 10, 10 * MINUTE_IN_SECONDS ) ) {
+            return new WP_Error( 'spcal_rate_limit', 'Trop d\'essais. Réessayez dans quelques minutes.', array( 'status' => 429 ) );
+        }
+        $json   = $req->get_json_params() ?: array();
+        $email  = strtolower( trim( sanitize_email( wp_unslash( (string) ( $json['email'] ?? '' ) ) ) ) );
+        $code   = preg_replace( '/\D/', '', (string) ( $json['code'] ?? '' ) );
+        $refus  = new WP_Error( 'spcal_code_invalide', 'Code incorrect ou expiré.', array( 'status' => 400 ) );
+        $cle    = 'spcal_ac_' . md5( $email );
+        $etat   = get_transient( $cle );
+        if ( ! is_array( $etat ) || empty( $etat['h'] ) ) return $refus;
+        if ( ! hash_equals( $etat['h'], hash_hmac( 'sha256', $code, $this->jwt_secret() ) ) ) {
+            $etat['e'] = intval( $etat['e'] ?? 0 ) + 1;
+            if ( $etat['e'] >= 5 ) delete_transient( $cle );
+            else set_transient( $cle, $etat, 10 * MINUTE_IN_SECONDS );
+            return $refus;
+        }
+        delete_transient( $cle );
+        $famille = $this->db->get_famille_par_email( $email );
+        if ( ! $famille ) return $refus;
+        return rest_ensure_response( array( 'success' => true, 'token' => $famille[0]->token ) );
     }
 
     public function rest_pwa_eleve_me( WP_REST_Request $req ) {
@@ -175,6 +253,14 @@ trait SpCalPro_Admin_Pwa {
             'parcours'   => SP_Cal_Passages::get_instance()->donnees_eleve( $el ),
             // Passerelle vers la fiche complète (grades, présences, doboks) — unification fiche / PWA, étape 1.
             'fiche_url'  => ( $this->token && ! empty( $el->token ) ) ? $this->token->get_fiche_url( $el->token ) : '',
+            // Espace famille : membres actifs à la même adresse, pour passer de l'un à l'autre en haut de l'écran.
+            'famille'    => array_map( static function( $m ) use ( $el ) {
+                return array(
+                    'prenom'  => $m->prenom,
+                    'token'   => $m->token,
+                    'courant' => intval( $m->id ) === intval( $el->id ),
+                );
+            }, $this->db->get_famille_par_email( SpCalPro_DB::cle_famille( $el ) ) ),
             'carte' => array(
                 'recto'         => $carte_html['recto'],
                 'verso'         => $carte_html['verso'],
@@ -296,7 +382,10 @@ trait SpCalPro_Admin_Pwa {
     public function pwa_head_tags() {
         global $post;
         if ( ! $post || ! has_shortcode( $post->post_content, 'sp_cal_app' ) ) return;
-        $manifest_url = esc_url( home_url( '/?spcal_manifest=1' ) );
+        // Le lien personnel passe dans le manifeste : l'icône installée le garde (voir maybe_serve_pwa_assets).
+        // assets/pwa/app.js refait la même chose quand la page est ouverte sans ?token=.
+        $jeton        = sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) );
+        $manifest_url = esc_url( home_url( '/?spcal_manifest=1' . ( preg_match( '/^[0-9a-f]{64}$/', $jeton ) ? '&t=' . $jeton : '' ) ) );
         $logo_url     = esc_url( get_option( 'sp_cal_logo_url', '' ) );
         $club         = esc_attr( get_option( 'blogname', 'TKD' ) );
         echo "<link rel=\"manifest\" href=\"$manifest_url\">\n";
@@ -329,11 +418,18 @@ trait SpCalPro_Admin_Pwa {
                 $icons[] = array( 'src' => $icon_url, 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any maskable' );
                 $icons[] = array( 'src' => $icon_url, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any maskable' );
             }
+            // « t » et non « token » : SpCalPro_Token::maybe_render_fiche() intercepte ?token= sur toutes les pages.
+            $jeton = sanitize_text_field( wp_unslash( $_GET['t'] ?? '' ) );
+            $start = preg_match( '/^[0-9a-f]{64}$/', $jeton )
+                ? add_query_arg( array( 'token' => $jeton, 'source' => 'pwa' ), home_url( '/app/' ) )
+                : home_url( '/app/?source=pwa' );
             $manifest = array(
+                // Identité fixe (l'ancienne adresse de départ) : une seule application par téléphone.
+                'id'               => '/app/?source=pwa',
                 'name'             => get_option( 'blogname', 'TKD' ),
                 'short_name'       => get_option( 'blogname', 'TKD' ),
                 'description'      => 'Suivi membre — ' . get_option( 'blogname', '' ),
-                'start_url'        => home_url( '/app/?source=pwa' ),
+                'start_url'        => $start,
                 'scope'            => home_url( '/' ),
                 'display'          => 'standalone',
                 'background_color' => '#111111',
@@ -504,8 +600,23 @@ window.addEventListener('error', function(e) {
     <!-- Error -->
     <div id="spcal-error">
         <div class="spcal-err-ico">🔒</div>
-        <h2>Accès invalide</h2>
+        <h2 id="spcal-error-titre">Accès invalide</h2>
         <p id="spcal-error-msg">Lien expiré ou invalide.<br>Contactez votre club pour recevoir un nouveau lien.</p>
+        <button type="button" id="spcal-error-retry" class="spcal-acces-btn" style="display:none" onclick="location.reload()">Réessayer</button>
+        <!-- Retrouver son accès par un code reçu par email — spCalAccesDemander() / spCalAccesVerifier() -->
+        <div id="spcal-acces" style="display:none">
+            <div id="spcal-acces-email-etape">
+                <input id="spcal-acces-email" class="spcal-acces-champ" type="email" inputmode="email" autocomplete="email" placeholder="Votre adresse email">
+                <button type="button" class="spcal-acces-btn" onclick="spCalAccesDemander()">Recevoir un code</button>
+            </div>
+            <div id="spcal-acces-code-etape" style="display:none">
+                <p>Si cette adresse est connue du club, un code vient d'y être envoyé. Pensez aux courriers indésirables.</p>
+                <input id="spcal-acces-code" class="spcal-acces-champ" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Code à 6 chiffres">
+                <button type="button" class="spcal-acces-btn" onclick="spCalAccesVerifier()">Valider</button>
+                <button type="button" class="spcal-acces-lien" onclick="spCalAccesRetour()">Changer d'adresse ou renvoyer un code</button>
+            </div>
+            <p id="spcal-acces-msg" role="alert"></p>
+        </div>
     </div>
 
     <!-- App -->
@@ -521,6 +632,9 @@ window.addEventListener('error', function(e) {
             </div>
             <div id="spcal-grade-pill" style="display:none"></div>
         </header>
+
+        <!-- Espace famille : un bouton par membre, affiché à partir de 2 — renderFamille() -->
+        <div id="spcal-famille" style="display:none"></div>
 
         <!-- Main -->
         <main id="spcal-main">

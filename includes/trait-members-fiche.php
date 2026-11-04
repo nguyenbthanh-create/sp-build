@@ -121,6 +121,10 @@ trait SP_Cal_Members_Fiche {
                     data-eleve-id="<?php echo intval($eleve_id); ?>">
                 📧 Renvoyer le lien d'accès
             </button>
+            <button type="button" id="sp-btn-revoke-token" class="button"
+                    data-eleve-id="<?php echo intval($eleve_id); ?>">
+                🔒 Révoquer les liens de la famille
+            </button>
             <span id="sp-token-result" style="font-size:12px;color:#15803d;display:none;"></span>
             <?php endif; ?>
         </div>

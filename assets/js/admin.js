@@ -240,6 +240,22 @@
         });
     });
 
+    /* ── Token fiche membre : révoquer (toute la famille) ── */
+    $(document).on('click', '#sp-btn-revoke-token', function () {
+        if (!confirm('Les liens et les icônes déjà installées de toute la famille cesseront de fonctionner, et un nouveau lien sera envoyé par email. Continuer ?')) return;
+        var eleveId = $(this).data('eleve-id');
+        var btn = $(this).prop('disabled', true).text('Révocation…');
+        $.post(SpCalAdmin.ajaxurl, {
+            action:   'sp_cal_revoke_token',
+            nonce:    SpCalAdmin.nonce,
+            eleve_id: eleveId,
+        }, function (res) {
+            btn.prop('disabled', false).text('🔒 Révoquer les liens de la famille');
+            $('#sp-token-result').text(res.success ? '✅ ' + res.data : '❌ ' + res.data).show();
+            setTimeout(function(){ $('#sp-token-result').fadeOut(); }, 5000);
+        });
+    });
+
     /* ── Token fiche membre : générer tous ───────────── */
     $(document).on('click', '#sp-btn-generate-all-tokens', function () {
         if (!confirm('Générer et envoyer les tokens à tous les élèves actifs sans lien ?')) return;

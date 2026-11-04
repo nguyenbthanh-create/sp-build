@@ -7,8 +7,12 @@ class SpCalPro_Token {
 
     private $db;
 
+    /** Adresses déjà servies pendant cette requête : un envoi groupé ne fait qu'un mail par famille. */
+    private $familles_envoyees = array();
+
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
+        add_action( 'wp_ajax_sp_cal_revoke_token', array( $this, 'revoke_token_ajax' ) );
         add_shortcode( 'sp_cal_fiche_membre', array( $this, 'render_public_fiche' ) );
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue' ) );
         // Intercepter ?token= sur N'IMPORTE quelle page — pas besoin de configurer une URL
@@ -122,8 +126,9 @@ class SpCalPro_Token {
         // Ne pas renvoyer si déjà envoyé et pas forcé
         if ( ! $force && $el->token && $el->token_sent_at ) return false;
 
-        // Générer le token
-        $token = bin2hex( random_bytes(32) ); // 64 chars hex
+        // Garder le lien existant : un renvoi ne doit pas casser les raccourcis ni le lien du frère ou
+        // de la sœur envoyé juste avant. Seule la révocation (revoke_token_ajax) en crée un nouveau.
+        $token = $el->token ?: bin2hex( random_bytes(32) ); // 64 chars hex
         $wpdb->update( $tel, array(
             'token'         => $token,
             'token_sent_at' => current_time('mysql'),
@@ -136,41 +141,46 @@ class SpCalPro_Token {
 
     /**
      * Envoie l'email de token à l'élève ou au parent.
-     * Gère le regroupement par parent (plusieurs enfants).
+     * Un seul lien et un seul mail par famille (même adresse) : l'application permet de passer d'un
+     * membre à l'autre.
      */
     public function send_token_email( $el ) {
         $dest = $el->email_parent ?: $el->email;
         if ( ! $dest || ! is_email($dest) ) return false;
 
+        $cle = SpCalPro_DB::cle_famille( $el );
+        if ( isset( $this->familles_envoyees[ $cle ] ) ) return true;
+
         $club     = get_option('blogname', 'Club');
-        $fiche_url= $this->get_fiche_url( $el->token );
         $prenom   = $el->prenom;
         $nom      = mb_strtoupper($el->nom);
+        $famille  = $this->db->get_famille_par_email( $cle );
+        $prenoms  = implode( ', ', wp_list_pluck( $famille, 'prenom' ) );
+        $en_famille = count( $famille ) > 1;
 
-        // Chercher d'autres enfants avec le même email parent pour les regrouper
-        $fratrie = array();
-        if ( $el->email_parent ) {
-            global $wpdb;
-            $tel = $this->db->table_eleves();
-            $fratrie = $wpdb->get_results( $wpdb->prepare(
-                "SELECT id, prenom, nom, token FROM $tel
-                 WHERE email_parent = %s AND actif = 1 AND id != %d AND token IS NOT NULL",
-                $el->email_parent, intval($el->id)
-            ) );
-        }
+        // Le lien doit ouvrir un compte actif, même si l'envoi porte sur un membre désactivé de la famille.
+        $token_lien = ( empty( $el->actif ) && $famille ) ? $famille[0]->token : $el->token;
+        $fiche_url  = $this->get_fiche_url( $token_lien );
 
-        $subject = '[' . $club . '] 🏅 Accès à la fiche de suivi de ' . $prenom . ' ' . $nom;
+        $subject = $en_famille
+            ? '[' . $club . '] 🏅 Votre espace famille : ' . $prenoms
+            : '[' . $club . '] 🏅 Accès à la fiche de suivi de ' . $prenom . ' ' . $nom;
 
         // Un seul lien, valable sur téléphone comme sur ordinateur (étape 1 de l'unification
         // fiche / application, 26/09/2026) : l'application si la page [sp_cal_app] existe —
         // elle mène à la fiche complète via « Ma fiche complète » —, sinon la fiche.
-        $app_url = $this->get_app_url( $el->token );
+        $app_url = $this->get_app_url( $token_lien );
         $lien    = $app_url ?: $fiche_url;
 
         $body  = "Bonjour,\n\n";
         $body .= "L'adhésion de $prenom $nom a été activée au sein de $club.\n\n";
-        $body .= "Son espace membre, sur téléphone comme sur ordinateur :\n";
+        $body .= $en_famille
+            ? "Votre espace famille ($prenoms), sur téléphone comme sur ordinateur :\n"
+            : "Son espace membre, sur téléphone comme sur ordinateur :\n";
         $body .= "➜ " . $lien . "\n\n";
+        if ( $en_famille && $app_url ) {
+            $body .= "Ce lien unique sert pour toute la famille : choisissez le prénom en haut de l'écran.\n\n";
+        }
 
         if ( $app_url ) {
             $body .= "Vous y trouverez les prochains cours, le calendrier, la carte de membre, les inscriptions aux événements et les alertes d'annulation. ";
@@ -184,19 +194,20 @@ class SpCalPro_Token {
 
         $body .= "Ce lien est personnel et unique. Ne pas le partager.\n";
 
-        // Ajouter les liens des frères/sœurs si applicable
-        if ( ! empty($fratrie) ) {
-            $body .= "\nAccès à l'espace des autres membres de la famille :\n";
-            foreach ($fratrie as $fr) {
-                $fr_url = $this->get_app_url( $fr->token ) ?: $this->get_fiche_url( $fr->token );
-                $body  .= "• " . $fr->prenom . ' ' . mb_strtoupper($fr->nom) . " : " . $fr_url . "\n";
+        // Sans application, pas de changement de membre : garder un lien de fiche par membre.
+        if ( $en_famille && ! $app_url ) {
+            $body .= "\nAccès à la fiche de chaque membre de la famille :\n";
+            foreach ( $famille as $fr ) {
+                $body .= "• " . $fr->prenom . ' ' . mb_strtoupper( $fr->nom ) . " : " . $this->get_fiche_url( $fr->token ) . "\n";
             }
         }
 
         $body .= "\n-- \n" . $club;
 
         $headers = array('Content-Type: text/plain; charset=UTF-8');
-        return wp_mail($dest, $subject, $body, $headers);
+        $envoye  = wp_mail($dest, $subject, $body, $headers);
+        if ( $envoye ) $this->familles_envoyees[ $cle ] = true;
+        return $envoye;
     }
 
     /** URL de l'application (page contenant [sp_cal_app]) avec le lien personnel, ou '' si pas de page. */
@@ -242,7 +253,7 @@ class SpCalPro_Token {
         $el  = $wpdb->get_row( $wpdb->prepare(
             "SELECT * FROM $tel WHERE token = %s", $token
         ) );
-        if ( ! $el ) return '<div class="sp-membre-error">🔒 Lien invalide ou expiré. Contactez votre club.</div>';
+        if ( ! $el ) return '<div class="sp-membre-error">🔒 Lien invalide ou expiré. <a href="' . esc_url( home_url( '/app/' ) ) . '">Retrouver mon accès</a></div>';
 
         // Même marges que l'affichage direct (maybe_render_fiche) : la page de la fiche imprime
         // son contenu sans conteneur (modèle Elementor « en-tête et pied de page »).
@@ -1022,6 +1033,27 @@ class SpCalPro_Token {
         $id   = intval($_POST['eleve_id'] ?? 0);
         $sent = $this->generate_and_send($id, true);
         wp_send_json_success($sent ? 'Email envoyé.' : 'Envoi impossible (email manquant ?).');
+    }
+
+    /**
+     * Révoque les liens de toute la famille (lien transféré par erreur, téléphone perdu) et envoie le
+     * nouveau lien. Toute la famille : un lien encore valable donnerait accès aux nouveaux liens des autres.
+     */
+    public function revoke_token_ajax() {
+        check_ajax_referer('sp_cal_admin_nonce','nonce');
+        if (!current_user_can(SP_Cal_Roles::CAP_GESTION_ADHESIONS)) wp_send_json_error('Accès refusé',403);
+        global $wpdb;
+        $tel = $this->db->table_eleves();
+        $id  = intval($_POST['eleve_id'] ?? 0);
+        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE id=%d", $id ) );
+        if ( ! $el ) wp_send_json_error('Adhérent introuvable.');
+        $ids   = wp_list_pluck( $this->db->get_famille_par_email( SpCalPro_DB::cle_famille( $el ) ), 'id' );
+        $ids[] = $id;
+        foreach ( array_unique( array_map( 'intval', $ids ) ) as $mid ) {
+            $wpdb->update( $tel, array( 'token' => bin2hex( random_bytes(32) ) ), array( 'id' => $mid ) );
+        }
+        $sent = $this->generate_and_send( $id, true );
+        wp_send_json_success( $sent ? 'Anciens liens révoqués, nouveau lien envoyé.' : 'Anciens liens révoqués, mais envoi impossible (email manquant ?).' );
     }
 
     public function generate_all_tokens_ajax() {
