@@ -276,6 +276,8 @@ Ajouts :
 
 Vérifié : syntaxe PHP et JS, 65 tests, PHPStan sans alerte sur les fichiers modifiés ; application réelle avec un serveur simulé (9 scénarios, navigateur intégré). **Non testé** : code PHP sur WordPress, mails réels, vrai iPhone et vrai Android — à faire sur le site de test.
 
+Ajout : à l'enregistrement d'une fiche admin, un « Email parent » vide reprend l'email du représentant 1 (class-admin-members.php). Une adresse déjà saisie n'est jamais remplacée.
+
 Constats non traités : aucune notification push n'est envoyée par le serveur (SpCalPro_WebPush n'existe pas) ; à la validation d'une nouvelle adhésion, send_token_or_welcome() cherche une classe SP_Token inexistante (la classe est SpCalPro_Token) et semble envoyer un simple mail de bienvenue sans lien — à confirmer.
 
 *Dernière mise à jour de ce fichier : 04/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

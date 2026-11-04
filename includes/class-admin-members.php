@@ -178,7 +178,9 @@ class SP_Cal_Members {
                 'motif_inactif'    => sanitize_text_field( wp_unslash( $_POST['eleve_motif']         ?? '' ) ),
                 'telephone'        => sanitize_text_field( wp_unslash( $_POST['eleve_tel']          ?? '' ) ),
                 'email'            => sanitize_email( wp_unslash( $_POST['eleve_email']        ?? '' ) ),
-                'email_parent'     => sanitize_email( wp_unslash( $_POST['eleve_email_parent']    ?? '' ) ),
+                // Vide : reprend l'email du représentant 1 (cette colonne décide de l'envoi du lien et de la famille).
+                'email_parent'     => sanitize_email( wp_unslash( $_POST['eleve_email_parent']    ?? '' ) )
+                    ?: sanitize_email( wp_unslash( $_POST['eleve_repres1_email'] ?? '' ) ),
                 'representant_nom'       => sanitize_text_field( wp_unslash( $repres1['nom']       ?? '' ) ),
                 'representant_prenom'    => sanitize_text_field( wp_unslash( $repres1['prenom']    ?? '' ) ),
                 'representant_telephone' => sanitize_text_field( wp_unslash( $repres1['telephone'] ?? '' ) ),
