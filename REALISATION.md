@@ -294,6 +294,8 @@ Pour les personnes qui n'aiment pas fêter leur anniversaire et ne veulent pas q
 - **Adhérents non renouvelés** retirés du calendrier et du rappel aux encadrants : même règle que la page Anniversaires, `actif = 1` ne suffisait pas.
 - **Bouton général du calendrier retiré** : essayé le même jour (`5b9cdb5`, déployé sur le test uniquement), il masquait tous les anniversaires pour le compte connecté, ce qui ne répondait pas au besoin.
 
-La case n'est que sur la fiche : la personne le demande au bureau, le formulaire d'adhésion ne change pas. Vérifié hors WordPress (syntaxe PHP, 13 contrôles des affichages). Déployé sur le test, essai sur le site à faire. Pas en prod.
+La case n'est que sur la fiche : la personne le demande au bureau, le formulaire d'adhésion ne change pas. Vérifié hors WordPress (syntaxe PHP, 13 contrôles des affichages). **En prod le 05/11/2026 (9349b4b, 9 fichiers)**, à la demande de l'utilisateur ; pages publiques contrôlées (accueil, connexion). Essai de la case sur le site à faire.
+
+**Impression des anniversaires : vrai format A3** (`class-anniversaires.php`). L'affiche et les vignettes n'étaient prévues qu'en A4 : imprimées en A3, elles restaient dans le coin en haut à gauche, malgré la phrase qui le conseillait. Boutons A4 / A3 sur la page d'impression : en A3, même mise en page agrandie (× 1,414) et format A3 demandé au navigateur. PDF d'essai générés hors WordPress : 297 × 420 mm, sans feuille en trop (affiche à 8 et 30 pastilles, vignettes). Non imprimé sur une vraie imprimante. Déployé sur le test.
 
 *Dernière mise à jour de ce fichier : 05/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

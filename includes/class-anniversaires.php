@@ -269,7 +269,7 @@ class SP_Cal_Anniversaires {
 					</p>
 					<p class="description">
 						L'affiche reprend « Joyeux anniversaire ! Le club souhaite un joyeux anniversaire à » suivi des pastilles (photo, prénom, jour) ;
-						les pastilles s'adaptent au nombre d'anniversaires (A4, ou A3 pour un mois très chargé).
+						les pastilles s'adaptent au nombre d'anniversaires. Format A4 ou A3 au choix sur la page d'impression.
 						Au club, seuls le prénom, l'initiale du nom et le jour sont affichés (ni l'âge ni la date de naissance).
 						Photos : <?php echo intval( $avec_photo ); ?> / <?php echo count( $diffusables ); ?> — uniquement si une photo
 						est enregistrée sur la fiche <strong>et</strong> que la diffusion des photos est autorisée ; sinon, les initiales.
@@ -407,6 +407,10 @@ class SP_Cal_Anniversaires {
 
 		[ $annee, $mois ] = self::mois_demande();
 		$type  = ( isset( $_GET['type'] ) && $_GET['type'] === 'vignettes' ) ? 'vignettes' : 'affiche';
+		$a3    = isset( $_GET['format'] ) && $_GET['format'] === 'a3';
+		$url_format = static function ( string $format ) use ( $type, $annee, $mois ) {
+			return wp_nonce_url( admin_url( 'admin-post.php?action=sp_anniv_print&type=' . $type . '&mois=' . sprintf( '%04d-%02d', $annee, $mois ) . '&format=' . $format ), 'sp_anniv_print' );
+		};
 		$liste = $this->anniversaires_diffusables( $annee, $mois );
 		$club  = get_bloginfo( 'name' );
 		$logo  = '';
@@ -435,6 +439,8 @@ class SP_Cal_Anniversaires {
 	body { margin: 0; background: #f2f0ed; font-family: 'Fredoka', 'Comic Sans MS', sans-serif; color: var(--encre); }
 	.barre { position: sticky; top: 0; display: flex; gap: 10px; align-items: center; justify-content: center; padding: 12px; background: #fff; border-bottom: 1px solid #e8e5e2; font-size: 14px; }
 	.barre button { font: inherit; font-weight: 600; padding: 8px 18px; border-radius: 20px; border: 1px solid var(--rouge); background: var(--rouge); color: #fff; cursor: pointer; }
+	.barre a { padding: 6px 12px; border-radius: 20px; border: 1px solid #ccc; color: var(--encre); text-decoration: none; font-weight: 500; }
+	.barre a.actif { background: var(--encre); border-color: var(--encre); color: #fff; }
 	.page { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 14mm; background: #fff; box-shadow: 0 4px 18px rgba(0,0,0,.12); position: relative; overflow: hidden; }
 
 	/* Guirlande de fanions aux couleurs des ceintures */
@@ -484,7 +490,10 @@ class SP_Cal_Anniversaires {
 	.page > :not(.decor) { position: relative; z-index: 1; }
 	.page > .pied { position: absolute; }
 
-	@page { size: A4 portrait; margin: 0; }
+	<?php /* A3 : même mise en page agrandie. 1,414 et non 1,4142 : au-delà de 420 mm, une feuille blanche s'ajouterait. */ ?>
+	<?php if ( $a3 ) : ?>.page { zoom: 1.414; }<?php endif; ?>
+
+	@page { size: <?php echo $a3 ? 'A3' : 'A4'; ?> portrait; margin: 0; }
 	@media print {
 		body { background: #fff; }
 		.barre { display: none; }
@@ -496,8 +505,11 @@ class SP_Cal_Anniversaires {
 </head>
 <body>
 <div class="barre">
-	<span><?php echo esc_html( ( $type === 'affiche' ? 'Affiche' : 'Vignettes à découper' ) . ' — ' . $titre_mois . ' ' . $annee ); ?> (A4 ; pour un mois très chargé, imprimez en A3)</span>
+	<span><?php echo esc_html( ( $type === 'affiche' ? 'Affiche' : 'Vignettes à découper' ) . ' — ' . $titre_mois . ' ' . $annee ); ?></span>
+	<a href="<?php echo esc_url( $url_format( 'a4' ) ); ?>"<?php echo $a3 ? '' : ' class="actif"'; ?>>A4</a>
+	<a href="<?php echo esc_url( $url_format( 'a3' ) ); ?>"<?php echo $a3 ? ' class="actif"' : ''; ?>>A3</a>
 	<button type="button" onclick="window.print()">Imprimer</button>
+	<?php if ( $a3 ) : ?><span>Dans la fenêtre d'impression : papier A3, échelle 100 %.</span><?php endif; ?>
 </div>
 <?php
 /** Pastille : photo ronde (initiales dessous, visibles si pas de photo ou si elle ne se charge pas), prénom, jour. */

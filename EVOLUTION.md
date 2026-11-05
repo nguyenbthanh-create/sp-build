@@ -498,6 +498,10 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 2. Contrôler le « Fait à … le … » du prochain email de reçu et de son PDF.
 3. S'assurer que les autres fichiers de la prod sont à jour : préparer les déploiements avec `outils\preparer-deploiement.ps1` (PC du travail) plutôt que fichier par fichier — c'est un fichier resté ancien qui a causé les « Forbidden ».
 
+## 05/11/2026 — Anniversaires : l'adhérent choisit lui-même de l'afficher ou non (à faire, prochain développement)
+
+Demande de l'utilisateur. Depuis le 05/11/2026, la case « 🎂 Anniversaire affiché au club » (colonne `anniversaire_affiche`, voir `REALISATION.md`) n'est que sur la fiche côté bureau : la personne doit le lui demander. **À faire** : permettre aux adhérents de faire ce choix eux-mêmes. Endroit à décider (fiche personnelle ou espace famille, formulaire d'adhésion et de renouvellement). Pour un enfant, le choix revient aux parents.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
