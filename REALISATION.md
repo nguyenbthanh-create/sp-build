@@ -284,11 +284,16 @@ Correctif : la session de l'application passe par l'en-tête X-Spcal-Jwt au lieu
 
 Constats non traités : aucune notification push n'est envoyée par le serveur (SpCalPro_WebPush n'existe pas) ; à la validation d'une nouvelle adhésion, send_token_or_welcome() cherche une classe SP_Token inexistante (la classe est SpCalPro_Token) et semble envoyer un simple mail de bienvenue sans lien — à confirmer.
 
-## 05/11/2026 — Calendrier : masquer les anniversaires, par compte
+## 05/11/2026 — Anniversaires : choix par adhérent de ne pas être annoncé au club
 
-- **Bouton « 🎂 Masquer / Afficher les anniversaires »** en haut du calendrier d'administration. Le choix est mémorisé pour chaque compte (méta utilisateur `sp_cal_masquer_anniversaires`, action AJAX `sp_cal_masquer_anniversaires`) : il suit la personne d'un ordinateur à l'autre et ne change rien pour les autres. Quand il est masqué, le serveur n'envoie plus les anniversaires. Sans effet sur la page Anniversaires, l'affiche, l'application et les emails.
-- **Adhérents non renouvelés retirés du calendrier** (`get_birthdays_for_month()`) : même règle que la page Anniversaires, `actif = 1` ne suffisait pas.
+Pour les personnes qui n'aiment pas fêter leur anniversaire et ne veulent pas que les autres le sachent.
 
-Fichiers : `class-ajax.php`, `trait-db-membres.php`, `templates/calendar.php`, `assets/js/calendar.js`. Vérifié hors WordPress : syntaxe PHP et 15 contrôles côté serveur. Le JavaScript et la disposition de la barre n'ont pas été exécutés : à essayer sur le site de test. Pas encore commité ni déployé.
+- **Case « 🎂 Anniversaire affiché au club »** sur la fiche adhérent (nouvelle colonne `anniversaire_affiche`, cochée par défaut). Décochée, l'adhérent sort du calendrier, de l'affiche et des vignettes, de l'application et du rappel aux encadrants (`SpCalPro_DB::anniversaire_diffusable()`).
+- **Page Anniversaires** : il reste listé avec la mention « non affiché », pour que le bureau comprenne pourquoi.
+- **Vœux par email** : toujours envoyés (ils ne vont qu'à la famille, « Ne pas envoyer » reste à part), sans la phrase « On fêtera ça tous ensemble au club » pour ces adhérents.
+- **Adhérents non renouvelés** retirés du calendrier et du rappel aux encadrants : même règle que la page Anniversaires, `actif = 1` ne suffisait pas.
+- **Bouton général du calendrier retiré** : essayé le même jour (`5b9cdb5`, déployé sur le test uniquement), il masquait tous les anniversaires pour le compte connecté, ce qui ne répondait pas au besoin.
+
+La case n'est que sur la fiche : la personne le demande au bureau, le formulaire d'adhésion ne change pas. Vérifié hors WordPress (syntaxe PHP, 13 contrôles des affichages). Déployé sur le test, essai sur le site à faire. Pas en prod.
 
 *Dernière mise à jour de ce fichier : 05/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

@@ -189,6 +189,7 @@ class SpCalPro_DB {
                 taille_tshirt varchar(20) NOT NULL DEFAULT '',
                 taille_pantalon varchar(20) NOT NULL DEFAULT '',
                 droit_image tinyint(1) NOT NULL DEFAULT 1,
+                anniversaire_affiche tinyint(1) NOT NULL DEFAULT 1,
                 autorisation_seul tinyint(1) NOT NULL DEFAULT 0,
                 infos_sante text DEFAULT NULL,
                 PRIMARY KEY (id)
@@ -530,6 +531,8 @@ class SpCalPro_DB {
                 'taille_tshirt'   => "varchar(20)  NOT NULL DEFAULT ''",
                 'taille_pantalon' => "varchar(20)  NOT NULL DEFAULT ''",
                 'droit_image'     => "tinyint(1)   NOT NULL DEFAULT 1",
+                // 05/11/2026 : 0 = l'adhérent ne souhaite pas que son anniversaire soit annoncé au club.
+                'anniversaire_affiche' => "tinyint(1) NOT NULL DEFAULT 1",
             ) as $col => $def ) {
                 if ( ! $wpdb->get_var( "SHOW COLUMNS FROM `$tel` LIKE '$col'" ) )
                     $wpdb->query( "ALTER TABLE `$tel` ADD COLUMN `$col` $def" );

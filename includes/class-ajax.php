@@ -5,15 +5,11 @@ if ( ! class_exists( 'SpCalPro_Ajax' ) ) :
 
 class SpCalPro_Ajax {
 
-    // Choix propre à chaque compte (05/11/2026) : '1' = ne pas afficher les anniversaires sur le calendrier.
-    const META_MASQUER_ANNIVERSAIRES = 'sp_cal_masquer_anniversaires';
-
     private $db;
 
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
         add_action( 'wp_ajax_sp_cal_get_events',              array( $this, 'get_events' ) );
-        add_action( 'wp_ajax_sp_cal_masquer_anniversaires',   array( $this, 'masquer_anniversaires' ) );
         add_action( 'wp_ajax_sp_cal_save_event',              array( $this, 'save_event' ) );
         add_action( 'wp_ajax_sp_cal_delete_event',            array( $this, 'delete_event' ) );
         add_action( 'wp_ajax_sp_cal_get_presences',           array( $this, 'get_presences' ) );
@@ -175,10 +171,8 @@ class SpCalPro_Ajax {
            Réservés aux utilisateurs connectés ayant accès au planning (07/10/2026) : cette action
            est aussi ouverte aux visiteurs (wp_ajax_nopriv_, ancien calendrier en shortcode des
            entraîneurs, remplacé par leur application) et renvoyait à n'importe qui le nom complet
-           et l'âge des adhérents, mineurs compris.
-           Masqués aussi pour le compte qui l'a choisi (bouton du calendrier, 05/11/2026). */
+           et l'âge des adhérents, mineurs compris. */
         $birthdays = current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING )
-            && get_user_meta( get_current_user_id(), self::META_MASQUER_ANNIVERSAIRES, true ) !== '1'
             ? $this->db->get_birthdays_for_month( $year, $month )
             : array();
         foreach ( $birthdays as $b ) {
@@ -211,20 +205,6 @@ class SpCalPro_Ajax {
         } );
 
         wp_send_json_success( $out );
-    }
-
-    /** Bouton « Masquer / Afficher les anniversaires » du calendrier : choix mémorisé pour le compte connecté. */
-    public function masquer_anniversaires() {
-        $this->nonce();
-        if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) wp_send_json_error( 'Accès refusé', 403 );
-        $user_id = get_current_user_id();
-        $masquer = ! empty( $_POST['masquer'] );
-        if ( $masquer ) {
-            update_user_meta( $user_id, self::META_MASQUER_ANNIVERSAIRES, '1' );
-        } else {
-            delete_user_meta( $user_id, self::META_MASQUER_ANNIVERSAIRES );
-        }
-        wp_send_json_success( array( 'masquer' => $masquer ) );
     }
 
     /* ══════════════════════════════════════════════════════════

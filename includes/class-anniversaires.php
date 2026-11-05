@@ -18,6 +18,10 @@
  * l'âge ni la date de naissance complète. Photo uniquement si une photo existe sur la fiche
  * ET que la diffusion est autorisée (droit_image = 1).
  *
+ * Case « Anniversaire affiché au club » de la fiche (anniversaire_affiche, 05/11/2026) : décochée,
+ * l'adhérent sort de l'affiche, des vignettes et de l'application. Il reste listé sur la page
+ * d'administration avec la mention « non affiché », et reçoit toujours ses vœux par email.
+ *
  * @package SP_Build
  */
 
@@ -96,6 +100,11 @@ class SP_Cal_Anniversaires {
 			return $a->jour <=> $b->jour ?: strcasecmp( $a->prenom, $b->prenom );
 		} );
 		return $out;
+	}
+
+	/** Ceux qui peuvent être annoncés au club : sans les adhérents qui l'ont refusé. */
+	private function anniversaires_diffusables( int $annee, int $mois ): array {
+		return array_values( array_filter( $this->get_anniversaires( $annee, $mois ), [ 'SpCalPro_DB', 'anniversaire_diffusable' ] ) );
 	}
 
 	/**
@@ -212,7 +221,8 @@ class SP_Cal_Anniversaires {
 		$url_print  = static function ( string $type ) use ( $cle_mois ) {
 			return wp_nonce_url( admin_url( 'admin-post.php?action=sp_anniv_print&type=' . $type . '&mois=' . $cle_mois ), 'sp_anniv_print' );
 		};
-		$avec_photo = count( array_filter( $liste, static fn( $el ) => self::photo( $el ) !== '' ) );
+		$diffusables = array_filter( $liste, [ 'SpCalPro_DB', 'anniversaire_diffusable' ] );
+		$avec_photo  = count( array_filter( $diffusables, static fn( $el ) => self::photo( $el ) !== '' ) );
 		$actif      = get_option( self::OPT_VOEUX_ACTIF, '0' ) === '1';
 		$exclus     = array_map( 'intval', (array) get_option( self::OPT_EXCLUS, [] ) );
 		$journal    = (array) get_option( self::OPT_JOURNAL, [] );
@@ -261,15 +271,20 @@ class SP_Cal_Anniversaires {
 						L'affiche reprend « Joyeux anniversaire ! Le club souhaite un joyeux anniversaire à » suivi des pastilles (photo, prénom, jour) ;
 						les pastilles s'adaptent au nombre d'anniversaires (A4, ou A3 pour un mois très chargé).
 						Au club, seuls le prénom, l'initiale du nom et le jour sont affichés (ni l'âge ni la date de naissance).
-						Photos : <?php echo intval( $avec_photo ); ?> / <?php echo count( $liste ); ?> — uniquement si une photo
+						Photos : <?php echo intval( $avec_photo ); ?> / <?php echo count( $diffusables ); ?> — uniquement si une photo
 						est enregistrée sur la fiche <strong>et</strong> que la diffusion des photos est autorisée ; sinon, les initiales.
+						<?php if ( count( $diffusables ) < count( $liste ) ) : ?>
+							<br><strong><?php echo count( $liste ) - count( $diffusables ); ?> adhérent(s) non affiché(s)</strong> : case « Anniversaire affiché au club » décochée sur leur fiche.
+							Ils n'apparaissent ni sur l'affiche, ni au calendrier, ni dans l'application, ni dans le rappel aux encadrants.
+						<?php endif; ?>
 					</p>
 					<table class="wp-list-table widefat striped" style="margin-top:12px;">
 						<thead><tr><th style="width:150px;">Anniversaire</th><th>Adhérent</th><th>Âge atteint</th><th>Catégorie</th><th>Photo sur l'affiche</th><th>Vœux par email</th></tr></thead>
 						<tbody>
 						<?php foreach ( $liste as $el ) :
-							$raison   = self::photo( $el ) !== '' ? '✅ oui'
-								: ( empty( $el->photo_url ) ? '— pas de photo sur la fiche' : '— diffusion non autorisée' );
+							$raison   = ! SpCalPro_DB::anniversaire_diffusable( $el ) ? '🚫 non affiché (choix de l\'adhérent)'
+								: ( self::photo( $el ) !== '' ? '✅ oui'
+								: ( empty( $el->photo_url ) ? '— pas de photo sur la fiche' : '— diffusion non autorisée' ) );
 							$est_exclu = in_array( (int) $el->id, $exclus, true );
 							$dest      = $this->destinataire_voeux( $el );
 							$url_bascule = wp_nonce_url( admin_url( 'admin-post.php?action=sp_anniv_voeux_exclure&eleve_id=' . intval( $el->id ) . '&mois=' . $cle_mois ), 'sp_anniv_voeux_exclure' );
@@ -392,7 +407,7 @@ class SP_Cal_Anniversaires {
 
 		[ $annee, $mois ] = self::mois_demande();
 		$type  = ( isset( $_GET['type'] ) && $_GET['type'] === 'vignettes' ) ? 'vignettes' : 'affiche';
-		$liste = $this->get_anniversaires( $annee, $mois );
+		$liste = $this->anniversaires_diffusables( $annee, $mois );
 		$club  = get_bloginfo( 'name' );
 		$logo  = '';
 		$logo_id = get_theme_mod( 'custom_logo' );
@@ -557,7 +572,7 @@ endif; ?>
 		$jour_ref = intval( date( 'j', $ts ) );
 
 		$data = [];
-		foreach ( $this->get_anniversaires( intval( date( 'Y', $ts ) ), intval( date( 'n', $ts ) ) ) as $el ) {
+		foreach ( $this->anniversaires_diffusables( intval( date( 'Y', $ts ) ), intval( date( 'n', $ts ) ) ) as $el ) {
 			$data[] = [
 				'nom'        => self::nom_court( $el ),
 				'jour'       => $el->jour,
@@ -599,6 +614,8 @@ endif; ?>
 		$prenom = trim( (string) $el->prenom );
 		$ans    = $el->age ? " ses {$el->age} ans" : ' son anniversaire';
 		$sujet  = "[{$club}] Joyeux anniversaire {$prenom} ! 🎂";
+		// Pas de promesse de fête au club à qui ne souhaite pas que son anniversaire y soit annoncé.
+		$fete   = intval( $el->anniversaire_affiche ?? 1 ) !== 0 ? 'On fêtera ça tous ensemble au club avec les anniversaires du mois ! ' : '';
 
 		if ( $en_retard ) {
 			$mois  = intval( explode( '/', (string) $el->date_naissance )[1] ?? 0 );
@@ -610,7 +627,7 @@ endif; ?>
 				$corps = "Bonjour,\n\n"
 				       . "{$prenom} a fêté{$ans}{$le}, et notre petit mot n'est pas parti à temps — le voici, avec un peu de retard :\n\n"
 				       . "« Joyeux anniversaire {$prenom} ! Toute l'équipe du {$club} te souhaite une très belle année. "
-				       . "On fêtera ça tous ensemble au club avec les anniversaires du mois ! »\n\n"
+				       . $fete . "»\n\n"
 				       . "Sportivement,\n— L'équipe {$club}";
 			} else {
 				$corps = "Bonjour {$prenom},\n\n"
@@ -626,7 +643,7 @@ endif; ?>
 			$corps = "Bonjour,\n\n"
 			       . "C'est un grand jour : {$prenom} fête aujourd'hui{$ans} ! Voici un petit mot du club à lui transmettre :\n\n"
 			       . "« Joyeux anniversaire {$prenom} ! Toute l'équipe du {$club} te souhaite une merveilleuse journée. "
-			       . "On fêtera ça tous ensemble au club avec les anniversaires du mois ! »\n\n"
+			       . $fete . "»\n\n"
 			       . "Sportivement,\n— L'équipe {$club}";
 		} else {
 			$corps = "Bonjour {$prenom},\n\n"

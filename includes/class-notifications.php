@@ -165,11 +165,11 @@ class SpCalPro_Notifications {
             $day_ts  = strtotime( "+$i days" );
             $day_str = date('d/m', $day_ts); // format stocké : "JJ/MM"
             $rows    = $wpdb->get_results( $wpdb->prepare(
-                "SELECT nom, prenom, date_naissance, annee_naissance, categorie_age
-                 FROM $tel WHERE date_naissance = %s AND actif = 1",
+                "SELECT * FROM $tel WHERE date_naissance = %s AND actif = 1",
                 $day_str
             ) );
             foreach ( $rows as $r ) {
+                if ( ! SpCalPro_DB::anniversaire_diffusable( $r ) ) continue;
                 $r->date_anniversaire_fmt = date('d/m', $day_ts);
                 $r->jours_restants = $i;
                 $out[] = $r;

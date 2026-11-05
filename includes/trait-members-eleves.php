@@ -946,6 +946,11 @@ trait SP_Cal_Members_Eleves {
                         <input type="checkbox" name="eleve_droit_image" value="1" <?php checked(intval($edit->droit_image ?? 1), 1); ?>>
                         <span>✅ Droit à l'image accordé <span style="font-weight:400;color:#888;">(diffusion sur les supports du club)</span></span>
                     </label>
+                    <!-- Anniversaire annoncé au club (05/11/2026) -->
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin-bottom:8px;">
+                        <input type="checkbox" name="eleve_anniversaire_affiche" value="1" <?php checked(intval($edit->anniversaire_affiche ?? 1), 1); ?>>
+                        <span>🎂 Anniversaire affiché au club <span style="font-weight:400;color:#888;">(calendrier, affiche du mois, application, rappel aux encadrants)</span></span>
+                    </label>
                     <!-- Autorisation repartir seul(e) -->
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
                         <input type="checkbox" name="eleve_autorisation_seul" value="1" <?php checked(intval($edit->autorisation_seul ?? 0), 1); ?>>

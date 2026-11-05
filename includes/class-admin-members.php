@@ -199,6 +199,7 @@ class SP_Cal_Members {
                 'taille_tshirt'     => sanitize_text_field( wp_unslash( $_POST['eleve_taille_tshirt']     ?? '' ) ),
                 'taille_pantalon'   => sanitize_text_field( wp_unslash( $_POST['eleve_taille_pantalon']   ?? '' ) ),
                 'droit_image'       => isset($_POST['eleve_droit_image'])    ? 1 : 0,
+                'anniversaire_affiche' => isset($_POST['eleve_anniversaire_affiche']) ? 1 : 0,
                 'autorisation_seul' => isset($_POST['eleve_autorisation_seul']) ? 1 : 0,
                 'infos_sante'       => mb_substr( sanitize_textarea_field( wp_unslash( $_POST['eleve_infos_sante'] ?? '' ) ), 0, 2000 ),
                 'nb_licences'       => intval( $_POST['eleve_nb_licences']  ?? 0 ),
