@@ -45,7 +45,7 @@ class SP_Front_Adhesion {
 		'poids_kg', 'pointure', 'taille_tshirt', 'taille_pantalon', 'doc_certificat_medical',
 		'date_certificat_medical', 'qs_sport_confirme', 'doc_attestation_rc', 'doc_decharge_honneur',
 		'photo_url', 'autorisation_photo', 'autorisation_seul', 'droit_image', 'reglement_accepte',
-		'statut', 'refus_motif', 'ip_address', 'created_at', 'updated_at',
+		'infos_sante', 'statut', 'refus_motif', 'ip_address', 'created_at', 'updated_at',
 	];
 
 	public static function get_instance(): self {
@@ -57,7 +57,7 @@ class SP_Front_Adhesion {
 		global $wpdb;
 		$this->table = $wpdb->prefix . 'sp_adhesions_pending';
 		add_shortcode( 'sp_inscription_adhesion', [ $this, 'render_shortcode' ] );
-		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
+		SP_Cal_Schema::enregistrer( 'Adhésions en ligne', [ __CLASS__, 'maybe_create_table' ] );
 		add_action( 'init', [ $this, 'maybe_print_attestation' ] );
 		add_action( 'wp_mail_failed', [ __CLASS__, 'log_mail_failure' ] );
 	}
@@ -97,6 +97,10 @@ class SP_Front_Adhesion {
 				'[SP_Build] Colonne(s) toujours absente(s) de ' . $table . ' après dbDelta() : '
 				. implode( ', ', $missing ) . ' — vérifier que l\'utilisateur MySQL du site a bien le droit ALTER TABLE.'
 			);
+			// Signalé comme une erreur au module central (class-schema.php) : la vérification sera
+			// retentée (toutes les 10 min) au lieu d'être considérée comme faite. Avant le 07/10/2026,
+			// cette fonction repassait à chaque page, ce qui assurait la même auto-réparation.
+			throw new \RuntimeException( 'colonnes absentes de ' . $table . ' : ' . implode( ', ', $missing ) );
 		}
 	}
 
@@ -285,6 +289,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'autorisation_photo' => ! empty( $extra['autorisation_photo'] ) ? 1 : 0,
 			'droit_image'        => (int) ( $el->droit_image ?? 0 ),
 			'autorisation_seul'  => (int) ( $el->autorisation_seul ?? 0 ),
+			'infos_sante'        => (string) ( $el->infos_sante ?? '' ),
 		];
 	}
 
@@ -313,6 +318,9 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		$discipline = sanitize_text_field( $_POST['discipline'] ?? '' );
 		$categorie  = sanitize_text_field( $_POST['categorie']  ?? '' );
 		$message    = sanitize_textarea_field( $_POST['message'] ?? '' );
+		// Infos santé (29/10/2026) : champ à part du message, reporté sur la fiche (admins et
+		// entraîneurs). Donnée sensible : jamais recopiée dans les e-mails de notification.
+		$infos_sante = mb_substr( sanitize_textarea_field( $_POST['infos_sante'] ?? '' ), 0, 2000 );
 
 		// Pass'Sport : simple champ déclaratif, aucune vérification/calcul (cf. md/08-passsport-etat-des-lieux.md
 		// — pas d'API de vérification accessible à un tiers, le club continue de traiter ça manuellement).
@@ -410,6 +418,13 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 		if ( $pointure        === '' ) $errors[] = 'La pointure est requise.';
 		if ( $taille_tshirt   === '' ) $errors[] = 'La taille de t-shirt/sweat est requise.';
 		if ( $taille_pantalon === '' ) $errors[] = 'La taille de pantalon est requise.';
+		// Renforcement musculaire : tailles de la tenue prêtée, choisies dans la liste (class-tenues.php).
+		if ( $discipline === 'RENFO' ) {
+			$tailles_tenue = SP_Cal_Tenues::tailles_reglees();
+			$liste_tailles = implode( ', ', $tailles_tenue );
+			if ( $taille_tshirt   !== '' && ! in_array( $taille_tshirt,   $tailles_tenue, true ) ) $errors[] = 'Choisissez la taille de t-shirt/sweat dans la liste (' . $liste_tailles . ').';
+			if ( $taille_pantalon !== '' && ! in_array( $taille_pantalon, $tailles_tenue, true ) ) $errors[] = 'Choisissez la taille de pantalon dans la liste (' . $liste_tailles . ').';
+		}
 
 		// Documents obligatoires selon la discipline (cf. doléance #2)
 		$need_certif_medical = $discipline === 'TKD';
@@ -588,6 +603,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'autorisation_seul'      => $autorisation_seul,
 			'droit_image'            => $droit_image,
 			'reglement_accepte'      => $reglement_accepte,
+			'infos_sante'            => $infos_sante,
 			'statut'                 => 'pending',
 			'ip_address'             => $_SERVER['REMOTE_ADDR'] ?? '',
 			'created_at'             => current_time( 'mysql' ),
@@ -601,6 +617,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			'%s','%s','%s','%s','%s',
 			'%s','%s','%d','%s','%s','%s',
 			'%d','%d','%d','%d',
+			'%s',
 			'%s','%s','%s',
 		];
 
@@ -668,8 +685,11 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 
-		// Rangés à part du dossier uploads/ standard, hors indexation directe (voir protect_uploads_dir()).
-		$target = '/sp-adhesions-docs/' . trim( $subdir, '/' ) . '/' . date( 'Y' );
+		// Dossier de la demande, fermé au web (class-docs-adhesion.php, 08/10/2026) : les fichiers
+		// rejoignent le dossier de l'adhérent quand le bureau accepte la demande. Nom préfixé par
+		// le type (« certificat-medical-… », « photo-… »).
+		$target = SP_Cal_Docs_Adhesion::dossier_demande();
+		$_FILES[ $field ]['name'] = SP_Cal_Docs_Adhesion::nom_depot( trim( $subdir, '/' ), (string) $_FILES[ $field ]['name'] );
 		$filter = static function ( array $dirs ) use ( $target ): array {
 			$dirs['subdir'] = $target;
 			$dirs['path']   = $dirs['basedir'] . $target;
@@ -699,11 +719,9 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 	}
 
 	private function protect_uploads_dir(): void {
-		$dir      = wp_upload_dir()['basedir'] . '/sp-adhesions-docs';
-		$htaccess = $dir . '/.htaccess';
-		if ( is_dir( $dir ) && ! file_exists( $htaccess ) ) {
-			@file_put_contents( $htaccess, "Options -Indexes\n" );
-		}
+		// Dossiers des adhérents et des demandes fermés au web (08/10/2026 ; avant : seule la
+		// liste de l'ancien dossier sp-adhesions-docs/ était bloquée, par « Options -Indexes »).
+		SP_Cal_Docs_Adhesion::proteger_dossiers();
 	}
 
 	// ─── Emails ──────────────────────────────────────────────────────────────
@@ -1016,6 +1034,22 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 					</div>
 				</div>
 
+				<!-- ══ SANTÉ (29/10/2026) ════════════════════════════════════
+				     Champ à part du « Message » : reporté sur la fiche (admins) et dans l'appli des
+				     entraîneurs au pointage du cours. Jamais recopié dans les e-mails. -->
+				<div class="sp-adh-group">
+					<h3 class="sp-adh-group-title">Santé</h3>
+					<div class="sp-adh-row">
+						<div class="sp-adh-col sp-adh-col-full">
+							<label for="sp_infos_sante">Informations santé utiles à l'encadrement <span class="sp-optional">(optionnel)</span></label>
+							<textarea id="sp_infos_sante" name="infos_sante" rows="3" maxlength="2000"
+							          placeholder="Allergies, asthme, traitement, contre-indication, consignes en cas de malaise…"
+							><?= esc_textarea( $data['infos_sante'] ?? '' ) ?></textarea>
+							<p class="sp-optional">Uniquement communiquées aux entraîneurs et au bureau du club, pour encadrer les séances en sécurité.</p>
+						</div>
+					</div>
+				</div>
+
 				<!-- ══ PRATIQUE ANTÉRIEURE ═══════════════════════════════════ -->
 				<div class="sp-adh-group">
 					<h3 class="sp-adh-group-title">Pratique antérieure</h3>
@@ -1065,18 +1099,37 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 							       min="20" max="55" placeholder="Ex : 38" required>
 						</div>
 					</div>
+					<?php
+					// Renforcement musculaire : la tenue prêtée par le club se commande en XS → XXL
+					// (class-tenues.php). Les deux tailles se choisissent alors dans une liste, au lieu du
+					// champ libre gardé pour le taekwondo (« 12 ans », « 40 »…). Chaque champ existe en deux
+					// versions de même nom ; celle qui ne sert pas est désactivée, donc ni exigée ni envoyée.
+					$sp_tailles_tenue = SP_Cal_Tenues::tailles_reglees();
+					$sp_renfo         = ( $data['discipline'] ?? '' ) === 'RENFO';
+					$sp_champs_taille = array(
+						array( 'sp_tshirt',   'taille_tshirt',   'Taille t-shirt / sweat', 'Ex : M, L, XL, 12 ans…' ),
+						array( 'sp_pantalon', 'taille_pantalon', 'Taille pantalon',        'Ex : 40, 12 ans…' ),
+					);
+					?>
 					<div class="sp-adh-row">
+						<?php foreach ( $sp_champs_taille as $sp_c ) :
+							list( $sp_id, $sp_nom, $sp_label, $sp_exemple ) = $sp_c;
+							$sp_choisie = SP_Cal_Tenues::lire_taille( $data[ $sp_nom ] ?? '', $sp_tailles_tenue );
+						?>
 						<div class="sp-adh-col">
-							<label for="sp_tshirt">Taille t-shirt / sweat <span class="sp-req">*</span></label>
-							<input type="text" id="sp_tshirt" name="taille_tshirt" value="<?= $v('taille_tshirt') ?>"
-							       placeholder="Ex : M, L, XL, 12 ans…" required>
+							<label for="<?= esc_attr( $sp_id ) ?>"><?= esc_html( $sp_label ) ?> <span class="sp-req">*</span></label>
+							<input type="text" id="<?= esc_attr( $sp_id ) ?>" name="<?= esc_attr( $sp_nom ) ?>" class="sp-taille-libre" value="<?= $v( $sp_nom ) ?>"
+							       placeholder="<?= esc_attr( $sp_exemple ) ?>" required<?= $sp_renfo ? ' disabled style="display:none;"' : '' ?>>
+							<select id="<?= esc_attr( $sp_id ) ?>_liste" name="<?= esc_attr( $sp_nom ) ?>" class="sp-taille-liste" aria-label="<?= esc_attr( $sp_label ) ?>" required<?= $sp_renfo ? '' : ' disabled style="display:none;"' ?>>
+								<option value="">— Choisir —</option>
+								<?php foreach ( $sp_tailles_tenue as $sp_t ) : ?>
+								<option value="<?= esc_attr( $sp_t ) ?>" <?php selected( $sp_choisie, $sp_t ); ?>><?= esc_html( $sp_t ) ?></option>
+								<?php endforeach; ?>
+							</select>
 						</div>
-						<div class="sp-adh-col">
-							<label for="sp_pantalon">Taille pantalon <span class="sp-req">*</span></label>
-							<input type="text" id="sp_pantalon" name="taille_pantalon" value="<?= $v('taille_pantalon') ?>"
-							       placeholder="Ex : 40, 12 ans…" required>
-						</div>
+						<?php endforeach; ?>
 					</div>
+					<p class="sp-adh-group-desc" id="sp_tailles_tenue_note"<?= $sp_renfo ? '' : ' style="display:none;"' ?>>Ces deux tailles servent à préparer la tenue (haut et bas) prêtée par le club.</p>
 				</div>
 
 				<!-- ══ LÉGAL ═════════════════════════════════════════════════ -->
@@ -1151,25 +1204,20 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 					return;
 				}
 
-				const birth = new Date(ddn);
-				const today = new Date();
-				const sept1 = new Date(today.getFullYear(), 8, 1);
+				// Classe scolaire à la rentrée (règle du club, 08/10/2026) : seule l'année de naissance
+				// compte, comme à l'école — même règle que SpCalPro_DB::categorie_scolaire() (PHP).
+				// Rentrée de référence fournie par le serveur (SpCalPro_DB::annee_saison_categories()).
+				const anneeNaissance = parseInt( String(ddn).slice(0, 4), 10 );
+				if ( ! anneeNaissance ) return;
+				const ageDansLAnnee = <?= (int) SpCalPro_DB::annee_saison_categories() ?> - anneeNaissance;
 
-				let age = sept1.getFullYear() - birth.getFullYear();
-				if ( birth.getMonth() > 8 || (birth.getMonth() === 8 && birth.getDate() > 1) ) age--;
-
-				// 4 tranches (pas 3) pour rester cohérent avec la règle fédérale déjà codée côté
-				// admin (SpCalPro_DB::bascule_categories_septembre()) — Ado/adulte (11-14) et
-				// Adulte (15+) étaient jusqu'ici fusionnés en un seul "Ado/Adulte" ici.
 				let cat, label, cssClass;
-				if ( age < 6 ) {
-					cat = 'Baby'; label = 'Baby (moins de 6 ans au 1er sept.)'; cssClass = 'sp-adh-cat-baby';
-				} else if ( age < 11 ) {
-					cat = 'Enfant'; label = 'Enfant (6 à 10 ans au 1er sept.)'; cssClass = 'sp-adh-cat-enfant';
-				} else if ( age < 15 ) {
-					cat = 'Ado/adulte'; label = 'Ado / adulte (11 à 14 ans au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
+				if ( ageDansLAnnee <= 5 ) {
+					cat = 'Baby'; label = 'Baby (maternelle)'; cssClass = 'sp-adh-cat-baby';
+				} else if ( ageDansLAnnee <= 10 ) {
+					cat = 'Enfant'; label = 'Enfant (primaire, CP → CM2)'; cssClass = 'sp-adh-cat-enfant';
 				} else {
-					cat = 'Adulte'; label = 'Adulte (15 ans et plus au 1er sept.)'; cssClass = 'sp-adh-cat-adulte';
+					cat = 'Ado/adulte'; label = 'Ado / adulte (collège et plus)'; cssClass = 'sp-adh-cat-adulte';
 				}
 				hidden.value = cat;
 				display.innerHTML = '<strong class="sp-adh-cat-badge ' + cssClass + '">' + label + '</strong>';
@@ -1178,6 +1226,21 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			ddnInput.addEventListener('change', calculerCategorie);
 			discInput.addEventListener('change', calculerCategorie);
 			calculerCategorie();
+
+			// ── Tailles : liste XS → XXL pour le renforcement musculaire, champ libre sinon ──
+			(function () {
+				var disc = document.getElementById('sp_disc');
+				if (!disc) return;
+				function majTailles() {
+					var renfo = disc.value === 'RENFO';
+					document.querySelectorAll('.sp-taille-libre').forEach(function (el) { el.disabled = renfo; el.style.display = renfo ? 'none' : ''; });
+					document.querySelectorAll('.sp-taille-liste').forEach(function (el) { el.disabled = !renfo; el.style.display = renfo ? '' : 'none'; });
+					var note = document.getElementById('sp_tailles_tenue_note');
+					if (note) note.style.display = renfo ? '' : 'none';
+				}
+				disc.addEventListener('change', majTailles);
+				majTailles();
+			})();
 
 			// ── Documents obligatoires selon discipline (doléance #2) ─────────
 			const docsGroup   = document.getElementById('sp_docs_group');
@@ -1518,6 +1581,7 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			autorisation_seul       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			droit_image             TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
 			reglement_accepte       TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+			infos_sante             TEXT,
 			statut                  ENUM('pending','valide','refuse') NOT NULL DEFAULT 'pending',
 			refus_motif             TEXT,
 			ip_address              VARCHAR(45)   NOT NULL DEFAULT '',

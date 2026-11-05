@@ -9,24 +9,18 @@ class SpCalPro_Calendar {
 
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
-        add_shortcode( 'sp_cal_calendar',     array( $this, 'render' ) );
+        // [sp_cal_calendar] = le calendrier de la page d'administration « Calendrier »
+        // (class-admin.php, do_shortcode). Depuis le 07/10/2026, il n'est plus disponible sur les
+        // pages publiques : la copie publique servait aux entraîneurs pour leurs dispos, remplacée
+        // par leur application (pages « Calendrier de gestion » et « Calendrier Cours » supprimées).
+        if ( is_admin() ) {
+            add_shortcode( 'sp_cal_calendar', array( $this, 'render' ) );
+        }
         add_shortcode( 'sp_cal_evenements',   array( $this, 'render_evenements' ) );
-        add_action( 'wp_enqueue_scripts',    array( $this, 'enqueue_front' ) );
+        // Plus de chargement du calendrier sur toutes les pages publiques (07/10/2026) : seule la
+        // liste [sp_cal_evenements] s'en sert côté public, et elle le charge elle-même.
         // Admin : uniquement sur les pages sp-cal-* pour ne pas polluer les autres pages admin
         add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin' ) );
-    }
-
-    /**
-     * Scripts/styles frontend.
-     * Bloqués pendant les requêtes REST (sauvegarde Gutenberg, API WP)
-     * pour éviter que wp_localize_script n'injecte du HTML dans la réponse JSON.
-     */
-    public function enqueue_front() {
-        if ( ( defined('REST_REQUEST') && REST_REQUEST ) ||
-             ( defined('DOING_AJAX')   && DOING_AJAX   ) ) {
-            return;
-        }
-        $this->do_enqueue();
     }
 
     /**
@@ -56,6 +50,7 @@ class SpCalPro_Calendar {
             'nonce'       => wp_create_nonce( 'sp_cal_admin_nonce' ),
             'isAdmin'     => current_user_can( 'manage_options' ) ? '1' : '0',
             'catColors'   => get_option( 'sp_cal_cat_colors', '{}' ),
+            'coursSpeciaux' => SpCalPro_DB::cours_speciaux(),
             'palmaresUrl' => class_exists('SpCalPro_PalmaresFront')
                              ? SpCalPro_PalmaresFront::get_page_url()
                              : get_option( 'sp_cal_palmares_url', '' ),
@@ -66,7 +61,8 @@ class SpCalPro_Calendar {
     }
 
     public function render( $atts ) {
-        // S'assurer que les assets sont chargés même si enqueue_front n'a pas tourné
+        if ( ! current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING ) ) return '';
+        // S'assurer que les assets sont chargés
         if ( ! wp_script_is( 'sp-cal-front', 'enqueued' ) ) {
             $this->do_enqueue();
         }

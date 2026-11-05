@@ -33,7 +33,7 @@ class SP_Cal_Inscriptions_Options {
         add_action( 'sp_cal_inscriptions_extra',       array( $this, 'render_save_button' ),  10, 2 );
         add_filter( 'sp_insc_extra_cols',       array( $this, 'filter_extra_cols' ),       10, 2 );
         add_filter( 'sp_insc_extra_row_values', array( $this, 'filter_extra_row_values' ), 10, 3 );
-        add_action( 'admin_init', array( $this, 'maybe_migrate' ) );
+        SP_Cal_Schema::enregistrer( 'Inscriptions (options)', array( $this, 'maybe_migrate' ) );
     }
 
     /* ── Migration DB ───────────────────────────────────────────────────── */
@@ -352,6 +352,7 @@ class SP_Cal_Inscriptions {
             );
             $ti = $this->db->table_event_inscriptions();
             echo '<div class="wrap"><h1>📋 Inscriptions aux événements</h1>';
+            SP_Cal_Menu::onglets_evenements( 'inscriptions' );
             if ( empty( $events ) ) {
                 echo '<p>Aucun événement avec inscriptions activées. Ouvrez un événement dans le calendrier et cochez "Inscriptions actives".</p>';
             } else {
@@ -608,8 +609,8 @@ class SP_Cal_Inscriptions {
                     );
                     $badge = isset($badges[$insc->statut]) ? $badges[$insc->statut]
                            : '<span style="background:#f3f4f6;color:#6b7280;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600;">⬜ Pas encore invité</span>';
-                    $email_affiche = ! empty( $insc->email ) ? $insc->email
-                                   : ( ! empty( $insc->email_parent ) ? $insc->email_parent . ' <span style="font-size:11px;color:#9ca3af;">(parent)</span>' : '—' );
+                    $email_affiche = ! empty( $insc->email ) ? esc_html( $insc->email )
+                                   : ( ! empty( $insc->email_parent ) ? esc_html( $insc->email_parent ) . ' <span style="font-size:11px;color:#9ca3af;">(parent)</span>' : '—' );
                 ?>
                 <tr data-eleve="<?php echo intval($insc->eleve_id); ?>">
                     <td><input type="checkbox" class="sp-insc-cb" value="<?php echo intval($insc->eleve_id); ?>"
@@ -791,7 +792,8 @@ class SP_Cal_Inscriptions {
                         if (r.success) {
                             msg.style.color = '#15803d';
                             msg.textContent = '✅ ' + r.data.sent + ' invitation(s) envoyée(s) sur ' + r.data.total + ' élève(s).'
-                                + ( r.data.skipped > 0 ? ' (' + r.data.skipped + ' ignoré(s)).' : '' );
+                                + ( r.data.skipped > 0 ? ' (' + r.data.skipped + ' ignoré(s)).' : '' )
+                                + ( r.data.en_file > 0 ? ' Envoi étalé : ' + r.data.en_file + ' partiront dans les prochaines minutes (page 📨 Envois).' : '' );
                             setTimeout(function(){ location.reload(); }, 3000);
                         } else {
                             msg.style.color = '#b91c1c';
@@ -1061,6 +1063,7 @@ class SP_Cal_Inscriptions {
             'sent'    => $sent,
             'total'   => $total,
             'skipped' => $skipped,
+            'en_file' => isset( $notif ) ? $notif->en_file : 0,
         ) );
     }
 

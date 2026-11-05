@@ -7,6 +7,9 @@ class SpCalPro_Notifications {
 
     private $db;
 
+    /** Emails du dernier envoi groupé encore dans la file d'envoi (partent dans les minutes qui suivent). */
+    public $en_file = 0;
+
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
 
@@ -57,6 +60,27 @@ class SpCalPro_Notifications {
      */
     public function filter_interventions_par_trainer( $default, $year, $month ) {
         return array_map( static function ( $i ) { return $i['ar']; }, $this->db->get_interventions_par_trainer( intval( $year ), intval( $month ) ) );
+    }
+
+    /**
+     * Envoi groupé par la file d'envoi (class-mail-queue.php, 06/10/2026) : au-delà de
+     * SP_Cal_Mail_Queue::SEUIL_DIRECT destinataires, les emails partent par paquets au lieu
+     * d'un seul coup. Renvoie le nombre d'emails partis OU en file (= destinataires prévenus).
+     *
+     * @param array $envois liste de [ dest, sujet, corps, entetes ]
+     */
+    private function envoyer_lot( array $envois, $contexte ) {
+        $this->en_file = 0;
+        if ( class_exists( 'SP_Cal_Mail_Queue' ) ) {
+            $r = SP_Cal_Mail_Queue::envoyer_lot( $envois, $contexte );
+            $this->en_file = $r['en_file'];
+            return $r['envoyes'] + $r['en_file'];
+        }
+        $sent = 0;
+        foreach ( $envois as $e ) {
+            if ( wp_mail( $e[0], $e[1], $e[2], $e[3] ?? '' ) ) $sent++;
+        }
+        return $sent;
     }
 
     public function add_schedules( $schedules ) {
@@ -448,11 +472,13 @@ class SpCalPro_Notifications {
      * @param int|null $avant  état avant l'enregistrement : 1, 0 ou null (non renseigné)
      * @param int|null $apres  état enregistré
      * @param string   $note
-     * @param string   $par    '' = l'entraîneur lui-même, sinon nom de l'admin qui a modifié
+     * @param string   $par    '' = l'entraîneur lui-même, sinon nom de celui qui a modifié
      * @param int      $allers_retours  1 ou 2 (journée à deux allers-retours), mentionné dans le mail
+     * @param string   $source 'admin' (calendrier admin) ou 'appli' (application entraîneur)
+     * @param int      $par_id entraîneur auteur de la modification (appli) : pas de mail à lui-même
      * @return int nombre de mails envoyés
      */
-    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '', $allers_retours = 1 ) {
+    public function notifier_bureau_dispo( $trainer_id, $date, $avant, $apres, $note = '', $par = '', $allers_retours = 1, $source = 'admin', $par_id = 0 ) {
         $trainer_id = intval( $trainer_id );
         $avant      = $avant === null ? null : intval( $avant );
         $apres      = $apres === null ? null : intval( $apres );
@@ -504,7 +530,9 @@ class SpCalPro_Notifications {
         $body  = "Bonjour,\n\n";
         $body .= $nom . ' ' . $etat[2] . ' pour ' . $jour . ' (' . $quand . ').' . "\n";
         if ( $note !== '' ) $body .= 'Note : ' . $note . "\n";
-        $body .= $par !== '' ? 'Modification faite par ' . $par . " dans le calendrier admin.\n" : "Modification faite par l'entraîneur.\n";
+        $body .= $par !== ''
+            ? 'Modification faite par ' . $par . ( $source === 'appli' ? " depuis l'application entraîneur.\n" : " dans le calendrier admin.\n" )
+            : "Modification faite par l'entraîneur.\n";
         $body .= "\n";
         $body .= $encadrement
             ? 'Encadrement prévu ce jour : ' . implode( ', ', $encadrement ) . "\n\n"
@@ -517,10 +545,84 @@ class SpCalPro_Notifications {
         $sent = 0;
         foreach ( $bureau as $m ) {
             if ( $par === '' && intval( $m->id ) === $trainer_id ) continue; // pas de mail à soi-même
+            if ( $par_id && intval( $m->id ) === intval( $par_id ) ) continue; // ni au responsable qui vient de le faire
             if ( ! $m->email || ! is_email( $m->email ) ) continue;
             if ( wp_mail( $m->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) ) ) $sent++;
         }
         return $sent;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       ENTRAÎNEUR PRÉVENU — DISPO MODIFIÉE PAR UN RESPONSABLE (25/10/2026)
+    ══════════════════════════════════════════════════════════ */
+
+    /** Entraîneur (actif ou non) par id, null si absent. */
+    private function trainer_par_id( $id ) {
+        foreach ( $this->db->get_trainers( false ) as $t ) {
+            if ( intval( $t->id ) === intval( $id ) ) return $t;
+        }
+        return null;
+    }
+
+    /** « samedi 25/10 » */
+    private function libelle_jour( $date ) {
+        $jours = array( 1 => 'lundi', 2 => 'mardi', 3 => 'mercredi', 4 => 'jeudi', 5 => 'vendredi', 6 => 'samedi', 7 => 'dimanche' );
+        $ts    = strtotime( $date . ' 12:00:00 UTC' );
+        return $jours[ intval( gmdate( 'N', $ts ) ) ] . ' ' . gmdate( 'd/m', $ts );
+    }
+
+    /**
+     * Un responsable a changé la dispo d'un entraîneur depuis l'application (souvent après un
+     * appel téléphonique) : l'entraîneur reçoit un mail pour vérifier que c'est bien ce qu'il
+     * a annoncé. Toutes dates, sans fenêtre : c'est sa propre dispo qui a changé.
+     *
+     * @return bool mail envoyé
+     */
+    public function notifier_entraineur_dispo_modifiee( $trainer_id, $date, $apres, $note, $allers_retours, $par ) {
+        $t = $this->trainer_par_id( $trainer_id );
+        if ( ! $t || ! $t->email || ! is_email( $t->email ) ) return false;
+
+        $nom_club = get_option( 'blogname', 'Club' );
+        $jour     = $this->libelle_jour( $date );
+        if ( $apres === 1 )     $etat = 'disponible' . ( intval( $allers_retours ) === 2 ? ' (2 allers-retours)' : '' );
+        elseif ( $apres === 0 ) $etat = 'indisponible';
+        else                    $etat = 'sans réponse (ni disponible, ni indisponible)';
+
+        $subject = '[' . $nom_club . '] Votre disponibilité du ' . $jour . ' a été modifiée';
+        $body    = 'Bonjour ' . trim( $t->nom_public ?: $t->nom ) . ",\n\n"
+                 . $par . ' a enregistré pour vous : ' . $etat . ' le ' . $jour . ".\n"
+                 . ( $note !== '' ? 'Note : ' . $note . "\n" : '' )
+                 . "\nSi ce n'est pas ce que vous aviez annoncé, corrigez-le dans votre application (onglet « Mes dispos ») ou prévenez " . $par . ".\n\n"
+                 . "-- \n" . $nom_club . ' (notification automatique)';
+        return (bool) wp_mail( $t->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
+    }
+
+    /**
+     * Remplaçant désigné depuis l'application pour un entraîneur indisponible : il est prévenu.
+     *
+     * @return bool mail envoyé
+     */
+    public function notifier_remplacant( $remplacant_id, $trainer_id, $date, $par ) {
+        $r = $this->trainer_par_id( $remplacant_id );
+        if ( ! $r || ! $r->email || ! is_email( $r->email ) ) return false;
+        $t   = $this->trainer_par_id( $trainer_id );
+        $nom = $t ? trim( $t->nom_public ?: $t->nom ) : 'un entraîneur';
+
+        $nom_club = get_option( 'blogname', 'Club' );
+        $jour     = $this->libelle_jour( $date );
+        $cours    = $this->activites_du_jour( $date );
+
+        $subject = '[' . $nom_club . '] Remplacement de ' . $nom . ' — ' . ucfirst( $jour );
+        $body    = 'Bonjour ' . trim( $r->nom_public ?: $r->nom ) . ",\n\n"
+                 . $par . ' vous a désigné(e) pour remplacer ' . $nom . ' le ' . $jour . ".\n\n";
+        if ( $cours ) {
+            $body .= "Au programme ce jour :\n";
+            foreach ( $cours as $c ) $body .= '  • ' . $c . "\n";
+            $body .= "\n";
+        }
+        $body .= 'En cas d\'empêchement, prévenez ' . $par . " au plus vite.\n\n"
+               . "-- \n" . $nom_club . ' (notification automatique)';
+        return (bool) wp_mail( $r->email, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
     }
 
     /**
@@ -866,7 +968,7 @@ class SpCalPro_Notifications {
         }
         $heure   = $event->heure_debut ? ' &middot; ' . esc_html( substr( $event->heure_debut, 0, 5 ) ) : '';
         $headers = array( 'Content-Type: text/html; charset=UTF-8' );
-        $sent    = 0;
+        $envois  = array();
 
         foreach ( $eleves as $el ) {
             if ( ! $el->email || ! is_email( $el->email ) ) continue;
@@ -923,9 +1025,9 @@ class SpCalPro_Notifications {
             $body .= '<p style="margin:0;font-size:12px;color:#94a3b8;">' . esc_html( $nom_club ) . ' · Gestion des inscriptions</p>';
             $body .= '</td></tr></table></body></html>';
 
-            if ( wp_mail( $el->email, $subject, $body, $headers ) ) $sent++;
+            $envois[] = array( $el->email, $subject, $body, $headers );
         }
-        return $sent;
+        return $this->envoyer_lot( $envois, 'Invitation : ' . wp_unslash( $event->titre ) );
     }
 
     /**
@@ -979,7 +1081,7 @@ class SpCalPro_Notifications {
 
         $nom_club = get_option( 'blogname', 'Club' );
         $headers  = array( 'Content-Type: text/html; charset=UTF-8' );
-        $sent     = 0;
+        $envois   = array();
 
         // ── Construire la map : eleve_id → liste des annulations qui le concernent ──
         $map = array();
@@ -1055,10 +1157,10 @@ class SpCalPro_Notifications {
             $body .= '<p style="margin:0;font-size:12px;color:#94a3b8;">' . esc_html( $nom_club ) . ' · Gestion des cours</p>';
             $body .= '</td></tr></table></body></html>';
 
-            if ( wp_mail( $dest, $subject, $body, $headers ) ) $sent++;
+            $envois[] = array( $dest, $subject, $body, $headers );
         }
 
-        return $sent;
+        return $this->envoyer_lot( $envois, 'Annulation de cours' );
     }
 
     /* ══════════════════════════════════════════════════════════════════════
@@ -1071,9 +1173,11 @@ class SpCalPro_Notifications {
     /**
      * @param array  $annules   occurrences annulées (get_slot_occurrences())
      * @param array  $maintenus occurrences de la période restées actives
+     * @param bool   $feries    raccourci « Jours fériés de la saison » (19/10/2026) : chaque cours annulé
+     *                          porte le nom de son jour férié ('ferie'), pas de liste de cours maintenus
      * @return int nombre d'emails envoyés
      */
-    public function send_annulation_lot( array $annules, array $maintenus, $debut, $fin, $motif = '' ) {
+    public function send_annulation_lot( array $annules, array $maintenus, $debut, $fin, $motif = '', $feries = false ) {
         if ( empty( $annules ) ) return 0;
         global $wpdb;
         $nom_club = get_option( 'blogname', 'Club' );
@@ -1088,10 +1192,12 @@ class SpCalPro_Notifications {
         };
         $ligne = static function ( $o, $style ) use ( $fmt_date ) {
             $h = substr( (string) $o['heure_debut'], 0, 5 ) . ( $o['heure_fin'] ? ' – ' . substr( (string) $o['heure_fin'], 0, 5 ) : '' );
-            return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] ) . '</li>';
+            return '<li style="margin:3px 0;' . $style . '">' . esc_html( $fmt_date( $o['date'] ) . ' · ' . $h . ' — ' . $o['titre'] . ( ! empty( $o['ferie'] ) ? ' (' . $o['ferie'] . ')' : '' ) ) . '</li>';
         };
-        $periode = 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
-        $sent    = 0;
+        $periode = $feries
+            ? 'les jours fériés de la saison'
+            : 'du ' . gmdate( 'd/m', strtotime( $debut . ' 12:00:00 UTC' ) ) . ' au ' . gmdate( 'd/m/Y', strtotime( $fin . ' 12:00:00 UTC' ) );
+        $envois  = array();
 
         foreach ( $eleves as $el ) {
             $saisie = trim( (string) ( $el->categorie_saisie ?? '' ) );
@@ -1115,25 +1221,99 @@ class SpCalPro_Notifications {
             foreach ( $siens as $o ) $body .= $ligne( $o, 'text-decoration:line-through;' );
             $body .= '</ul></div>';
 
-            $body .= '<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
-                . '<div style="font-weight:600;color:#111;margin-bottom:6px;">✅ Vos cours maintenus sur cette période</div>';
-            if ( $gardes ) {
-                $body .= '<ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
-                foreach ( $gardes as $o ) $body .= $ligne( $o, '' );
-                $body .= '</ul>';
+            if ( $feries ) {
+                $body .= '<p style="color:#374151;font-size:14px;margin:0 0 14px;">Tous les autres cours ont lieu normalement.</p>';
             } else {
-                $body .= '<p style="margin:0;color:#374151;font-size:14px;">Aucun cours maintenu pour vous sur cette période : reprise après le ' . esc_html( gmdate( 'd/m', strtotime( $fin . ' 12:00:00 UTC' ) ) ) . '.</p>';
+                $body .= '<div style="background:#f0fdf4;border-left:4px solid #22c55e;border-radius:8px;padding:12px 18px;margin-bottom:14px;">'
+                    . '<div style="font-weight:600;color:#111;margin-bottom:6px;">✅ Vos cours maintenus sur cette période</div>';
+                if ( $gardes ) {
+                    $body .= '<ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;">';
+                    foreach ( $gardes as $o ) $body .= $ligne( $o, '' );
+                    $body .= '</ul>';
+                } else {
+                    $body .= '<p style="margin:0;color:#374151;font-size:14px;">Aucun cours maintenu pour vous sur cette période : reprise après le ' . esc_html( gmdate( 'd/m', strtotime( $fin . ' 12:00:00 UTC' ) ) ) . '.</p>';
+                }
+                $body .= '</div>';
             }
-            $body .= '</div>';
 
             $body .= '<p style="color:#6b7280;font-size:13px;margin-top:20px;">À bientôt sur le tatami&nbsp;! 🥋</p></td></tr>';
             $body .= '<tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;"><p style="margin:0;font-size:12px;color:#94a3b8;">'
                 . esc_html( $nom_club ) . ' · Gestion des cours</p></td></tr></table></body></html>';
 
-            $subject = '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
-                . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
-            if ( wp_mail( $dest, $subject, $body, $headers ) ) $sent++;
+            $subject = $feries
+                ? '[' . $nom_club . '] Jours fériés de la saison — ' . count( $siens ) . ' cours annulé' . ( count( $siens ) > 1 ? 's' : '' )
+                : '[' . $nom_club . '] Cours ' . $periode . ' — ' . count( $siens ) . ' annulé' . ( count( $siens ) > 1 ? 's' : '' )
+                    . ', ' . count( $gardes ) . ' maintenu' . ( count( $gardes ) > 1 ? 's' : '' );
+            $envois[] = array( $dest, $subject, $body, $headers );
         }
+        return $this->envoyer_lot( $envois, 'Annulation par lot ' . $periode );
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+       SONDAGE POST-ÉVÉNEMENT (rétabli le 06/10/2026)
+       Appelée par le bouton « Envoyer le sondage » de l'onglet Sondage d'un événement
+       (SpCalPro_Ajax::ajax_envoyer_sondage) — elle n'existait pas, le bouton plantait.
+       Reprise de l'ancienne version de travail (TKD/site/Evolution_inscription_event/Sondage),
+       avec : adresse du parent ou de l'adhérent (comme les autres envois), jeton créé s'il
+       manque, envoi par la file d'envoi. Lien vers la page de réponse : class-sondage-front.php.
+    ══════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * @param int   $event_id
+     * @param int[] $eleve_ids élèves cochés dans l'onglet Sondage
+     * @return int|WP_Error nombre d'emails envoyés ou en file
+     */
+    public function send_sondage_event( $event_id, array $eleve_ids = array() ) {
+        global $wpdb;
+        $event_id = intval( $event_id );
+        $sondage  = $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}sp_cal_sondages WHERE event_id = %d AND actif = 1", $event_id
+        ), ARRAY_A );
+        if ( ! $sondage )           return new WP_Error( 'not_found', 'Sondage introuvable.' );
+        if ( $sondage['envoye'] )   return new WP_Error( 'already_sent', 'Ce sondage a déjà été envoyé.' );
+        if ( ! $this->db->get_sondage_questions( intval( $sondage['id'] ) ) ) {
+            return new WP_Error( 'no_questions', 'Aucune question : enregistrez d\'abord les questions du sondage.' );
+        }
+        $ids = array_values( array_filter( array_map( 'intval', $eleve_ids ) ) );
+        if ( ! $ids ) return new WP_Error( 'no_eleves', 'Aucun élève sélectionné.' );
+
+        $tel    = $this->db->table_eleves();
+        $eleves = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM $tel WHERE id IN (" . implode( ',', array_fill( 0, count( $ids ), '%d' ) ) . ')', ...$ids
+        ) );
+        $titre    = wp_unslash( (string) $wpdb->get_var( $wpdb->prepare( "SELECT titre FROM {$this->db->table_events()} WHERE id = %d", $event_id ) ) ) ?: 'Événement';
+        $nom_club = get_option( 'blogname', 'Club' );
+        $envois   = array();
+
+        foreach ( $eleves as $el ) {
+            $dest = '';
+            foreach ( array( $el->email_parent ?? '', $el->email ?? '' ) as $email ) {
+                $email = trim( (string) $email );
+                if ( $email !== '' && is_email( $email ) ) { $dest = $email; break; }
+            }
+            if ( $dest === '' ) continue;
+            if ( empty( $el->token ) ) {
+                $el->token = bin2hex( random_bytes( 32 ) );
+                $wpdb->update( $tel, array( 'token' => $el->token ), array( 'id' => $el->id ) );
+            }
+            $url = class_exists( 'SP_Cal_Sondage_Front' )
+                ? SP_Cal_Sondage_Front::url( $el->token, $event_id )
+                : add_query_arg( array( 'sp_sondage_token' => rawurlencode( $el->token ), 'sp_sondage_event' => $event_id ), home_url( '/' ) );
+
+            $subject = '[' . $nom_club . '] 🗳️ Votre avis sur : ' . $titre;
+            $body    = "Bonjour,\n\n"
+                     . "Merci pour la participation de " . trim( $el->prenom . ' ' . $el->nom ) . " à : $titre\n\n"
+                     . "Nous aimerions connaître votre avis. Cela ne prend que quelques secondes :\n\n"
+                     . "➜ $url\n\n"
+                     . "Votre retour nous aide à améliorer nos événements.\n\n"
+                     . "-- \n" . $nom_club;
+            $envois[] = array( $dest, $subject, $body, array( 'Content-Type: text/plain; charset=UTF-8' ) );
+        }
+        if ( ! $envois ) return new WP_Error( 'no_email', 'Aucun des élèves sélectionnés n\'a d\'adresse email valide.' );
+
+        $sent = $this->envoyer_lot( $envois, 'Sondage : ' . $titre );
+        if ( $sent === 0 ) return new WP_Error( 'send_failed', 'Aucun email n\'a pu être envoyé — vérifiez l\'envoi des emails du site (WP Mail SMTP).' );
+        $this->db->marquer_sondage_envoye( intval( $sondage['id'] ) );
         return $sent;
     }
 

@@ -235,6 +235,7 @@ class SP_Admin_Adhesions {
 		$back = esc_url( add_query_arg( 'page', 'sp_adhesions', admin_url( 'admin.php' ) ) );
 		echo "<p style='margin-top:1rem;'><a href='{$back}' class='button'>← Retour à la liste</a></p>";
 
+		$this->styles_fiche();
 		echo '<div class="sp-adh-fiche">';
 
 		// Bandeau très visible côté admin quand c'est un renouvellement (cf. doléance renouvellement) :
@@ -263,13 +264,17 @@ class SP_Admin_Adhesions {
 		}
 
 		printf(
-			'<h2>Demande #%d — %s %s</h2>',
+			'<div class="sp-adh-entete"><h2>Demande #%d — %s %s</h2>%s<p class="sp-adh-meta">Soumise le %s · %s · %s</p></div>',
 			$row->id,
 			esc_html( $row->prenom ),
-			esc_html( $row->nom )
+			esc_html( $row->nom ),
+			$this->badge_statut( $row->statut ),
+			esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ),
+			esc_html( SP_Front_Adhesion::discipline_label( $row->discipline ) ),
+			esc_html( $row->categorie )
 		);
-		echo $this->badge_statut( $row->statut );
-		echo '<p class="sp-adh-meta">Soumise le ' . esc_html( date( 'd/m/Y à H:i', strtotime( $row->created_at ) ) ) . '</p>';
+		// Cartes des sections, sur deux colonnes en grand écran (styles_fiche()).
+		echo '<div class="sp-adh-grille">';
 
 		// ── Sections de données ──────────────────────────────────────────────
 		$representants = $this->decode_personnes( $row->representants_legaux ?? '' );
@@ -333,6 +338,7 @@ class SP_Admin_Adhesions {
 				'Discipline'         => SP_Front_Adhesion::discipline_label( $row->discipline ),
 				'Catégorie d\'âge'   => $row->categorie,
 				'Message'            => $row->message ?: '—',
+				'🩺 Infos santé'     => trim( (string) ( $row->infos_sante ?? '' ) ) ?: '—',
 				'Questionnaire QS-Sport' => $row->discipline === 'RENFO'
 					? ( ($row->qs_sport_confirme ?? 0) ? '✅ Confirmé (toutes réponses négatives)' : ( $row->doc_certificat_medical ? 'Non — certificat médical fourni à la place' : '⚠️ Ni confirmé ni certificat fourni' ) )
 					: '—',
@@ -359,10 +365,12 @@ class SP_Admin_Adhesions {
 		foreach ( $sections2 as $title => $fields ) {
 			echo "<div class='sp-adh-section'><h3>{$title}</h3><table class='form-table'>";
 			foreach ( $fields as $label => $value ) {
+				// Message et infos santé : texte libre sur plusieurs lignes ; infos santé saisies mises en avant.
 				printf(
-					'<tr><th scope="row">%s</th><td>%s</td></tr>',
+					'<tr%s><th scope="row">%s</th><td>%s</td></tr>',
+					$label === '🩺 Infos santé' && $value !== '—' ? ' class="sp-adh-sante"' : '',
 					esc_html( $label ),
-					esc_html( $value )
+					nl2br( esc_html( $value ) )
 				);
 			}
 			echo '</table></div>';
@@ -379,10 +387,13 @@ class SP_Admin_Adhesions {
 		echo "<div class='sp-adh-section'><h3>📎 Documents</h3><table class='form-table'>";
 		foreach ( $docs as $label => $url ) {
 			if ( $label === 'Photo de l\'adhérent' && $url ) {
-				$val = '<img src="' . esc_url( $url ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
-					. '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">Voir en grand</a>';
+				// Photo de la demande : fichier protégé, lu par sp_build (bureau connecté).
+				$voir = SP_Cal_Docs_Adhesion::lien( $url );
+				$val = '<img src="' . esc_url( $voir ) . '" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid #ddd;vertical-align:middle;margin-right:10px;">'
+					. '<a href="' . esc_url( $voir ) . '" target="_blank" rel="noopener">Voir en grand</a>';
 			} else {
-				$val = $url ? '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
+				// Documents protégés : lien par sp_build, réservé au bureau (class-docs-adhesion.php).
+				$val = $url ? '<a href="' . esc_url( SP_Cal_Docs_Adhesion::lien( $url ) ) . '" target="_blank" rel="noopener">📄 Voir le document</a>' : '—';
 			}
 			printf( '<tr><th scope="row">%s</th><td>%s</td></tr>', esc_html( $label ), $val );
 			if ( $label === 'Certificat médical' && ! empty( $row->date_certificat_medical ) && $row->date_certificat_medical !== '0000-00-00' ) {
@@ -407,6 +418,8 @@ class SP_Admin_Adhesions {
 		}
 		echo '</table></div>';
 
+		echo '</div>'; // .sp-adh-grille
+
 		// Motif de refus éventuel
 		if ( $row->statut === 'refuse' && $row->refus_motif ) {
 			echo '<div class="sp-adh-section sp-adh-section-refus">';
@@ -421,6 +434,39 @@ class SP_Admin_Adhesions {
 		}
 
 		echo '</div>'; // .sp-adh-fiche
+	}
+
+	// ─── Styles de la fiche détail (29/10/2026) ──────────────────────────────
+	// Avant : aucune règle pour .sp-adh-* — tableaux WordPress bruts les uns sous les autres.
+	// Cartes blanches, libellés à gauche, deux colonnes en grand écran, une seule sur téléphone.
+	private function styles_fiche(): void {
+		?>
+		<style>
+		.sp-adh-fiche{max-width:1100px;}
+		.sp-adh-entete{background:#fff;border:1px solid #dcdcde;border-left:4px solid #2271b1;border-radius:8px;padding:14px 18px;margin:1rem 0;}
+		.sp-adh-entete h2{margin:0 0 6px;font-size:1.35em;}
+		.sp-adh-entete .sp-adh-meta{margin:8px 0 0;color:#646970;}
+		.sp-adh-grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;align-items:start;}
+		.sp-adh-section{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:4px 16px 10px;margin:0;}
+		.sp-adh-section h3{font-size:14px;margin:10px 0 6px;padding-bottom:8px;border-bottom:1px solid #f0f0f1;}
+		.sp-adh-section h4{font-size:13px;color:#2271b1;margin:10px 0 2px !important;}
+		.sp-adh-section .form-table{margin:0;}
+		.sp-adh-section .form-table th,.sp-adh-section .form-table td{padding:6px 0;font-size:13px;line-height:1.45;vertical-align:top;}
+		.sp-adh-section .form-table th{width:42%;font-weight:600;color:#50575e;padding-right:10px;}
+		.sp-adh-section .form-table tr+tr th,.sp-adh-section .form-table tr+tr td{border-top:1px solid #f6f7f7;}
+		.sp-adh-section .form-table td{word-break:break-word;}
+		.sp-adh-section .form-table tr.sp-adh-sante td{background:#fff8e5;border-radius:4px;padding-left:8px;}
+		.sp-adh-section-refus{border-left:4px solid #d63638;margin-top:14px;}
+		.sp-adh-actions{background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:4px 18px 16px;margin-top:14px;}
+		.sp-adh-actions h3{font-size:14px;margin:12px 0 10px;}
+		.sp-adh-action-block{border:1px solid #dcdcde;border-radius:6px;padding:10px 14px;margin-bottom:12px;}
+		.sp-adh-action-block h4{margin:4px 0 6px;}
+		.sp-adh-action-block p{margin:0 0 10px;color:#50575e;}
+		.sp-adh-action-valider{border-left:4px solid #00a32a;background:#f6fbf7;}
+		.sp-adh-action-refuser{border-left:4px solid #d63638;background:#fcf6f6;margin-bottom:0;}
+		@media (max-width:782px){.sp-adh-grille{grid-template-columns:1fr;}.sp-adh-section .form-table th{width:auto;display:block;padding-bottom:0;}.sp-adh-section .form-table td{display:block;padding-top:2px;}}
+		</style>
+		<?php
 	}
 
 	// ─── Boutons d'action ─────────────────────────────────────────────────────
@@ -528,6 +574,10 @@ class SP_Admin_Adhesions {
 			wp_redirect( $this->view_url( $id, 'error_db' ) );
 			exit;
 		}
+
+		// Fichiers de la demande (photo, certificat…) rangés dans le dossier de l'adhérent
+		// (class-docs-adhesion.php, 08/10/2026).
+		SP_Cal_Docs_Adhesion::ranger_fiche( (int) $member_id );
 
 		// Marquer validée
 		$wpdb->update(
@@ -706,6 +756,7 @@ class SP_Admin_Adhesions {
 			'licence'                => $row->ancien_licence    ?? '',
 			'droit_image'            => (int) ($row->droit_image ?? 0),
 			'autorisation_seul'      => (int) ($row->autorisation_seul ?? 0),
+			'infos_sante'            => (string) ( $row->infos_sante ?? '' ),
 			'representant_nom'       => $repres1['nom']         ?? '',
 			'representant_prenom'    => $repres1['prenom']      ?? '',
 			'representant_telephone' => $repres1['telephone']   ?? '',
@@ -735,6 +786,7 @@ class SP_Admin_Adhesions {
 			'%s','%s',
 			'%d',  // droit_image
 			'%d',  // autorisation_seul
+			'%s',  // infos_sante
 			'%s','%s','%s',
 			'%s','%s','%s','%s','%s',
 			'%s','%s','%s',
@@ -850,6 +902,8 @@ class SP_Admin_Adhesions {
 			'licence'                => $row->ancien_licence    ?? '',
 			'droit_image'            => (int) ( $row->droit_image ?? 0 ),
 			'autorisation_seul'      => (int) ( $row->autorisation_seul ?? 0 ),
+			// Formulaire de renouvellement prérempli avec la fiche : la valeur reçue fait foi (vidée = effacée).
+			'infos_sante'            => (string) ( $row->infos_sante ?? '' ),
 			'representant_nom'       => $repres1['nom']         ?? '',
 			'representant_prenom'    => $repres1['prenom']      ?? '',
 			'representant_telephone' => $repres1['telephone']   ?? '',
@@ -878,7 +932,7 @@ class SP_Admin_Adhesions {
 			'%s','%s','%s',
 			'%s','%s','%s',
 			'%s','%s',
-			'%d','%d',
+			'%d','%d','%s',
 			'%s','%s','%s',
 			'%s','%s','%s','%s','%s',
 			'%s',

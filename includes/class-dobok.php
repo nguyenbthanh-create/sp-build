@@ -111,7 +111,7 @@ class SP_Cal_Dobok {
 	private function __construct( $db = null ) {
 		$this->db = $db;
 
-		add_action( 'admin_init',            [ $this, 'maybe_create_tables' ] );
+		SP_Cal_Schema::enregistrer( 'Doboks', [ $this, 'maybe_create_tables' ] );
 		add_action( 'admin_menu',            [ $this, 'add_menu' ], 20 );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue' ] );
 
@@ -223,6 +223,7 @@ class SP_Cal_Dobok {
 			update_option( 'sp_dobok_schema_version', self::SCHEMA_VERSION );
 		} else {
 			error_log( '[SP_Build] Tables dobok non créées — vérifier les droits CREATE TABLE de l\'utilisateur MySQL.' );
+			throw new \RuntimeException( 'tables dobok non créées' ); // module central : nouvel essai dans 10 min
 		}
 	}
 
@@ -232,6 +233,8 @@ class SP_Cal_Dobok {
 	public function add_menu(): void {
 		// Pastille du menu : demandes réservées / retours attendus, à traiter au club.
 		$n     = $this->front_pret() && current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ? $this->nb_demandes_a_traiter() : 0;
+		// Même pastille pour les demandes de tenues du renforcement musculaire (class-tenues.php).
+		if ( current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) $n += SP_Cal_Tenues::get_instance( $this->db )->nb_demandes_a_traiter();
 		$titre = '🥋 Doboks' . ( $n ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '' );
 		add_submenu_page( 'sp-cal-pro', 'Doboks', $titre, SP_Cal_Roles::CAP_GESTION_ADHESIONS, self::PAGE, [ $this, 'render_page' ] );
 	}
@@ -1549,13 +1552,20 @@ class SP_Cal_Dobok {
 	public function render_page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
 
+		// Même page pour les tenues du renforcement musculaire (class-tenues.php, 12/10/2026).
+		if ( sanitize_key( $_GET['objet'] ?? '' ) === SP_Cal_Tenues::OBJET ) {
+			SP_Cal_Tenues::get_instance( $this->db )->render_page();
+			return;
+		}
+
 		$nb_dem  = $this->tables_ok() ? $this->nb_demandes_a_traiter() : 0;
 		$onglets = [ 'stock' => 'Stock', 'demandes' => 'Demandes / distribution' . ( $nb_dem ? " ($nb_dem)" : '' ), 'adherents' => 'Adhérents', 'achats' => 'Achats', 'journal' => 'Journal', 'reglages' => 'Réglages' ];
 		$tab     = sanitize_key( $_GET['tab'] ?? 'stock' );
 		if ( ! isset( $onglets[ $tab ] ) ) $tab = 'stock';
 
 		echo '<div class="wrap sp-cal-wrap spd">';
-		echo '<h1>🥋 Doboks</h1>';
+		echo '<h1>Doboks &amp; tenues</h1>';
+		SP_Cal_Tenues::selecteur( 'doboks' );
 
 		if ( ! $this->tables_ok() ) {
 			delete_option( 'sp_dobok_schema_version' );   // force une nouvelle tentative au prochain chargement

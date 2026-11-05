@@ -7,8 +7,12 @@ class SpCalPro_Token {
 
     private $db;
 
+    /** Adresses déjà servies pendant cette requête : un envoi groupé ne fait qu'un mail par famille. */
+    private $familles_envoyees = array();
+
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
+        add_action( 'wp_ajax_sp_cal_revoke_token', array( $this, 'revoke_token_ajax' ) );
         add_shortcode( 'sp_cal_fiche_membre', array( $this, 'render_public_fiche' ) );
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue' ) );
         // Intercepter ?token= sur N'IMPORTE quelle page — pas besoin de configurer une URL
@@ -122,8 +126,9 @@ class SpCalPro_Token {
         // Ne pas renvoyer si déjà envoyé et pas forcé
         if ( ! $force && $el->token && $el->token_sent_at ) return false;
 
-        // Générer le token
-        $token = bin2hex( random_bytes(32) ); // 64 chars hex
+        // Garder le lien existant : un renvoi ne doit pas casser les raccourcis ni le lien du frère ou
+        // de la sœur envoyé juste avant. Seule la révocation (revoke_token_ajax) en crée un nouveau.
+        $token = $el->token ?: bin2hex( random_bytes(32) ); // 64 chars hex
         $wpdb->update( $tel, array(
             'token'         => $token,
             'token_sent_at' => current_time('mysql'),
@@ -136,41 +141,46 @@ class SpCalPro_Token {
 
     /**
      * Envoie l'email de token à l'élève ou au parent.
-     * Gère le regroupement par parent (plusieurs enfants).
+     * Un seul lien et un seul mail par famille (même adresse) : l'application permet de passer d'un
+     * membre à l'autre.
      */
     public function send_token_email( $el ) {
         $dest = $el->email_parent ?: $el->email;
         if ( ! $dest || ! is_email($dest) ) return false;
 
+        $cle = SpCalPro_DB::cle_famille( $el );
+        if ( isset( $this->familles_envoyees[ $cle ] ) ) return true;
+
         $club     = get_option('blogname', 'Club');
-        $fiche_url= $this->get_fiche_url( $el->token );
         $prenom   = $el->prenom;
         $nom      = mb_strtoupper($el->nom);
+        $famille  = $this->db->get_famille_par_email( $cle );
+        $prenoms  = implode( ', ', wp_list_pluck( $famille, 'prenom' ) );
+        $en_famille = count( $famille ) > 1;
 
-        // Chercher d'autres enfants avec le même email parent pour les regrouper
-        $fratrie = array();
-        if ( $el->email_parent ) {
-            global $wpdb;
-            $tel = $this->db->table_eleves();
-            $fratrie = $wpdb->get_results( $wpdb->prepare(
-                "SELECT id, prenom, nom, token FROM $tel
-                 WHERE email_parent = %s AND actif = 1 AND id != %d AND token IS NOT NULL",
-                $el->email_parent, intval($el->id)
-            ) );
-        }
+        // Le lien doit ouvrir un compte actif, même si l'envoi porte sur un membre désactivé de la famille.
+        $token_lien = ( empty( $el->actif ) && $famille ) ? $famille[0]->token : $el->token;
+        $fiche_url  = $this->get_fiche_url( $token_lien );
 
-        $subject = '[' . $club . '] 🏅 Accès à la fiche de suivi de ' . $prenom . ' ' . $nom;
+        $subject = $en_famille
+            ? '[' . $club . '] 🏅 Votre espace famille : ' . $prenoms
+            : '[' . $club . '] 🏅 Accès à la fiche de suivi de ' . $prenom . ' ' . $nom;
 
         // Un seul lien, valable sur téléphone comme sur ordinateur (étape 1 de l'unification
         // fiche / application, 26/09/2026) : l'application si la page [sp_cal_app] existe —
         // elle mène à la fiche complète via « Ma fiche complète » —, sinon la fiche.
-        $app_url = $this->get_app_url( $el->token );
+        $app_url = $this->get_app_url( $token_lien );
         $lien    = $app_url ?: $fiche_url;
 
         $body  = "Bonjour,\n\n";
         $body .= "L'adhésion de $prenom $nom a été activée au sein de $club.\n\n";
-        $body .= "Son espace membre, sur téléphone comme sur ordinateur :\n";
+        $body .= $en_famille
+            ? "Votre espace famille ($prenoms), sur téléphone comme sur ordinateur :\n"
+            : "Son espace membre, sur téléphone comme sur ordinateur :\n";
         $body .= "➜ " . $lien . "\n\n";
+        if ( $en_famille && $app_url ) {
+            $body .= "Ce lien unique sert pour toute la famille : choisissez le prénom en haut de l'écran.\n\n";
+        }
 
         if ( $app_url ) {
             $body .= "Vous y trouverez les prochains cours, le calendrier, la carte de membre, les inscriptions aux événements et les alertes d'annulation. ";
@@ -184,19 +194,20 @@ class SpCalPro_Token {
 
         $body .= "Ce lien est personnel et unique. Ne pas le partager.\n";
 
-        // Ajouter les liens des frères/sœurs si applicable
-        if ( ! empty($fratrie) ) {
-            $body .= "\nAccès à l'espace des autres membres de la famille :\n";
-            foreach ($fratrie as $fr) {
-                $fr_url = $this->get_app_url( $fr->token ) ?: $this->get_fiche_url( $fr->token );
-                $body  .= "• " . $fr->prenom . ' ' . mb_strtoupper($fr->nom) . " : " . $fr_url . "\n";
+        // Sans application, pas de changement de membre : garder un lien de fiche par membre.
+        if ( $en_famille && ! $app_url ) {
+            $body .= "\nAccès à la fiche de chaque membre de la famille :\n";
+            foreach ( $famille as $fr ) {
+                $body .= "• " . $fr->prenom . ' ' . mb_strtoupper( $fr->nom ) . " : " . $this->get_fiche_url( $fr->token ) . "\n";
             }
         }
 
         $body .= "\n-- \n" . $club;
 
         $headers = array('Content-Type: text/plain; charset=UTF-8');
-        return wp_mail($dest, $subject, $body, $headers);
+        $envoye  = wp_mail($dest, $subject, $body, $headers);
+        if ( $envoye ) $this->familles_envoyees[ $cle ] = true;
+        return $envoye;
     }
 
     /** URL de l'application (page contenant [sp_cal_app]) avec le lien personnel, ou '' si pas de page. */
@@ -242,7 +253,7 @@ class SpCalPro_Token {
         $el  = $wpdb->get_row( $wpdb->prepare(
             "SELECT * FROM $tel WHERE token = %s", $token
         ) );
-        if ( ! $el ) return '<div class="sp-membre-error">🔒 Lien invalide ou expiré. Contactez votre club.</div>';
+        if ( ! $el ) return '<div class="sp-membre-error">🔒 Lien invalide ou expiré. <a href="' . esc_url( home_url( '/app/' ) ) . '">Retrouver mon accès</a></div>';
 
         // Même marges que l'affichage direct (maybe_render_fiche) : la page de la fiche imprime
         // son contenu sans conteneur (modèle Elementor « en-tête et pied de page »).
@@ -351,9 +362,12 @@ class SpCalPro_Token {
             <div class="sp-membre-header">
                 <div class="sp-membre-avatar">
                     <?php if ( ! empty($el->photo_url) ) : ?>
-                        <img src="<?php echo esc_url($el->photo_url); ?>"
-                             style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
-                             alt="">
+                        <?php // Même cadrage que sur la carte (réglé par le bureau, class-carte.php). ?>
+                        <span style="display:block;width:100%;height:100%;border-radius:50%;overflow:hidden;">
+                            <img src="<?php echo esc_url($el->photo_url); ?>"
+                                 style="width:100%;height:100%;display:block;<?php echo esc_attr( SP_Cal_Carte::style_photo( $el ) ); ?>"
+                                 alt="">
+                        </span>
                     <?php else : ?>
                         <?php echo esc_html(mb_strtoupper(mb_substr($el->prenom,0,1).mb_substr($el->nom,0,1))); ?>
                     <?php endif; ?>
@@ -407,116 +421,16 @@ class SpCalPro_Token {
                     </label>
                 </div>
 
-                <!-- RECTO -->
-                <div class="sp-carte-recto" id="sp-carte-recto-<?php echo intval($el->id); ?>">
-                    <!-- Bandes déco -->
-                    <div class="sp-carte-band-blue"></div>
-                    <div class="sp-carte-band-yellow"></div>
-                    <div class="sp-carte-band-red"></div>
-
-                    <!-- Logo -->
-                    <div class="sp-carte-logo-wrap">
-                        <img src="<?php echo esc_url(get_option('sp_cal_logo_url', 'https://tkdclaira.fr/wp-content/uploads/2026/04/LogoSansLettre.png')); ?>"
-                             class="sp-carte-logo"
-                             onerror="this.style.display='none'">
-                    </div>
-                    <div class="sp-carte-club-name"><?php echo esc_html(strtoupper($club)); ?></div>
-                    <div class="sp-carte-club-sub">CARTE DE MEMBRE</div>
-
-                    <!-- Séparateur -->
-                    <div class="sp-carte-sep"></div>
-
-                    <!-- Identité -->
-                    <div class="sp-carte-nom"><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></div>
-                    <div class="sp-carte-meta">
-                        <?php
-                        $meta_parts = array_filter([
-                            $club_affil ? 'FFTDA' . ($club_affil ? ' '.$club_affil : '') : '',
-                            $club_ligue,
-                            $club_num ? 'Club '.$club_num : '',
-                        ]);
-                        echo esc_html(implode(' · ', $meta_parts));
-                        ?>
-                    </div>
-
-                    <!-- Infos -->
-                    <div class="sp-carte-infos">
-                        <?php if ($el->licence): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Licence</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->licence); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if ($el->date_naissance && $el->annee_naissance): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Né(e) le</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->date_naissance.'/'.$el->annee_naissance); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($el->num_passeport)): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Passeport</span>
-                            <span class="sp-carte-info-v"><?php echo esc_html($el->num_passeport); ?></span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (!empty($el->urgence_telephone)): ?>
-                        <div class="sp-carte-info-row">
-                            <span class="sp-carte-info-k">Urgence</span>
-                            <span class="sp-carte-info-v sp-carte-info-urgence"><?php echo esc_html($el->urgence_telephone); ?></span>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- QR Code -->
-                    <div class="sp-carte-qr-zone">
-                        <div id="sp-qr-<?php echo intval($el->id); ?>" class="sp-carte-qr-box"></div>
-                        <?php if ($club_labelise > 0): ?>
-                        <div class="sp-carte-stars">
-                            <?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#ffdd0e':'rgba(255,255,255,0.2)').';font-size:9px;">★</span>'; ?>
-                        </div>
-                        <div class="sp-carte-labelise-txt">Club labellisé</div>
-                        <?php endif; ?>
-                        <div class="sp-carte-qr-scan">Scanner pour pointer</div>
-                    </div>
-
-                    <?php if ( ! empty($el->photo_url) ) : ?>
-                    <div class="sp-carte-photo-wrap">
-                        <img src="<?php echo esc_url($el->photo_url); ?>"
-                             class="sp-carte-photo"
-                             alt="">
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="sp-carte-url">tkdclaira.fr</div>
-                </div>
-
-                <!-- VERSO -->
-                <div class="sp-carte-verso" id="sp-carte-verso-<?php echo intval($el->id); ?>">
-                    <div class="sp-carte-verso-header">
-                        <div class="sp-carte-verso-logo-wrap">
-                            <img src="<?php echo esc_url(get_option('sp_cal_logo_url', 'https://tkdclaira.fr/wp-content/uploads/2026/04/LogoSansLettre.png')); ?>"
-                                 class="sp-carte-verso-logo"
-                                 onerror="this.style.display='none'">
-                        </div>
-                        <span class="sp-carte-verso-title"><?php echo esc_html(strtoupper($club)); ?></span>
-                        <span class="sp-carte-verso-badge"><?php echo esc_html($el->prenom . ' ' . mb_strtoupper($el->nom)); ?></span>
-                    </div>
-                    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:12px;">
-                        <div style="color:rgba(255,255,255,0.15);font-size:40px;line-height:1;user-select:none;font-family:'Song Myung',cursive;letter-spacing:3px;">태권도</div>
-                        <div style="color:rgba(255,255,255,0.35);font-size:9px;letter-spacing:2px;text-transform:uppercase;">Carte de membre officielle</div>
-                    </div>
-                    <div class="sp-carte-verso-footer">
-                        <span><?php
-                            $footer_parts = array_filter([$club_affil, $club_num ? 'Club '.$club_num : '', 'tkdclaira.fr']);
-                            echo esc_html(implode(' · ', $footer_parts));
-                        ?></span>
-                        <?php if ($club_labelise > 0): ?>
-                        <span>
-                            <?php for($i=1;$i<=5;$i++) echo '<span style="color:'.($i<=$club_labelise?'#e30613':'rgba(255,255,255,0.12)').';font-size:8px;">★</span>'; ?>
-                        </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php
+                // Recto et verso : dessin unique de SP_Cal_Carte (class-carte.php), partagé avec
+                // l'impression par lot de l'administration. Le QR code est rempli par le script plus bas.
+                $sp_carte = SP_Cal_Carte::html( $el, array(
+                    'qr'         => '<div id="sp-qr-' . intval( $el->id ) . '"></div>',
+                    'discipline' => $this->db->label_discipline( $el->categorie_saisie ?? '' ),
+                    'id'         => intval( $el->id ),
+                ) );
+                ?>
+                <div class="sp-carte-pile"><?php echo $sp_carte['recto'] . $sp_carte['verso']; ?></div>
             </div>
 
             <!-- PAGE IMPRESSION A4 — 8 cartes -->
@@ -587,7 +501,9 @@ class SpCalPro_Token {
             </div>
             <?php endif; ?>
 
-            <!-- Grade actuel / prochain grade -->
+            <!-- Grade actuel / prochain grade — sans objet pour un adhérent du renforcement musculaire
+                 qui n'a aucun grade (13/10/2026) : la rubrique n'est alors pas affichée. -->
+            <?php if ( $el->grade || ! SP_Cal_Tenues::est_renfo( $el ) ) : ?>
             <div class="sp-membre-section">
                 <h2>🥋 Grade</h2>
                 <?php if($el->grade): ?>
@@ -605,6 +521,7 @@ class SpCalPro_Token {
                 </div>
                 <?php else: ?><p class="sp-membre-muted">Aucun grade renseigné.</p><?php endif; ?>
             </div>
+            <?php endif; ?>
 
             <?php // Bloc « Mes doboks » (SP_Cal_Dobok::render_bloc_adherent) ?>
             <?php do_action( 'sp_cal_fiche_membre_apres_grade', $el ); ?>
@@ -902,6 +819,15 @@ class SpCalPro_Token {
         @media (max-width:400px) {
             .sp-carte-recto, .sp-carte-verso { width:100% !important; height:auto !important; }
         }
+        /* ── Carte de membre (refonte du 13/10/2026) : dessin dans class-carte.php ── */
+        <?php echo SP_Cal_Carte::css(); ?>
+        .sp-carte-pile { display:flex; flex-direction:column; gap:16px; align-items:flex-start; }
+        @media (max-width:440px) {
+            .sp-carte-membre .spcm { --u: calc((100vw - 80px) / 340); }
+        }
+        @media print {
+            .sp-carte-membre .spcm { --u: calc(85.6mm / 340); border-radius:0; }
+        }
         /* ── Inscriptions événements ── */
         .sp-insc-event {
             display:flex; align-items:center; justify-content:space-between;
@@ -933,7 +859,7 @@ class SpCalPro_Token {
             function initQR() {
                 if (typeof QRCode === 'undefined') { setTimeout(initQR, 100); return; }
                 var url = '<?php echo esc_js($token_url); ?>';
-                new QRCode(qrEl, { text:url, width:68, height:68, colorDark:'#111111', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M });
+                new QRCode(qrEl, { text:url, width:204, height:204, colorDark:'#111111', colorLight:'#ffffff', correctLevel:QRCode.CorrectLevel.M });
             }
             initQR();
         })();
@@ -941,7 +867,7 @@ class SpCalPro_Token {
             var carteEl = document.getElementById('sp-carte-<?php echo intval($el->id); ?>');
             if (!carteEl) return;
 
-            // Récupérer le CSS de la carte
+            // Règles de la carte (classes « spcm ») et police du filigrane, copiées dans la fenêtre d'impression.
             var css = '';
             var sheets = document.styleSheets;
             for (var i = 0; i < sheets.length; i++) {
@@ -949,65 +875,40 @@ class SpCalPro_Token {
                     var rules = sheets[i].cssRules || sheets[i].rules;
                     for (var j = 0; j < rules.length; j++) {
                         var sel = rules[j].selectorText || '';
-                        if (sel.indexOf('sp-carte') !== -1 || sel.indexOf('sp-membre-section') !== -1) {
+                        if (sel.indexOf('spcm') !== -1 || (rules[j].type === 5 && rules[j].cssText.indexOf('SP Dokdo') !== -1)) {
                             css += rules[j].cssText + '\n';
                         }
                     }
                 } catch(e) {}
             }
 
-            var win = window.open('', '_blank', 'width=500,height=600');
-            // ── Mode imprimeur : débord 2mm, angles droits, traits de coupe ──
+            // Taille réelle (85,6 × 54 mm). Mode imprimeur : débord de 2 mm, angles droits, traits de coupe.
             var proMode = document.getElementById('sp-mode-imprimeur-indiv');
-            if (proMode && proMode.checked) {
-                css += '.sp-carte-recto,.sp-carte-verso{'
-                     +   'width:89.6mm!important;height:58mm!important;'
-                     +   'border-radius:0!important;'
-                     + '}'
-                     + '.sp-carte-recto{margin-bottom:4mm!important;}'
-                     + '.sp-pro-wrap{position:relative;display:inline-block;}'
-                     + '.sp-cm{position:absolute;background:rgba(255,255,255,.55);display:block;pointer-events:none;z-index:99;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
-                     + '.sp-cm.h{width:1.5mm;height:.4pt;}'
-                     + '.sp-cm.v{width:.4pt;height:1.5mm;}'
-                     + '.sp-cm.tl-h{top:2mm;left:0;}.sp-cm.tl-v{top:0;left:2mm;}'
-                     + '.sp-cm.tr-h{top:2mm;right:0;}.sp-cm.tr-v{top:0;right:2mm;}'
-                     + '.sp-cm.bl-h{bottom:2mm;left:0;}.sp-cm.bl-v{bottom:0;left:2mm;}'
-                     + '.sp-cm.br-h{bottom:2mm;right:0;}.sp-cm.br-v{bottom:0;right:2mm;}'
-                     /* Zone de sécurité : recul des éléments de bord (≥ 3mm du bord aggrandi) */
-                     /* Bandes : hauteur 58mm + bleue élargie à 25mm pour couvrir QR décalé */
-                     + '.sp-carte-band-blue{height:58mm!important;width:25mm!important;}'
-                     + '.sp-carte-band-yellow{height:58mm!important;right:24mm!important;}'
-                     + '.sp-carte-band-red{width:64.5mm!important;height:3.5mm!important;bottom:0!important;}'
-                     + '.sp-carte-logo-wrap{top:4.5mm!important;left:5mm!important;}'
-                     + '.sp-carte-club-name{top:5mm!important;left:15.5mm!important;}'
-                     + '.sp-carte-club-sub{top:9mm!important;left:15.5mm!important;}'
-                     + '.sp-carte-qr-zone{top:4mm!important;right:2.5mm!important;}'
-                     + '.sp-carte-url{bottom:4mm!important;right:4mm!important;}'
-                     + '.sp-carte-photo-wrap{bottom:6.5mm!important;left:5mm!important;}'
-                     + '.sp-carte-verso-header{padding-left:5mm!important;padding-right:5mm!important;}'
-                     + '.sp-carte-verso-footer{padding-left:5mm!important;padding-right:5mm!important;}';
+            var pro     = !!(proMode && proMode.checked);
+            var coupe   = '';
+            ['hg','hd','bg','bd'].forEach(function(c){ coupe += '<span class="spcm-coupe h ' + c + '"></span><span class="spcm-coupe v ' + c + '"></span>'; });
+            function face(sel) {
+                var el = carteEl.querySelector(sel).cloneNode(true);
+                el.classList.add('spcm--impression');
+                if (pro) { el.classList.add('spcm--imprimeur'); el.insertAdjacentHTML('afterbegin', coupe); }
+                // Le QR est un <canvas> : son dessin ne se copie pas avec le HTML, on le remplace par son image.
+                var src = carteEl.querySelector(sel + ' .spcm-qr canvas'), dst = el.querySelector('.spcm-qr');
+                if (src && dst) { try { dst.innerHTML = '<img src="' + src.toDataURL('image/png') + '" alt="QR">'; } catch(e) {} }
+                return el.outerHTML;
             }
-            var cropMarks = '<div class="sp-cm h tl-h"></div><div class="sp-cm v tl-v"></div>'
-                          + '<div class="sp-cm h tr-h"></div><div class="sp-cm v tr-v"></div>'
-                          + '<div class="sp-cm h bl-h"></div><div class="sp-cm v bl-v"></div>'
-                          + '<div class="sp-cm h br-h"></div><div class="sp-cm v br-v"></div>';
-            var wrapOpen  = (proMode && proMode.checked) ? '<div class="sp-pro-wrap">' + cropMarks : '';
-            var wrapClose = (proMode && proMode.checked) ? '</div>' : '';
+
+            var win = window.open('', '_blank', 'width=500,height=600');
             win.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">'
                 + '<title>Carte de membre</title>'
                 + '<style>'
-                + 'body{margin:20px;padding:0;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}'
+                + 'body{margin:10mm;padding:0;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}'
+                + '.spcm{margin-bottom:6mm;}'
                 + css
-                + '@media print{'
-                + '  body{margin:0;}'
-                + '  button{display:none!important;}'
-                + '  .sp-carte-recto,.sp-carte-verso{-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
-                + '}'
+                + '@media print{ body{margin:8mm;} }'
                 + '</style></head><body>'
-                + wrapOpen + carteEl.querySelector('.sp-carte-recto').outerHTML + wrapClose
-                + '<br>'
-                + wrapOpen + carteEl.querySelector('.sp-carte-verso').outerHTML + wrapClose
-                + '<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script>'
+                + face('.spcm-recto') + face('.spcm-verso')
+                + '<script>window.onload=function(){var go=function(){window.print();window.onafterprint=function(){window.close();};};'
+                + 'if(document.fonts&&document.fonts.ready){document.fonts.ready.then(go);}else{go();}}<\/script>'
                 + '</body></html>');
             win.document.close();
         }
@@ -1134,6 +1035,27 @@ class SpCalPro_Token {
         wp_send_json_success($sent ? 'Email envoyé.' : 'Envoi impossible (email manquant ?).');
     }
 
+    /**
+     * Révoque les liens de toute la famille (lien transféré par erreur, téléphone perdu) et envoie le
+     * nouveau lien. Toute la famille : un lien encore valable donnerait accès aux nouveaux liens des autres.
+     */
+    public function revoke_token_ajax() {
+        check_ajax_referer('sp_cal_admin_nonce','nonce');
+        if (!current_user_can(SP_Cal_Roles::CAP_GESTION_ADHESIONS)) wp_send_json_error('Accès refusé',403);
+        global $wpdb;
+        $tel = $this->db->table_eleves();
+        $id  = intval($_POST['eleve_id'] ?? 0);
+        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tel WHERE id=%d", $id ) );
+        if ( ! $el ) wp_send_json_error('Adhérent introuvable.');
+        $ids   = wp_list_pluck( $this->db->get_famille_par_email( SpCalPro_DB::cle_famille( $el ) ), 'id' );
+        $ids[] = $id;
+        foreach ( array_unique( array_map( 'intval', $ids ) ) as $mid ) {
+            $wpdb->update( $tel, array( 'token' => bin2hex( random_bytes(32) ) ), array( 'id' => $mid ) );
+        }
+        $sent = $this->generate_and_send( $id, true );
+        wp_send_json_success( $sent ? 'Anciens liens révoqués, nouveau lien envoyé.' : 'Anciens liens révoqués, mais envoi impossible (email manquant ?).' );
+    }
+
     public function generate_all_tokens_ajax() {
         check_ajax_referer('sp_cal_admin_nonce','nonce');
         if (!current_user_can(SP_Cal_Roles::CAP_GESTION_ADHESIONS)) wp_send_json_error('Accès refusé',403);
@@ -1152,9 +1074,10 @@ class SpCalPro_Token {
     ────────────────────────────────────────────── */
     private function render_pointage_page() {
         $pin_saisi = sanitize_text_field($_GET['pin'] ?? '');
-        $pin_valide = get_option('sp_cal_pointage_pin', '');
-        if ($pin_saisi !== $pin_valide || !$pin_valide) {
-            wp_die('Accès non autorisé — PIN invalide.', 'Pointage TKD', array('response'=>403));
+        $pin_valide = SP_Cal_Pin_Garde::pin();
+        // Essais ratés limités par SP_Cal_Pin_Garde (07/10/2026).
+        if ( ! SP_Cal_Pin_Garde::verifier( (string) $pin_saisi, (string) $pin_valide ) ) {
+            wp_die( 'Accès non autorisé — ' . esc_html( SP_Cal_Pin_Garde::message() ) . '.', 'Pointage TKD', array( 'response' => 403 ) );
         }
         $ajaxurl = admin_url('admin-ajax.php');
         get_header();
@@ -1650,8 +1573,8 @@ class SpCalPro_Token {
                         + (done ? ' disabled checked' : '') + '>'
                         + '<div class="spt-retro-info">'
                         +   '<div class="spt-retro-date">' + sptFmtDate(c.date) + (done ? ' <span class="spt-retro-done-badge">✓ déjà pointé</span>' : '') + '</div>'
-                        +   '<div class="spt-retro-titre">' + c.titre + '</div>'
-                        +   '<div class="spt-retro-heure">' + (c.heure_debut||'') + (c.heure_fin?' → '+c.heure_fin:'') + (c.categorie?' · '+c.categorie:'') + '</div>'
+                        +   '<div class="spt-retro-titre">' + sptEsc(c.titre) + '</div>'
+                        +   '<div class="spt-retro-heure">' + sptEsc(c.heure_debut||'') + (c.heure_fin?' → '+sptEsc(c.heure_fin):'') + (c.categorie?' · '+sptEsc(c.categorie):'') + '</div>'
                         + '</div>'
                         + '</label>';
                 });

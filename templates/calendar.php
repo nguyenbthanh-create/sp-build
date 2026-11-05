@@ -1,14 +1,20 @@
 <?php
 if ( ! defined( 'ABSPATH' ) ) exit;
 $is_admin    = current_user_can( 'manage_options' );
-$public_link = get_option( 'sp_cal_public_link', home_url('/planning/') );
+// Page du site qui affiche le planning ([sp_cal_planning]) : trouvée automatiquement (12/10/2026),
+// plus de réglage « URL planning public » à tenir à jour. Pas de page publiée = pas de bouton.
+$public_link = SP_Cal_Menu::url_page_shortcode( 'sp_cal_planning' );
 ?>
 <div id="sp-cal-container">
 
     <div class="sp-cal-toolbar">
+        <?php if ( $public_link ) : ?>
         <a href="<?php echo esc_url($public_link); ?>" target="_blank" class="sp-cal-btn-apercu">
             <span class="dashicons dashicons-external"></span> Planning public
         </a>
+        <?php else : ?>
+        <span></span>
+        <?php endif; ?>
         <div class="sp-cal-nav-center">
             <button id="cal-prev" class="sp-nav-btn"><span class="dashicons dashicons-arrow-left-alt2"></span></button>
             <div style="text-align:center;">

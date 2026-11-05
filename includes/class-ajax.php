@@ -10,7 +10,6 @@ class SpCalPro_Ajax {
     public function __construct( SpCalPro_DB $db ) {
         $this->db = $db;
         add_action( 'wp_ajax_sp_cal_get_events',              array( $this, 'get_events' ) );
-        add_action( 'wp_ajax_nopriv_sp_cal_get_events',       array( $this, 'get_events' ) );
         add_action( 'wp_ajax_sp_cal_save_event',              array( $this, 'save_event' ) );
         add_action( 'wp_ajax_sp_cal_delete_event',            array( $this, 'delete_event' ) );
         add_action( 'wp_ajax_sp_cal_get_presences',           array( $this, 'get_presences' ) );
@@ -54,108 +53,10 @@ class SpCalPro_Ajax {
 		add_action( 'wp_ajax_sp_load_sondage',           array( $this, 'ajax_load_sondage' ) );
         add_action( 'wp_ajax_sp_save_sondage_questions', array( $this, 'ajax_save_sondage_questions' ) );
         add_action( 'wp_ajax_sp_envoyer_sondage',        array( $this, 'ajax_envoyer_sondage' ) );
-		
-        // REST API pointage — accessible sans login, bypass blocage /wp-admin/
-        add_action( 'rest_api_init', array( $this, 'register_pointage_rest' ) );
-    }
 
-    public function register_pointage_rest() {
-        foreach ( array( 'cours', 'scan', 'cours_eleve', 'lot' ) as $r )
-            register_rest_route( 'spcal/v1', '/pointage/' . $r, array(
-                'methods'             => 'POST',
-                'callback'            => array( $this, 'rest_pointage_' . $r ),
-                'permission_callback' => '__return_true',
-            ) );
-    }
-    private function rest_to_post( WP_REST_Request $req ) {
-        foreach ( $req->get_params() as $k => $v ) { $_POST[ $k ] = $v; }
-    }
-    private function ptg_pin() {
-        $p = get_option( 'sp_cal_pointage_pin', '' );
-        if ( ! $p ) { $p = substr( str_shuffle( '0123456789' ), 0, 4 ); update_option( 'sp_cal_pointage_pin', $p ); }
-        return $p;
-    }
-    private function mat_occ( $slot_id, $date ) {
-        global $wpdb;
-        $te  = $this->db->table_events();
-        $tsl = $this->db->table_slots();
-        $ex  = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $te WHERE slot_id=%d AND date=%s AND type!='annulation' LIMIT 1", $slot_id, $date ) );
-        if ( $ex ) return intval( $ex );
-        $slot = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $tsl WHERE id=%d", $slot_id ) );
-        if ( ! $slot ) return 0;
-        $wpdb->insert( $te, array( 'date' => $date, 'heure_debut' => $slot->heure_debut, 'heure_fin' => $slot->heure_fin, 'titre' => $slot->label, 'categorie' => $slot->categorie ?: 'General', 'cours_discipline' => (string) ( $slot->cours_discipline ?? '' ), 'cours_age_categories' => (string) ( $slot->cours_age_categories ?? '' ), 'type' => 'cours', 'slot_id' => $slot_id ) );
-        return intval( $wpdb->insert_id );
-    }
-    public function rest_pointage_cours( WP_REST_Request $req ) {
-        $this->rest_to_post( $req );
-        $pin  = sanitize_text_field( $_POST['pin']  ?? '' );
-        $date = sanitize_text_field( $_POST['date'] ?? date( 'Y-m-d' ) );
-        if ( $pin !== $this->ptg_pin() ) { wp_send_json_error( 'PIN invalide', 403 ); exit; }
-        $occs  = $this->db->get_slot_occurrences( $date, $date );
-        $cours = array();
-        foreach ( $occs as $occ ) {
-            if ( $occ['annul_id'] ) continue;
-            $cours[] = array( 'slot_id' => $occ['slot_id'], 'mat_id' => $occ['mat_id'], 'date' => $occ['date'], 'titre' => $occ['titre'], 'heure_debut' => $occ['heure_debut'], 'heure_fin' => $occ['heure_fin'], 'categorie' => $occ['categorie'] );
-        }
-        wp_send_json_success( $cours ); exit;
-    }
-    public function rest_pointage_scan( WP_REST_Request $req ) {
-        $this->rest_to_post( $req ); global $wpdb;
-        $pin     = sanitize_text_field( $_POST['pin']     ?? '' );
-        $token   = sanitize_text_field( $_POST['token']   ?? '' );
-        $slot_id = intval(              $_POST['slot_id'] ?? 0  );
-        $date    = sanitize_text_field( $_POST['date']    ?? '' );
-        if ( $pin !== $this->ptg_pin() )        { wp_send_json_error( 'PIN invalide', 403 );       exit; }
-        if ( ! $token || ! $slot_id || ! $date ) { wp_send_json_error( 'Donnees manquantes', 400 ); exit; }
-        $tel = $this->db->table_eleves();
-        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
-        if ( ! $el ) { wp_send_json_error( 'Eleve non trouve', 404 ); exit; }
-        $eid = $this->mat_occ( $slot_id, $date );
-        if ( ! $eid ) { wp_send_json_error( 'Creneau introuvable', 404 ); exit; }
-        $tpe = $this->db->table_presences_eleves();
-        $ex  = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $tpe WHERE event_id=%d AND eleve_id=%d", $eid, $el->id ) );
-        if ( $ex ) { wp_send_json_success( array( 'nom' => $el->prenom . ' ' . mb_strtoupper( $el->nom ), 'status' => 'already', 'msg' => 'Deja pointe' ) ); exit; }
-        $wpdb->insert( $tpe, array( 'event_id' => $eid, 'eleve_id' => $el->id, 'present' => 1 ) );
-        wp_send_json_success( array( 'nom' => $el->prenom . ' ' . mb_strtoupper( $el->nom ), 'status' => 'ok', 'msg' => 'Present' ) ); exit;
-    }
-    public function rest_pointage_cours_eleve( WP_REST_Request $req ) {
-        $this->rest_to_post( $req ); global $wpdb;
-        $pin   = sanitize_text_field( $_POST['pin']   ?? '' );
-        $token = sanitize_text_field( $_POST['token'] ?? '' );
-        if ( $pin !== $this->ptg_pin() ) { wp_send_json_error( 'PIN invalide', 403 ); exit; }
-        $tel = $this->db->table_eleves(); $tpe = $this->db->table_presences_eleves();
-        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
-        if ( ! $el ) { wp_send_json_error( 'Eleve non trouve', 404 ); exit; }
-        $occs  = $this->db->get_slot_occurrences( date( 'Y-m-d', strtotime( '-30 days' ) ), date( 'Y-m-d' ) );
-        $cours = array();
-        foreach ( array_reverse( $occs ) as $occ ) {
-            if ( $occ['annul_id'] ) continue;
-            $deja = $occ['mat_id'] ? (bool) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $tpe WHERE event_id=%d AND eleve_id=%d LIMIT 1", $occ['mat_id'], $el->id ) ) : false;
-            $cours[] = array( 'slot_id' => $occ['slot_id'], 'mat_id' => $occ['mat_id'], 'date' => $occ['date'], 'titre' => $occ['titre'], 'heure_debut' => $occ['heure_debut'], 'heure_fin' => $occ['heure_fin'], 'categorie' => $occ['categorie'], 'deja_pointe' => $deja ? 1 : 0 );
-        }
-        wp_send_json_success( array( 'eleve' => array( 'nom' => $el->prenom . ' ' . mb_strtoupper( $el->nom ) ), 'cours' => $cours ) ); exit;
-    }
-    public function rest_pointage_lot( WP_REST_Request $req ) {
-        $this->rest_to_post( $req ); global $wpdb;
-        $pin   = sanitize_text_field( $_POST['pin']   ?? '' );
-        $token = sanitize_text_field( $_POST['token'] ?? '' );
-        $items = $_POST['items'] ?? array();
-        if ( $pin !== $this->ptg_pin() )  { wp_send_json_error( 'PIN invalide', 403 );       exit; }
-        if ( ! $token || empty( $items ) ) { wp_send_json_error( 'Donnees manquantes', 400 ); exit; }
-        $tel = $this->db->table_eleves();
-        $el  = $wpdb->get_row( $wpdb->prepare( "SELECT id,nom,prenom FROM $tel WHERE token=%s AND actif=1 LIMIT 1", $token ) );
-        if ( ! $el ) { wp_send_json_error( 'Eleve non trouve', 404 ); exit; }
-        $tpe = $this->db->table_presences_eleves(); $nb = 0;
-        foreach ( $items as $item ) {
-            $sid  = intval( $item['slot_id'] ?? 0 );
-            $date = sanitize_text_field( $item['date'] ?? '' );
-            if ( ! $sid || ! $date ) continue;
-            $eid = $this->mat_occ( $sid, $date ); if ( ! $eid ) continue;
-            if ( ! $wpdb->get_var( $wpdb->prepare( "SELECT id FROM $tpe WHERE event_id=%d AND eleve_id=%d", $eid, $el->id ) ) ) {
-                $wpdb->insert( $tpe, array( 'event_id' => $eid, 'eleve_id' => $el->id, 'present' => 1 ) ); $nb++;
-            }
-        }
-        wp_send_json_success( array( 'nom' => $el->prenom . ' ' . mb_strtoupper( $el->nom ), 'nb' => $nb ) ); exit;
+        // Routes REST /pointage/* : déclarées par class-admin.php (et par l'extension « SP Pointage QR »).
+        // La copie qui était ici a été supprimée le 07/10/2026 : elle ne servait jamais, WordPress
+        // répondant avec la première déclaration d'une route (celle de class-admin.php passe avant).
     }
 
     private function nonce()         { check_ajax_referer( 'sp_cal_admin_nonce', 'nonce' ); }
@@ -266,8 +167,14 @@ class SpCalPro_Ajax {
             );
         }
 
-        /* 3 — Anniversaires depuis CSV élèves */
-        $birthdays = $this->db->get_birthdays_for_month( $year, $month );
+        /* 3 — Anniversaires depuis CSV élèves
+           Réservés aux utilisateurs connectés ayant accès au planning (07/10/2026) : cette action
+           est aussi ouverte aux visiteurs (wp_ajax_nopriv_, ancien calendrier en shortcode des
+           entraîneurs, remplacé par leur application) et renvoyait à n'importe qui le nom complet
+           et l'âge des adhérents, mineurs compris. */
+        $birthdays = current_user_can( SP_Cal_Roles::CAP_VOIR_PLANNING )
+            ? $this->db->get_birthdays_for_month( $year, $month )
+            : array();
         foreach ( $birthdays as $b ) {
             $parts = explode( '/', $b->date_naissance );
             if ( count( $parts ) < 2 ) continue;
@@ -348,7 +255,8 @@ class SpCalPro_Ajax {
             'titre'                => sanitize_text_field( wp_unslash( $_POST['titre']       ?? ( $type === 'annulation' ? 'Annulation' : '' ) ) ),
             'cours_discipline'     => implode( ',', $disc_arr ),
             'cours_age_categories' => implode( ',', $age_arr ),
-            'categorie'            => implode( ',', $disc_arr ),
+            // Catégorie d'affichage : le cours spécial choisi (Paramètres > Cours & couleurs), sinon la discipline.
+            'categorie'            => SpCalPro_DB::categorie_affichage( sanitize_text_field( wp_unslash( $_POST['cours_special'] ?? '' ) ), $disc_arr ),
             'couleur'     => sanitize_hex_color(  $_POST['couleur']     ?? '#3B82F6' ) ?: '#3B82F6',
             'type'        => $type,
 			'niveau'      => in_array( $type, array('competition') ) ? sanitize_text_field( wp_unslash( $_POST['niveau'] ?? 'departemental' ) ) : 'departemental',
@@ -452,6 +360,7 @@ class SpCalPro_Ajax {
                             'id'     => $new_id,
                             'action' => $action,
                             'sent'   => $sent,
+                            'en_file' => $notif->en_file,
                         ) );
                         return;
                     }
@@ -1396,10 +1305,12 @@ class SpCalPro_Ajax {
         $avant = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['disponible'] ?? null;
         $this->db->save_dispo( $trainer_id, $date, $disponible, $note, $remplacant_id, $allers_retours );
         $ar = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['allers_retours'] ?? 1;
+        $par = wp_get_current_user()->display_name ?: 'un administrateur';
+        $this->db->journaliser_dispo( $trainer_id, $date, $avant, $disponible, $note, $remplacant_id, $ar, 'admin', 0, $par );
 
         // Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
         $notif   = new SpCalPro_Notifications( $this->db );
-        $notifie = $notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, wp_get_current_user()->display_name ?: 'un administrateur', $ar );
+        $notifie = $notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, $par, $ar );
 
         wp_send_json_success( array(
             'trainer_id'    => $trainer_id,
@@ -1442,6 +1353,11 @@ class SpCalPro_Ajax {
             array( 'remplacant_id' => $remplacant_id ),
             array( 'id' => intval($exists) )
         );
+
+        $d = $this->db->get_dispos_for_date( $date )[ $trainer_id ] ?? null;
+        if ( $d ) {
+            $this->db->journaliser_dispo( $trainer_id, $date, $d['disponible'], $d['disponible'], $d['note'], $remplacant_id, $d['allers_retours'], 'admin', 0, wp_get_current_user()->display_name ?: 'un administrateur' );
+        }
 
         wp_send_json_success( array(
             'trainer_id'    => $trainer_id,
@@ -1699,7 +1615,7 @@ class SpCalPro_Ajax {
 
         $wpdb->update( $te, array( 'inscriptions_envoye' => 1 ), array( 'id' => $event_id ) );
 
-        wp_send_json_success( array( 'sent' => $sent, 'total' => count( $eleves ) ) );
+        wp_send_json_success( array( 'sent' => $sent, 'total' => count( $eleves ), 'en_file' => $notif->en_file ) );
     }
 
     /**
@@ -1903,7 +1819,7 @@ class SpCalPro_Ajax {
         if ( is_wp_error( $result ) ) {
             wp_send_json_error( $result->get_error_message() );
         }
-        wp_send_json_success( [ 'sent' => $result ] );
+        wp_send_json_success( [ 'sent' => $result, 'en_file' => $notif->en_file ] );
     }
 
 
@@ -1926,7 +1842,7 @@ class SpCalPro_Ajax {
         // Vider la file
         delete_option( 'sp_cal_annul_pending' );
 
-        wp_send_json_success( array( 'sent' => $sent ) );
+        wp_send_json_success( array( 'sent' => $sent, 'en_file' => $notif->en_file ) );
     }
 
     /* ══════════════════════════════════════════════════════════
@@ -1949,13 +1865,40 @@ class SpCalPro_Ajax {
         return array( $debut, $fin );
     }
 
-    /** Cours récurrents de la période, avec leur état (annulé ou non). */
+    /**
+     * Cours visés par le lot : ceux de la période (2 mois max), ou — raccourci « Jours fériés de la
+     * saison » (feries=1, 19/10/2026) — ceux qui tombent un jour férié d'aujourd'hui à la fin de saison
+     * (chaque occurrence porte alors le nom du jour férié dans 'ferie').
+     * @return array [ occurrences, début, fin, jours fériés (AAAA-MM-JJ => libellé) ou null ]
+     */
+    private function lot_cible() {
+        if ( empty( $_POST['feries'] ) ) {
+            list( $debut, $fin ) = $this->lot_periode();
+            return array( $this->db->get_slot_occurrences( $debut, $fin ), $debut, $fin, null );
+        }
+        $debut = current_time( 'Y-m-d' );
+        $fin   = SpCalPro_DB::fin_saison_prochaine();
+        if ( $fin === '' ) { // fin de saison non réglée : 31 août suivant
+            $fin = ( (int) substr( $debut, 0, 4 ) + ( (int) substr( $debut, 5, 2 ) >= 9 ? 1 : 0 ) ) . '-08-31';
+        }
+        $feries = SpCalPro_DB::jours_feries( $debut, $fin );
+        $occ    = array();
+        foreach ( $feries as $date => $libelle ) {
+            foreach ( $this->db->get_slot_occurrences( $date, $date ) as $o ) {
+                $o['ferie'] = $libelle;
+                $occ[]      = $o;
+            }
+        }
+        return array( $occ, $debut, $fin, $feries );
+    }
+
+    /** Cours récurrents de la période (ou des jours fériés), avec leur état (annulé ou non). */
     public function lot_occurrences() {
         $this->nonce();
         $this->require_admin();
-        list( $debut, $fin ) = $this->lot_periode();
+        list( $occurrences ) = $this->lot_cible();
         $out = array();
-        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+        foreach ( $occurrences as $o ) {
             $out[] = array(
                 'slot_id'     => intval( $o['slot_id'] ),
                 'date'        => $o['date'],
@@ -1964,20 +1907,21 @@ class SpCalPro_Ajax {
                 'titre'       => $o['titre'],
                 'libelle'     => $this->db->libelle_creneau( $o ),
                 'annule'      => ! empty( $o['annul_id'] ),
+                'ferie'       => $o['ferie'] ?? '',
             );
         }
         usort( $out, static fn( $a, $b ) => strcmp( $a['date'] . $a['heure_debut'], $b['date'] . $b['heure_debut'] ) );
         wp_send_json_success( array( 'cours' => $out ) );
     }
 
-    /** Cours cochés (JSON [ {slot_id, date}, … ]) qui existent bien dans la période. @return array clé "date_slot" => occurrence */
-    private function lot_selection( $debut, $fin ) {
+    /** Cours cochés (JSON [ {slot_id, date}, … ]) qui font bien partie des cours visés. @return array clé "date_slot" => occurrence */
+    private function lot_selection( array $occurrences ) {
         $demandes = json_decode( wp_unslash( (string) ( $_POST['cours'] ?? '[]' ) ), true );
         if ( ! is_array( $demandes ) || ! $demandes ) wp_send_json_error( 'Aucun cours coché.' );
         $voulus = array();
         foreach ( $demandes as $d ) $voulus[ sanitize_text_field( (string) ( $d['date'] ?? '' ) ) . '_' . intval( $d['slot_id'] ?? 0 ) ] = true;
         $sel = array();
-        foreach ( $this->db->get_slot_occurrences( $debut, $fin ) as $o ) {
+        foreach ( $occurrences as $o ) {
             $k = $o['date'] . '_' . intval( $o['slot_id'] );
             if ( isset( $voulus[ $k ] ) ) $sel[ $k ] = $o;
         }
@@ -1988,8 +1932,8 @@ class SpCalPro_Ajax {
         $this->nonce();
         $this->require_admin();
         global $wpdb;
-        list( $debut, $fin ) = $this->lot_periode();
-        $sel      = $this->lot_selection( $debut, $fin );
+        list( $occurrences, $debut, $fin, $feries ) = $this->lot_cible();
+        $sel      = $this->lot_selection( $occurrences );
         $motif    = sanitize_textarea_field( wp_unslash( $_POST['motif'] ?? '' ) );
         $notifier = ! empty( $_POST['notifier'] );
         $te       = $this->db->table_events();
@@ -2008,13 +1952,19 @@ class SpCalPro_Ajax {
             if ( $wpdb->insert_id ) $annules[] = $o;
         }
 
-        $sent = 0;
+        $sent    = 0;
+        $en_file = 0;
         if ( $notifier && $annules ) {
-            // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés.
-            $maintenus = array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) );
-            $sent = ( new SpCalPro_Notifications( $this->db ) )->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif );
+            // Cours maintenus = cours de la période qui ne sont (toujours) pas annulés. Jours fériés :
+            // aucun « maintenu » (les autres jours de la saison ne sont pas concernés par ce mail).
+            $maintenus = $feries === null
+                ? array_values( array_filter( $this->db->get_slot_occurrences( $debut, $fin ), static fn( $o ) => empty( $o['annul_id'] ) ) )
+                : array();
+            $notif   = new SpCalPro_Notifications( $this->db );
+            $sent    = $notif->send_annulation_lot( $annules, $maintenus, $debut, $fin, $motif, $feries !== null );
+            $en_file = $notif->en_file;
         }
-        wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent ) );
+        wp_send_json_success( array( 'annules' => count( $annules ), 'sent' => $sent, 'en_file' => $en_file ) );
     }
 
     /** Rétablit les cours cochés (supprime leur annulation). Aucun mail n'est envoyé. */
@@ -2022,9 +1972,9 @@ class SpCalPro_Ajax {
         $this->nonce();
         $this->require_admin();
         global $wpdb;
-        list( $debut, $fin ) = $this->lot_periode();
+        list( $occurrences ) = $this->lot_cible();
         $n = 0;
-        foreach ( $this->lot_selection( $debut, $fin ) as $o ) {
+        foreach ( $this->lot_selection( $occurrences ) as $o ) {
             if ( empty( $o['annul_id'] ) ) continue;
             $n += (int) $wpdb->delete( $this->db->table_events(), array( 'id' => intval( $o['annul_id'] ), 'type' => 'annulation' ) );
         }

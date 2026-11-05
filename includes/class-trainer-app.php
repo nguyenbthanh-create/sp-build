@@ -10,7 +10,10 @@
  * Écrit dans la même table que l'admin (SpCalPro_DB::save_dispo()) : une dispo posée
  * depuis cette app apparaît immédiatement dans le calendrier admin, une seule source
  * de vérité. Toutes les dispos de l'équipe sont visibles (pas seulement les siennes) —
- * un entraîneur ne peut modifier que sa propre ligne, jamais celle d'un collègue.
+ * un entraîneur ne peut modifier que sa propre ligne, jamais celle d'un collègue, sauf
+ * s'il a le rôle « responsable » (25/10/2026) : il peut alors modifier la dispo de tout
+ * entraîneur actif et désigner un remplaçant, depuis ce même écran. Chaque modification
+ * est inscrite au journal des dispos (SpCalPro_DB::journaliser_dispo()).
  *
  * @package SP_Build
  */
@@ -31,7 +34,8 @@ class SP_Cal_Trainer_App {
 		$this->db = $db;
 
 		add_shortcode( 'sp_cal_dispo_app', [ $this, 'render' ] );
-		add_action( 'admin_init', [ __CLASS__, 'maybe_add_token_columns' ] );
+		SP_Cal_Schema::enregistrer( 'Application entraîneur (jetons)', [ __CLASS__, 'maybe_add_token_columns' ] );
+		SP_Cal_Schema::enregistrer( 'Journal des disponibilités', [ __CLASS__, 'maybe_create_journal_table' ] );
 
 		add_action( 'wp_ajax_sp_cal_dispo_app_data',        [ $this, 'ajax_get_data' ] );
 		add_action( 'wp_ajax_nopriv_sp_cal_dispo_app_data', [ $this, 'ajax_get_data' ] );
@@ -114,13 +118,32 @@ class SP_Cal_Trainer_App {
 		if ( ! $me ) {
 			return new WP_REST_Response( [ 'success' => false, 'data' => 'Lien invalide ou expiré.' ], 403 );
 		}
-		$pin = function_exists( 'sp_pointage_pin' ) ? sp_pointage_pin() : (string) get_option( 'sp_cal_pointage_pin', '' );
+		$pin = SP_Cal_Pin_Garde::pin();
+		$roles  = array_map( 'trim', explode( ',', (string) ( $me->roles ?? '' ) ) );
+		$bureau = in_array( 'bureau', $roles, true );
 		return new WP_REST_Response( [
 			'success'    => true,
 			'nom'        => $me->nom_public ?: $me->nom,
 			'pin'        => (string) $pin,
 			'dispos_url' => self::url_embed( $token ),
+			// Onglet « 💶 Saisie » (membres du bureau seulement) : ouvre la saisie rapide de la
+			// trésorerie (extension sp-compta) dans une fenêtre à part — vide = pas d'onglet.
+			'saisie_url' => $bureau ? $this->url_saisie_rapide() : '',
 		], 200 );
+	}
+
+	/**
+	 * Page publiée qui porte le shortcode de saisie rapide de la trésorerie, '' si la
+	 * trésorerie (sp-compta) n'est pas active ou si aucune page ne l'utilise. Seul lien
+	 * avec sp-compta : le nom de son shortcode public, aucune table ni classe partagée.
+	 */
+	private function url_saisie_rapide(): string {
+		if ( ! shortcode_exists( 'sp_compta_saisie_rapide' ) ) return '';
+		global $wpdb;
+		$page_id = $wpdb->get_var(
+			"SELECT ID FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type = 'page' AND post_content LIKE '%[sp_compta_saisie_rapide%' LIMIT 1"
+		);
+		return $page_id ? (string) get_permalink( (int) $page_id ) : '';
 	}
 
 	// ─── Schéma : colonnes token sur la table entraîneurs ──────────────────────
@@ -146,8 +169,49 @@ class SP_Cal_Trainer_App {
 		foreach ( [ 'token', 'token_sent_at' ] as $col ) {
 			if ( ! in_array( $col, $existing_after, true ) ) {
 				error_log( "[SP_Build] Colonne '{$col}' absente de {$table} après tentative d'ajout — vérifier les droits ALTER TABLE de l'utilisateur MySQL sur cet hébergement." );
+				// Erreur pour le module central (class-schema.php) : nouvel essai dans 10 minutes.
+				throw new \RuntimeException( "colonne {$col} absente de {$table}" );
 			}
 		}
+	}
+
+	// ─── Schéma : journal des modifications de dispos (25/10/2026) ─────────────
+	public static function maybe_create_journal_table(): void {
+		global $wpdb;
+		$table = $wpdb->prefix . 'sp_cal_dispos_journal';
+		$wpdb->query( "CREATE TABLE IF NOT EXISTS {$table} (
+			id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			trainer_id bigint(20) UNSIGNED NOT NULL,
+			date date NOT NULL,
+			avant tinyint(1) DEFAULT NULL,
+			apres tinyint(1) DEFAULT NULL,
+			allers_retours tinyint(1) NOT NULL DEFAULT 1,
+			note varchar(255) NOT NULL DEFAULT '',
+			remplacant_id bigint(20) UNSIGNED DEFAULT NULL,
+			source varchar(10) NOT NULL DEFAULT 'admin',
+			par_trainer_id bigint(20) UNSIGNED DEFAULT NULL,
+			par_nom varchar(100) NOT NULL DEFAULT '',
+			created_at datetime NOT NULL,
+			PRIMARY KEY (id),
+			KEY date_trainer (date, trainer_id)
+		) {$wpdb->get_charset_collate()}" );
+
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+			// Erreur pour le module central (class-schema.php) : nouvel essai dans 10 minutes.
+			throw new \RuntimeException( "table {$table} absente après tentative de création" );
+		}
+	}
+
+	/** Rôle « responsable » (page Entraîneurs & Bureau) : gère les dispos de toute l'équipe. */
+	private function est_responsable( object $t ): bool {
+		return in_array( 'responsable', array_map( 'trim', explode( ',', (string) ( $t->roles ?? '' ) ) ), true );
+	}
+
+	/** Entraîneurs actifs indexés par id. */
+	private function entraineurs_actifs(): array {
+		$out = [];
+		foreach ( $this->db->get_trainers_entraineurs( true ) as $t ) $out[ intval( $t->id ) ] = $t;
+		return $out;
 	}
 
 	// ─── Résolution d'un entraîneur depuis son token ───────────────────────────
@@ -242,17 +306,32 @@ class SP_Cal_Trainer_App {
 			];
 		}
 
+		// Jours du mois où il y a cours (créneaux non annulés) : mode « Équipe » du responsable, qui
+		// signale en orange un jour de cours sans entraîneur disponible (27/10/2026). Envoyé au seul
+		// responsable : les autres entraîneurs n'ont pas ce mode.
+		$peut_gerer = $this->est_responsable( $me );
+		$cours      = [];
+		if ( $peut_gerer ) {
+			$debut = sprintf( '%04d-%02d-01', $year, $month );
+			foreach ( $this->db->get_slot_occurrences( $debut, gmdate( 'Y-m-t', strtotime( $debut . ' 12:00:00 UTC' ) ) ) as $o ) {
+				if ( empty( $o['annul_id'] ) ) $cours[ $o['date'] ] = true;
+			}
+		}
+
 		wp_send_json_success( [
 			'me'       => [ 'id' => intval( $me->id ), 'nom_public' => $me->nom_public ?: $me->nom ],
+			'peut_gerer' => $peut_gerer,
+			'cours'    => array_keys( $cours ),
 			'trainers' => $trainers_out,
 			'dispos'   => $this->db->get_dispos_for_month( $year, $month ),
+			'journal'  => $this->db->get_journal_dispos_for_month( $year, $month ),
 			'year'     => $year,
 			'month'    => $month,
 			'cloture'  => SP_Cal_IK_Cloture::get_instance( $this->db )->est_cloture( sprintf( '%04d-%02d', $year, $month ) ),
 		] );
 	}
 
-	// ─── AJAX : enregistrer SA PROPRE dispo ─────────────────────────────────────
+	// ─── AJAX : enregistrer sa dispo (ou celle d'un collègue pour un responsable) ─
 	public function ajax_save(): void {
 		$token = sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) );
 		$me    = $this->trainer_by_token( $token );
@@ -262,27 +341,70 @@ class SP_Cal_Trainer_App {
 		$dispo_raw  = $_POST['disponible'] ?? '';
 		$note       = sanitize_text_field( wp_unslash( $_POST['note'] ?? '' ) );
 
-		if ( ! $date ) wp_send_json_error( 'Date manquante.' );
-		// Mois clôturé (IK déjà payées) : seul un admin peut encore corriger (SP_Cal_IK_Cloture).
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) wp_send_json_error( 'Date manquante.' );
+		// Mois clôturé (IK déjà payées) : seul un admin peut encore corriger (SP_Cal_IK_Cloture),
+		// depuis le calendrier admin — responsable compris (décision du 25/10/2026).
 		if ( SP_Cal_IK_Cloture::get_instance( $this->db )->est_cloture( $date ) ) {
 			wp_send_json_error( 'Ce mois est clôturé (indemnités déjà payées) : pour une correction, adressez-vous au bureau.' );
+		}
+
+		// Entraîneur concerné : soi-même par défaut. Un autre seulement pour un responsable,
+		// vérifié ici côté serveur (le rôle vient du jeton, jamais du client).
+		$me_id      = intval( $me->id );
+		$trainer_id = intval( $_POST['trainer_id'] ?? 0 ) ?: $me_id;
+		$pour_autre = $trainer_id !== $me_id;
+		$responsable = $this->est_responsable( $me );
+		$actifs     = $this->entraineurs_actifs();
+		if ( $pour_autre ) {
+			if ( ! $responsable ) wp_send_json_error( 'Vous ne pouvez modifier que vos propres disponibilités.' );
+			if ( ! isset( $actifs[ $trainer_id ] ) ) wp_send_json_error( 'Entraîneur introuvable ou inactif.' );
 		}
 
 		$disponible = ( $dispo_raw === '' ) ? null : intval( $dispo_raw );
 
 		// 1 ou 2 allers-retours ; absent = garder la valeur enregistrée (enregistrement de la note)
 		$allers_retours = isset( $_POST['allers_retours'] ) && $_POST['allers_retours'] !== '' ? intval( $_POST['allers_retours'] ) : null;
-		$avant = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['disponible'] ?? null;
+		$ligne_avant = $this->db->get_dispos_for_date( $date )[ $trainer_id ] ?? null;
+		$avant       = $ligne_avant['disponible'] ?? null;
 
-		// Un entraîneur ne peut jamais écrire que sur SA PROPRE ligne — le trainer_id
-		// vient du token résolu côté serveur, jamais d'un paramètre envoyé par le client.
-		$this->db->save_dispo( intval( $me->id ), $date, $disponible, $note, null, $allers_retours );
-		$ar = $this->db->get_dispos_for_date( $date )[ intval( $me->id ) ]['allers_retours'] ?? 1;
+		// Remplaçant : seulement pour un entraîneur indisponible, désigné par un responsable.
+		// Paramètre absent = garder celui déjà désigné (avant, l'enregistrement depuis
+		// l'application l'effaçait). 0 = retirer le remplaçant.
+		$remplacant_id = $ligne_avant['remplacant_id'] ?? null;
+		if ( $responsable && isset( $_POST['remplacant_id'] ) ) {
+			$remplacant_id = intval( $_POST['remplacant_id'] ) ?: null;
+			if ( $remplacant_id && ( $remplacant_id === $trainer_id || ! isset( $actifs[ $remplacant_id ] ) ) ) {
+				wp_send_json_error( 'Remplaçant invalide.' );
+			}
+		}
+		if ( $disponible !== 0 ) $remplacant_id = null;
+		$remplacant_avant = $ligne_avant['remplacant_id'] ?? null;
 
+		$this->db->save_dispo( $trainer_id, $date, $disponible, $note, $remplacant_id, $allers_retours );
+		$ar = $this->db->get_dispos_for_date( $date )[ $trainer_id ]['allers_retours'] ?? 1;
+
+		$par_nom = $me->nom_public ?: $me->nom;
+		$this->db->journaliser_dispo( $trainer_id, $date, $avant, $disponible, $note, $remplacant_id, $ar, 'appli', $me_id, $par_nom );
+
+		$notif = new SpCalPro_Notifications( $this->db );
 		// Bureau prévenu tout de suite si la date est entre J et J+3 (voir notifier_bureau_dispo()).
-		( new SpCalPro_Notifications( $this->db ) )->notifier_bureau_dispo( intval( $me->id ), $date, $avant, $disponible, $note, '', $ar );
+		$notif->notifier_bureau_dispo( $trainer_id, $date, $avant, $disponible, $note, $pour_autre ? $par_nom : '', $ar, 'appli', $me_id );
+		if ( $pour_autre && $avant !== $disponible ) {
+			$notif->notifier_entraineur_dispo_modifiee( $trainer_id, $date, $disponible, $note, $ar, $par_nom );
+		}
+		if ( $remplacant_id && $remplacant_id !== $remplacant_avant && $remplacant_id !== $me_id ) {
+			$notif->notifier_remplacant( $remplacant_id, $trainer_id, $date, $par_nom );
+		}
 
-		wp_send_json_success( [ 'date' => $date, 'disponible' => $disponible, 'note' => $note, 'allers_retours' => $ar ] );
+		wp_send_json_success( [
+			'trainer_id'     => $trainer_id,
+			'date'           => $date,
+			'disponible'     => $disponible,
+			'note'           => $note,
+			'allers_retours' => $ar,
+			'remplacant_id'  => $remplacant_id,
+			'journal'        => [ 'par_id' => $me_id, 'par' => $par_nom, 'source' => 'appli', 'quand' => current_time( 'mysql' ) ],
+		] );
 	}
 
 	// ─── Rendu de l'app ──────────────────────────────────────────────────────────
@@ -345,6 +467,22 @@ class SP_Cal_Trainer_App {
 			.sda-note { width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; }
 			.sda-saved { text-align: center; font-size: 11px; color: #16a34a; height: 16px; margin-top: 6px; }
 			.sda-hint { text-align: center; font-size: 12px; color: #9ca3af; padding: 14px; }
+			/* Responsable (25/10/2026) : lignes de l'équipe touchables, remplaçant, trace */
+			.sda-team-click { cursor: pointer; border-radius: 8px; padding: 5px 6px; margin: 0 -6px; }
+			.sda-team-click:hover { background: #f1f5f9; }
+			.sda-team-row.sda-cible { background: #fef3c7; }
+			.sda-remp-tag { font-size: 11px; color: #b45309; }
+			.sda-remp { flex: 1.4; min-width: 0; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; color: inherit; }
+			.sda-back { margin-left: 8px; background: none; border: 1px solid #cbd5e1; border-radius: 14px; font-size: 11px; font-weight: 700; padding: 3px 10px; cursor: pointer; text-transform: none; letter-spacing: 0; color: inherit; font-family: inherit; }
+			.sda-trace { font-size: 11px; color: #6b7280; margin: 8px 0 0; text-align: center; }
+			/* 27/10/2026 : point « un autre entraîneur est disponible » ; mode « Équipe » du responsable */
+			.sda-dot { width: 6px; height: 6px; border-radius: 50%; background: #0f70b7; margin-top: 3px; }
+			.sda-cell.sda-alerte { background: #ffedd5; color: #9a3412; }
+			.sda-vues { display: flex; gap: 6px; padding: 10px 12px 0; background: #fff; border: 1px solid #e2e8f0; border-top: none; border-bottom: none; }
+			.sda-vue { flex: 1; padding: 7px 8px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: inherit; }
+			.sda-vue.sda-active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
+			.sda-legende { grid-column: 1 / -1; font-size: 11px; color: #64748b; text-align: center; padding-top: 6px; }
+			.sda-legende i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin: 0 4px 0 10px; }
 
 			/* Ambiance sombre de l'application entraîneur (onglet « Mes dispos ») — 01/10/2026.
 			   Le nom est déjà dans l'en-tête de l'application : pas de bandeau ici. */
@@ -370,6 +508,18 @@ class SP_Cal_Trainer_App {
 			.sda-sombre .sda-note::placeholder { color: rgba(255,255,255,.35); }
 			.sda-sombre .sda-hint, .sda-sombre .sda-nr-hint { color: rgba(255,255,255,.45); }
 			.sda-sombre .sda-close { background: #333; border-color: #4b4b4b; color: #fff; }
+			.sda-sombre .sda-team-click:hover { background: #262626; }
+			.sda-sombre .sda-team-row.sda-cible { background: rgba(245,158,11,.18); }
+			.sda-sombre .sda-remp-tag { color: #fbbf24; }
+			.sda-sombre .sda-remp { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-back { border-color: #4b4b4b; }
+			.sda-sombre .sda-trace { color: rgba(255,255,255,.45); }
+			.sda-sombre .sda-dot { background: #38bdf8; }
+			.sda-sombre .sda-cell.sda-alerte { background: rgba(234,88,12,.32); color: #fdba74; }
+			.sda-sombre .sda-vues { background: #1a1a1a; border: none; }
+			.sda-sombre .sda-vue { background: #262626; border-color: #333; color: #fff; }
+			.sda-sombre .sda-vue.sda-active { background: #0f70b7; border-color: #0f70b7; }
+			.sda-sombre .sda-legende { color: rgba(255,255,255,.45); }
 			</style>
 
 			<div class="sda-header">
@@ -380,6 +530,10 @@ class SP_Cal_Trainer_App {
 				<button type="button" id="sda-prev">‹</button>
 				<div class="sda-nav-title" id="sda-title">—</div>
 				<button type="button" id="sda-next">›</button>
+			</div>
+			<div class="sda-vues" id="sda-vues" style="display:none">
+				<button type="button" class="sda-vue" data-vue="perso" id="sda-vue-perso">👤 Mes dispos</button>
+				<button type="button" class="sda-vue" data-vue="equipe">👥 Équipe</button>
 			</div>
 			<div class="sda-grid" id="sda-grid"></div>
 			<div class="sda-panel" id="sda-panel">
@@ -397,7 +551,11 @@ class SP_Cal_Trainer_App {
 				year: new Date().getFullYear(),
 				month: new Date().getMonth() + 1,
 				me: null, trainers: [], dispos: {}, cloture: false,
-				selected: null
+				selected: null,
+				peut_gerer: false, journal: {},
+				cible: null, // responsable : entraîneur dont on modifie la dispo (null = soi-même)
+				vue: 'perso', // responsable : 'perso' (dispos d'un entraîneur) ou 'equipe' (couverture des cours)
+				cours: {}     // responsable : jours de cours du mois (AAAA-MM-JJ => true)
 			};
 
 			var MOIS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
@@ -426,11 +584,37 @@ class SP_Cal_Trainer_App {
 					state.trainers = res.data.trainers;
 					state.dispos   = res.data.dispos;
 					state.cloture  = !!res.data.cloture; // mois clôturé : IK payées, plus de modification ici
+					state.peut_gerer = !!res.data.peut_gerer;
+					state.journal  = res.data.journal || {};
+					state.cours    = {};
+					(res.data.cours || []).forEach(function(c){ state.cours[c] = true; });
+					if (!state.peut_gerer || state.cloture) state.cible = null;
+					if (!state.peut_gerer) state.vue = 'perso';
 					state.selected = null;
+					renderVues();
 					renderGrid();
 					renderPanel();
 				});
 			}
+
+			/** Boutons « Mes dispos » / « Équipe » : responsable uniquement (27/10/2026). */
+			function renderVues() {
+				var bar = document.getElementById('sda-vues');
+				bar.style.display = state.peut_gerer ? 'flex' : 'none';
+				if (!state.peut_gerer) return;
+				document.getElementById('sda-vue-perso').textContent = '👤 ' + (state.cible ? nomDe(state.cible) : 'Mes dispos');
+				[].forEach.call(bar.querySelectorAll('.sda-vue'), function(b){
+					b.classList.toggle('sda-active', b.getAttribute('data-vue') === state.vue);
+				});
+			}
+			[].forEach.call(document.querySelectorAll('#sda-vues .sda-vue'), function(b){
+				b.addEventListener('click', function(){
+					state.vue = this.getAttribute('data-vue');
+					renderVues();
+					renderGrid();
+					if (!state.selected) renderPanel();
+				});
+			});
 
 			function renderGrid() {
 				var grid = document.getElementById('sda-grid');
@@ -451,19 +635,35 @@ class SP_Cal_Trainer_App {
 					grid.appendChild(empty);
 				}
 
+				// Couleurs des cases : ses propres dispos, ou celles de l'entraîneur choisi par le responsable.
+				// Mode « Équipe » (responsable, 27/10/2026) : couverture des jours de cours à la place — vert =
+				// au moins un entraîneur disponible ou un remplaçant désigné, orange = cours sans personne ;
+				// un jour sans cours (ou dont les cours sont annulés, ex. jour férié) reste sans couleur.
+				// Point bleu (tous, hors mode Équipe) : un autre entraîneur est disponible ce jour-là.
+				var gid = cibleId();
+				var equipe = state.peut_gerer && state.vue === 'equipe';
 				for (var d = 1; d <= daysInMonth; d++) {
 					var ds = state.year + '-' + pad(state.month) + '-' + pad(d);
 					var dayDispos = state.dispos[ds] || {};
-					var mine = state.me && dayDispos[state.me.id] ? dayDispos[state.me.id].disponible : null;
+					var mine = gid && dayDispos[gid] ? dayDispos[gid].disponible : null;
+
+					var couvert = false, autres = false;
+					state.trainers.forEach(function(t){
+						var x = dayDispos[t.id];
+						if (!x) return;
+						if (x.disponible === 1) { couvert = true; if (t.id !== gid) autres = true; }
+						else if (x.disponible === 0 && x.remplacant_id) couvert = true;
+					});
+					var coursDuJour = !!state.cours[ds];
+					var alerte = equipe && coursDuJour && !couvert;
+					var etat = equipe ? (coursDuJour ? (couvert ? ' sda-ok' : ' sda-alerte') : '') : (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '');
 
 					var cell = document.createElement('div');
-					cell.className = 'sda-cell' + (mine === 1 ? ' sda-ok' : mine === 0 ? ' sda-ko' : '') + (ds === todayStr() ? ' sda-today' : '') + (ds === state.selected ? ' sda-selected' : '');
+					cell.className = 'sda-cell' + etat + (ds === todayStr() ? ' sda-today' : '') + (ds === state.selected ? ' sda-selected' : '');
 					cell.setAttribute('data-date', ds);
+					if (alerte) cell.title = 'Cours sans entraîneur disponible';
 
-					var nb = 0;
-					state.trainers.forEach(function(t){ if (dayDispos[t.id] && dayDispos[t.id].disponible === 1) nb++; });
-
-					cell.innerHTML = '<span>' + d + '</span>' + (state.trainers.length > 1 ? '<span class="sda-cell-count">' + nb + '/' + state.trainers.length + '</span>' : '');
+					cell.innerHTML = '<span>' + d + '</span>' + (!equipe && autres ? '<span class="sda-dot" title="Un autre entraîneur est disponible"></span>' : '');
 					cell.addEventListener('click', function(){
 						state.selected = this.getAttribute('data-date');
 						renderGrid();
@@ -471,37 +671,78 @@ class SP_Cal_Trainer_App {
 					});
 					grid.appendChild(cell);
 				}
+				if (equipe) {
+					var leg = document.createElement('div');
+					leg.className = 'sda-legende';
+					leg.innerHTML = '<i style="background:#22c55e"></i>couvert<i style="background:#f97316"></i>cours sans entraîneur';
+					grid.appendChild(leg);
+				}
+			}
+
+			function esc(s) {
+				return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+			}
+			function nomDe(id) {
+				var n = '';
+				state.trainers.forEach(function(t){ if (t.id === id) n = t.nom_public || t.nom; });
+				return n;
+			}
+			/** Entraîneur dont la dispo est affichée / modifiée : soi-même, ou celui choisi par le responsable. */
+			function cibleId() { return state.cible || (state.me ? state.me.id : null); }
+			function maintenant() {
+				var n = new Date();
+				return todayStr() + ' ' + pad(n.getHours()) + ':' + pad(n.getMinutes()) + ':' + pad(n.getSeconds());
 			}
 
 			function statusIcon(dispo) {
 				if (!dispo) return '<span style="color:#cbd5e1;">⏳</span>';
 				if (dispo.disponible === 1) return '<span style="color:#16a34a;">✅' + (dispo.allers_retours === 2 ? ' ×2' : '') + '</span>';
-				if (dispo.disponible === 0) return '<span style="color:#dc2626;">❌</span>';
+				if (dispo.disponible === 0) return '<span style="color:#dc2626;">❌</span>'
+					+ (dispo.remplacant_id ? ' <span class="sda-remp-tag">→ ' + esc(nomDe(dispo.remplacant_id)) + '</span>' : '');
 				return '<span style="color:#cbd5e1;">⏳</span>';
+			}
+
+			/** « Modifié par … » : dernière modification faite par quelqu'un d'autre que l'entraîneur lui-même. */
+			function trace(ds, tid) {
+				var j = (state.journal[ds] || {})[tid];
+				if (!j || j.par_id === tid) return '';
+				var q = j.quand ? new Date(j.quand.replace(' ', 'T')) : null;
+				var quand = q && !isNaN(q) ? ' le ' + q.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' }) + ' à ' + q.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+				return '<p class="sda-trace">✎ Modifié par ' + esc(j.par) + (j.source === 'admin' ? ' (calendrier admin)' : '') + quand + '</p>';
 			}
 
 			function renderPanel() {
 				var panel = document.getElementById('sda-panel');
+				var cid = cibleId();
+				var pourAutre = state.me && cid !== state.me.id;
 				if (!state.selected) {
-					panel.innerHTML = '<p class="sda-hint">Touchez un jour pour voir ou déclarer une disponibilité.</p>';
+					panel.innerHTML = pourAutre
+						? '<p class="sda-hint">Calendrier de <strong>' + esc(nomDe(cid)) + '</strong> : touchez un jour pour modifier sa disponibilité.<br><button type="button" class="sda-back" id="sda-back">↩ Revenir à mes dispos</button></p>'
+						: '<p class="sda-hint">Touchez un jour pour voir ou déclarer une disponibilité.'
+							+ (state.trainers.length > 1 && state.vue !== 'equipe' ? '<br><span class="sda-dot" style="display:inline-block;vertical-align:middle;margin:0 4px 0 0"></span>un autre entraîneur est disponible ce jour-là.' : '') + '</p>';
+					var back0 = document.getElementById('sda-back');
+					if (back0) back0.addEventListener('click', function(){ state.cible = null; renderVues(); renderGrid(); renderPanel(); });
 					return;
 				}
 				var ds = state.selected;
 				var dayDispos = state.dispos[ds] || {};
 				var dObj = new Date(ds + 'T00:00:00');
 				var dateLabel = dObj.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+				var gerable = state.peut_gerer && !state.cloture; // responsable : touche un entraîneur pour modifier sa dispo
 
 				var html = '<div class="sda-panel-date"><span>' + dateLabel + '</span><button type="button" class="sda-close" id="sda-close">✕ Fermer</button></div>';
+				if (gerable) html += '<p class="sda-nr-hint" style="margin:0 0 6px">Touchez un entraîneur pour modifier sa disponibilité.</p>';
 
 				state.trainers.forEach(function(t){
 					var d = dayDispos[t.id];
 					var isMe = state.me && t.id === state.me.id;
-					html += '<div class="sda-team-row"><span class="sda-team-avatar">' + (t.nom_public||t.nom).charAt(0).toUpperCase() + '</span>'
-						+ '<span>' + (t.nom_public||t.nom) + (isMe ? ' (vous)' : '') + '</span>'
+					html += '<div class="sda-team-row' + (gerable ? ' sda-team-click' : '') + (gerable && t.id === cid ? ' sda-cible' : '') + '"' + (gerable ? ' data-tid="' + t.id + '"' : '') + '>'
+						+ '<span class="sda-team-avatar">' + esc((t.nom_public||t.nom).charAt(0).toUpperCase()) + '</span>'
+						+ '<span>' + esc(t.nom_public||t.nom) + (isMe ? ' (vous)' : '') + '</span>'
 						+ '<span class="sda-team-status">' + statusIcon(d) + '</span></div>';
 				});
 
-				var mine = dayDispos[state.me.id] || null;
+				var mine = dayDispos[cid] || null;
 				var val  = mine ? mine.disponible : null; // 1 / 0 / null (neutre = non renseigné, comme ⬜ dans l'admin)
 				var ar   = mine && mine.allers_retours === 2 ? 2 : 1;
 				if (state.cloture) {
@@ -517,19 +758,35 @@ class SP_Cal_Trainer_App {
 					});
 					return;
 				}
-				html += '<div class="sda-me-label">Votre disponibilité</div>'
+				// Remplaçant (responsable, entraîneur indisponible) : les entraîneurs disponibles ce jour d'abord.
+				var rempHtml = '';
+				if (state.peut_gerer && val === 0) {
+					var rang = function(t){ var d = dayDispos[t.id]; return d && d.disponible === 1 ? 0 : (d && d.disponible === 0 ? 2 : 1); };
+					var choix = state.trainers.filter(function(t){ return t.id !== cid; }).sort(function(a, b){ return rang(a) - rang(b); });
+					rempHtml = '<div class="sda-ar"><span>Remplaçant</span><select class="sda-remp" id="sda-remp"><option value="0">— Aucun —</option>';
+					choix.forEach(function(t){
+						var r = rang(t);
+						rempHtml += '<option value="' + t.id + '"' + (mine && mine.remplacant_id === t.id ? ' selected' : '') + '>'
+							+ esc(t.nom_public || t.nom) + (r === 0 ? ' ✅' : r === 2 ? ' ❌' : '') + '</option>';
+					});
+					rempHtml += '</select></div><p class="sda-nr-hint">✅ = déjà disponible ce jour. Le remplaçant choisi est prévenu par mail.</p>';
+				}
+
+				html += '<div class="sda-me-label">' + (pourAutre ? 'Disponibilité de ' + esc(nomDe(cid)) + '<button type="button" class="sda-back" id="sda-back">↩ Moi</button>' : 'Votre disponibilité') + '</div>'
 					+ '<div class="sda-btns">'
 					+ '<button type="button" class="sda-btn sda-btn-ok' + (val === 1 ? ' sda-active' : '') + '" data-val="1">✅<span>Disponible</span></button>'
 					+ '<button type="button" class="sda-btn sda-btn-nr' + (val === null ? ' sda-active' : '') + '" data-val="">⬜<span>Neutre</span></button>'
 					+ '<button type="button" class="sda-btn sda-btn-ko' + (val === 0 ? ' sda-active' : '') + '" data-val="0">❌<span>Indisponible</span></button>'
 					+ '</div>'
-					+ '<p class="sda-nr-hint">' + (val === null ? 'Neutre : pas de réponse, mais vous pouvez être sollicité si besoin.' : '') + '</p>'
+					+ '<p class="sda-nr-hint">' + (val === null ? (pourAutre ? 'Neutre : pas de réponse enregistrée.' : 'Neutre : pas de réponse, mais vous pouvez être sollicité si besoin.') : '') + '</p>'
 					// Deux interventions trop éloignées dans la journée → deux allers-retours (comptés en IK).
 					+ (val === 1 ? '<div class="sda-ar"><span>Allers-retours dans la journée</span>'
 						+ '<button type="button" class="sda-ar-btn' + (ar === 1 ? ' sda-active' : '') + '" data-ar="1">1</button>'
 						+ '<button type="button" class="sda-ar-btn' + (ar === 2 ? ' sda-active' : '') + '" data-ar="2">2</button></div>'
 						+ '<p class="sda-nr-hint">' + (ar === 2 ? 'Deux trajets aller-retour ce jour-là (interventions trop éloignées) : comptés tous les deux en IK.' : 'Choisissez 2 si vos deux interventions sont trop éloignées pour rester sur place.') + '</p>' : '')
-					+ (val === null ? '' : '<textarea class="sda-note" id="sda-note" rows="2" placeholder="Note (facultatif)">' + (mine && mine.note ? mine.note : '') + '</textarea>')
+					+ rempHtml
+					+ (val === null ? '' : '<textarea class="sda-note" id="sda-note" rows="2" placeholder="Note (facultatif)">' + esc(mine && mine.note ? mine.note : '') + '</textarea>')
+					+ trace(ds, cid)
 					+ '<div class="sda-saved" id="sda-saved"></div>';
 
 				panel.innerHTML = html;
@@ -539,18 +796,37 @@ class SP_Cal_Trainer_App {
 				// l'ancien état) et toucher « Indisponible » partaient en même temps : l'ancien état
 				// pouvait arriver en dernier et l'emporter (retour terrain du 01/10/2026).
 				// allers : 1 ou 2 ; non précisé = garder la valeur en cours (le serveur fait de même).
-				function save(disponible, rerender, allers) {
+				// remp : id du remplaçant (0 = aucun) ; non précisé = garder celui déjà désigné.
+				function save(disponible, rerender, allers, remp) {
 					var noteEl = document.getElementById('sda-note');
-					var actuel = (state.dispos[ds] || {})[state.me.id] || {};
+					var actuel = (state.dispos[ds] || {})[cid] || {};
 					var note   = disponible === null ? '' : (noteEl ? noteEl.value : actuel.note || '');
 					var a      = disponible === 1 ? (allers || (actuel.allers_retours === 2 ? 2 : 1)) : 1;
+					var r      = disponible === 0 ? (remp !== undefined ? (remp || null) : (actuel.remplacant_id || null)) : null;
 					if (!state.dispos[ds]) state.dispos[ds] = {};
-					if (disponible === null) delete state.dispos[ds][state.me.id];
-					else state.dispos[ds][state.me.id] = { disponible: disponible, note: note, allers_retours: a };
+					if (disponible === null) delete state.dispos[ds][cid];
+					else state.dispos[ds][cid] = { disponible: disponible, note: note, allers_retours: a, remplacant_id: r };
+					if (!state.journal[ds]) state.journal[ds] = {};
+					state.journal[ds][cid] = { par_id: state.me.id, par: state.me.nom_public, source: 'appli', quand: maintenant() };
 					renderGrid();
 					if (rerender) renderPanel();
-					queue(ds, disponible, note, allers || '');
+					queue(ds, cid, disponible, note, allers || '', remp);
 				}
+
+				[].forEach.call(panel.querySelectorAll('.sda-team-click'), function(row){
+					row.addEventListener('click', function(){
+						var tid = parseInt(this.getAttribute('data-tid'), 10);
+						state.cible = tid === state.me.id ? null : tid;
+						state.vue = 'perso'; // choisir un entraîneur montre son calendrier
+						renderVues();
+						renderGrid();
+						renderPanel();
+					});
+				});
+				var back = document.getElementById('sda-back');
+				if (back) back.addEventListener('click', function(){ state.cible = null; renderVues(); renderGrid(); renderPanel(); });
+				var rempEl = document.getElementById('sda-remp');
+				if (rempEl) rempEl.addEventListener('change', function(){ save(0, true, undefined, parseInt(this.value, 10) || 0); });
 
 				[].forEach.call(panel.querySelectorAll('.sda-btn'), function(b){
 					b.addEventListener('click', function(){
@@ -572,17 +848,19 @@ class SP_Cal_Trainer_App {
 				});
 				var noteEl = document.getElementById('sda-note');
 				if (noteEl) noteEl.addEventListener('blur', function(){
-					var mine2 = (state.dispos[ds] || {})[state.me.id];
+					var mine2 = (state.dispos[ds] || {})[cid];
 					if (mine2 && this.value !== (mine2.note || '')) save(mine2.disponible, false);
 				});
 			}
 
 			// File d'envoi : une requête à la fois, dans l'ordre.
 			var file = Promise.resolve();
-			function queue(ds, disponible, note, allers) {
+			function queue(ds, tid, disponible, note, allers, remp) {
+				var data = { date: ds, trainer_id: tid, disponible: disponible === null ? '' : disponible, note: note, allers_retours: allers || '' };
+				if (remp !== undefined) data.remplacant_id = remp;
 				file = file.then(function(){
 					return new Promise(function(fin){
-						post('sp_cal_dispo_app_save', { date: ds, disponible: disponible === null ? '' : disponible, note: note, allers_retours: allers || '' }, function(res){
+						post('sp_cal_dispo_app_save', data, function(res){
 							var saved = document.getElementById('sda-saved');
 							if (saved) {
 								saved.textContent = res.success ? '✓ Enregistré' : '⚠️ ' + (typeof res.data === 'string' ? res.data : 'Erreur — réessayez');
