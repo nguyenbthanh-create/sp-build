@@ -64,6 +64,22 @@
             $('#cal-today-btn').on('click', function(){
                 CAL.year = new Date().getFullYear(); CAL.month = new Date().getMonth()+1; CAL.loadMonth();
             });
+            $('#cal-bday-toggle').on('click', function(){ CAL.toggleBirthdays($(this)); });
+        },
+        // Masquer / afficher les anniversaires : choix enregistré pour le compte connecté (05/11/2026).
+        toggleBirthdays: function ($btn) {
+            var masquer = $btn.attr('data-masque') !== '1';
+            $btn.prop('disabled', true);
+            $.post(SpCal.ajaxurl, {action:'sp_cal_masquer_anniversaires', nonce:SpCal.nonce, masquer:masquer ? 1 : 0}, function(res){
+                if (!res.success) { alert('Le choix n\'a pas pu être enregistré.'); return; }
+                $btn.attr('data-masque', masquer ? '1' : '0')
+                    .text(masquer ? '🎂 Afficher les anniversaires' : '🎂 Masquer les anniversaires');
+                CAL.loadMonth();
+            }).fail(function(){
+                alert('Le choix n\'a pas pu être enregistré.');
+            }).always(function(){
+                $btn.prop('disabled', false);
+            });
         },
         navigate: function (d) {
             CAL.month += d;

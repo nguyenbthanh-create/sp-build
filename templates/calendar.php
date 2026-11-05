@@ -4,6 +4,7 @@ $is_admin    = current_user_can( 'manage_options' );
 // Page du site qui affiche le planning ([sp_cal_planning]) : trouvée automatiquement (12/10/2026),
 // plus de réglage « URL planning public » à tenir à jour. Pas de page publiée = pas de bouton.
 $public_link = SP_Cal_Menu::url_page_shortcode( 'sp_cal_planning' );
+$anniv_masques = get_user_meta( get_current_user_id(), SpCalPro_Ajax::META_MASQUER_ANNIVERSAIRES, true ) === '1';
 ?>
 <div id="sp-cal-container">
 
@@ -24,6 +25,7 @@ $public_link = SP_Cal_Menu::url_page_shortcode( 'sp_cal_planning' );
             <button id="cal-next" class="sp-nav-btn"><span class="dashicons dashicons-arrow-right-alt2"></span></button>
         </div>
         <div style="min-width:160px;text-align:right;">
+            <button type="button" id="cal-bday-toggle" class="sp-cal-btn-apercu" style="background:rgba(255,255,255,0.15);" data-masque="<?php echo $anniv_masques ? '1' : '0'; ?>" title="Votre choix est mémorisé pour votre compte, sans effet sur les autres utilisateurs"><?php echo $anniv_masques ? '🎂 Afficher les anniversaires' : '🎂 Masquer les anniversaires'; ?></button>
             <?php if($is_admin): ?>
             <button id="btn-annul-lot" class="sp-cal-btn-apercu" style="background:rgba(255,255,255,0.15);" title="Annuler plusieurs cours d'une période (vacances scolaires…) en une fois">🗓️ Annuler par lot</button>
             <button id="cal-today-btn" class="sp-cal-btn-apercu" style="background:rgba(255,255,255,0.15);">Aujourd'hui</button>

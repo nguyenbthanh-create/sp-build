@@ -284,4 +284,11 @@ Correctif : la session de l'application passe par l'en-tête X-Spcal-Jwt au lieu
 
 Constats non traités : aucune notification push n'est envoyée par le serveur (SpCalPro_WebPush n'existe pas) ; à la validation d'une nouvelle adhésion, send_token_or_welcome() cherche une classe SP_Token inexistante (la classe est SpCalPro_Token) et semble envoyer un simple mail de bienvenue sans lien — à confirmer.
 
-*Dernière mise à jour de ce fichier : 04/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+## 05/11/2026 — Calendrier : masquer les anniversaires, par compte
+
+- **Bouton « 🎂 Masquer / Afficher les anniversaires »** en haut du calendrier d'administration. Le choix est mémorisé pour chaque compte (méta utilisateur `sp_cal_masquer_anniversaires`, action AJAX `sp_cal_masquer_anniversaires`) : il suit la personne d'un ordinateur à l'autre et ne change rien pour les autres. Quand il est masqué, le serveur n'envoie plus les anniversaires. Sans effet sur la page Anniversaires, l'affiche, l'application et les emails.
+- **Adhérents non renouvelés retirés du calendrier** (`get_birthdays_for_month()`) : même règle que la page Anniversaires, `actif = 1` ne suffisait pas.
+
+Fichiers : `class-ajax.php`, `trait-db-membres.php`, `templates/calendar.php`, `assets/js/calendar.js`. Vérifié hors WordPress : syntaxe PHP et 15 contrôles côté serveur. Le JavaScript et la disposition de la barre n'ont pas été exécutés : à essayer sur le site de test. Pas encore commité ni déployé.
+
+*Dernière mise à jour de ce fichier : 05/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*

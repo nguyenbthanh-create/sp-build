@@ -93,10 +93,15 @@ trait SpCalPro_DB_Membres {
     // la nouvelle saison n'a pas commencé.
     public function get_birthdays_for_month( $year, $month ) {
         global $wpdb;
-        return $wpdb->get_results( $wpdb->prepare(
-            "SELECT nom, prenom, date_naissance, annee_naissance FROM {$this->table_eleves()} WHERE date_naissance LIKE %s AND actif = 1 ORDER BY date_naissance ASC",
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT * FROM {$this->table_eleves()} WHERE date_naissance LIKE %s AND actif = 1 ORDER BY date_naissance ASC",
             '%/' . sprintf( '%02d', $month )
         ) );
+        // « actif = 1 » ne suffit pas : une fiche de la saison passée reste cochée tant que le
+        // renouvellement n'est pas fait. Même règle que la page Anniversaires (05/11/2026).
+        return array_values( array_filter( (array) $rows, static function ( $el ) {
+            return self::statut_saison_eleve( $el )['code'] !== 'a_renouveler';
+        } ) );
     }
 
     public function get_eleves( $args = array() ) {
