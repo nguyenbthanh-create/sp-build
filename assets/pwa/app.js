@@ -392,6 +392,7 @@ function renderAccueil() {
         ficheWrap.innerHTML = '';
         ficheWrap.appendChild(a);
     }
+    renderQcmDan();
 
     // Prochains cours
     var html = '';
@@ -419,6 +420,26 @@ function renderAccueil() {
         });
     }
     document.getElementById('spcal-prochains-cours').innerHTML = html;
+}
+
+/* Révision du QCM Dan (17/11/2026) : réservée aux adhérents Ado / Adulte dont l'adhésion n'est pas
+   expirée, même règle que la page elle-même (claira-tkd-parcours/assets/js/qcm-acces.js). Lien dans la
+   même fenêtre, jamais target=_blank : le périmètre de l'application couvre tout le site, la page s'ouvre
+   donc dans l'application installée et y lit la session (spcal_jwt) ; sur iPhone, Safari ne la voit pas.
+   Aucun jeton dans l'adresse. Vidé à chaque rendu (changement de membre de la famille). */
+function spCalQcmAutorise(el) {
+    return !!(el && el.adhesion && el.adhesion.statut !== 'expire' && /ado|adulte/i.test(el.categorie_age || ''));
+}
+function renderQcmDan() {
+    var wrap = document.getElementById('spcal-qcm-wrap');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!CFG.qcmUrl || !spCalQcmAutorise(gEleve)) return;
+    var a = document.createElement('a');
+    a.className = 'spcal-fiche-link spcal-qcm-link';
+    a.href = CFG.qcmUrl;
+    a.innerHTML = '<span class="spcal-fl-ico">🎓</span><span><strong>Réviser le QCM Dan</strong><small>Questions officielles FFTDA, examen blanc</small></span><span class="spcal-fl-go">›</span>';
+    wrap.appendChild(a);
 }
 
 function renderCarte() {

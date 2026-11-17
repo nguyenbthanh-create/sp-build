@@ -561,6 +561,10 @@ SWJS;
             'vapidPublic' => $vapid_pub,
             'ajaxurl'     => admin_url( 'admin-ajax.php' ),
             'jsqrUrl'     => SP_CAL_PRO_URL . 'assets/js/jsQR.min.js', // lu par assets/pwa/app.js (07/10/2026)
+            // Révision du QCM Dan (TKD Parcours 1.14, 17/11/2026) : page qui porte [claira_qcm_dan], vide si
+            // l'extension est absente. Ouverte dans l'application même (scope « / ») : sur iPhone, l'application
+            // installée ne partage pas son stockage avec Safari, la page doit voir la session de l'application.
+            'qcmUrl'      => function_exists( 'claira_tkd_qcm_page_url' ) ? (string) claira_tkd_qcm_page_url() : '',
         ) );
 
         ob_start();
@@ -654,6 +658,8 @@ window.addEventListener('error', function(e) {
                 <!-- Rappel « passage de grade à venir » — renderGradeRappel() -->
                 <div id="spcal-grade-rappel"></div>
                 <div id="spcal-fiche-wrap"></div>
+                <!-- Révision du QCM Dan, adhérents Ado / Adulte à jour — renderQcmDan() (17/11/2026) -->
+                <div id="spcal-qcm-wrap"></div>
                 <div class="spcal-section-title">Prochains cours</div>
                 <div id="spcal-prochains-cours"><div class="spcal-empty">Chargement…</div></div>
             </section>
