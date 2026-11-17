@@ -298,4 +298,6 @@ La case n'est que sur la fiche : la personne le demande au bureau, le formulaire
 
 **Impression des anniversaires : vrai format A3** (`class-anniversaires.php`). L'affiche et les vignettes n'étaient prévues qu'en A4 : imprimées en A3, elles restaient dans le coin en haut à gauche, malgré la phrase qui le conseillait. Boutons A4 / A3 sur la page d'impression : en A3, même mise en page agrandie (× 1,414) et format A3 demandé au navigateur. PDF d'essai générés hors WordPress : 297 × 420 mm, sans feuille en trop (affiche à 8 et 30 pastilles, vignettes). Non imprimé sur une vraie imprimante. Déployé sur le test.
 
-*Dernière mise à jour de ce fichier : 05/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
+**Application : bouton « 🎓 Réviser le QCM Dan » sur l'Accueil (17/11/2026, `e911bb6`)**. Visible seulement pour un adhérent Ado / Adulte dont l'adhésion n'est pas « expire » (`renderQcmDan()` dans `assets/pwa/app.js`, adresse `CFG.qcmUrl` fournie par `render_pwa_app()` depuis TKD Parcours, vide sans l'extension). Lien dans la même fenêtre : sur iPhone, l'application installée garde la page et sa session. Testé hors WordPress (adulte, enfant, expiré, fin de saison proche, sans page) puis sur le site de test (config et page). Reste : essai avec le lien d'un vrai adhérent Ado/Adulte et sur iPhone ; prod sur feu vert.
+
+*Dernière mise à jour de ce fichier : 17/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
