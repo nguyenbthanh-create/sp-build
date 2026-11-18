@@ -260,6 +260,7 @@ function initEntraineur(pin, opts) {
                 navCal.querySelectorAll('span')[1].textContent = 'Mes dispos';
             }
             hide('spcal-ptg-logout');
+            renderQcmDan(true);
         }
         // Header entraineur
         document.getElementById('spcal-header-name').textContent = gEntr && gEntr.nom ? gEntr.nom : 'Espace entraîneur';
@@ -430,11 +431,14 @@ function renderAccueil() {
 function spCalQcmAutorise(el) {
     return !!(el && el.adhesion && el.adhesion.statut !== 'expire' && /ado|adulte/i.test(el.categorie_age || ''));
 }
-function renderQcmDan() {
+/* Entraîneur ouvert par son lien personnel (18/11/2026) : même bouton. La page reconnaît l'entraîneur
+   par son jeton (localStorage « spcal_trainer_token »), vérifié côté serveur par TKD Parcours ; pas en
+   mode PIN seul (pointage partagé, aucune identité). */
+function renderQcmDan(entraineur) {
     var wrap = document.getElementById('spcal-qcm-wrap');
     if (!wrap) return;
     wrap.innerHTML = '';
-    if (!CFG.qcmUrl || !spCalQcmAutorise(gEleve)) return;
+    if (!CFG.qcmUrl || !(entraineur || spCalQcmAutorise(gEleve))) return;
     var a = document.createElement('a');
     a.className = 'spcal-fiche-link spcal-qcm-link';
     a.href = CFG.qcmUrl;
