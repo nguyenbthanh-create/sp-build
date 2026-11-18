@@ -300,4 +300,6 @@ La case n'est que sur la fiche : la personne le demande au bureau, le formulaire
 
 **Application : bouton « 🎓 Réviser le QCM Dan » sur l'Accueil (17/11/2026, `e911bb6`)**. Visible seulement pour un adhérent Ado / Adulte dont l'adhésion n'est pas « expire » (`renderQcmDan()` dans `assets/pwa/app.js`, adresse `CFG.qcmUrl` fournie par `render_pwa_app()` depuis TKD Parcours, vide sans l'extension). Lien dans la même fenêtre : sur iPhone, l'application installée garde la page et sa session. Testé hors WordPress (adulte, enfant, expiré, fin de saison proche, sans page) puis sur le site de test (config et page). En prod le 18/11/2026. Reste : essai avec le lien d'un vrai adhérent Ado/Adulte et sur iPhone.
 
+**Espace entraîneur : même bouton « 🎓 Réviser le QCM Dan » (18/11/2026, `c1a810c`)**. Affiché pour un entraîneur ouvert par son lien personnel (`renderQcmDan(true)` dans `initEntraineur()`), pas en mode PIN seul. La page du QCM le reconnaît par son jeton (`spcal_trainer_token`) grâce à TKD Parcours 1.14.4 (route `claira-tkd/v1/qcm/acces-entraineur`, qui interroge `spcal/v1/entraineur/session` et ne renvoie que oui / non). Envoyer TKD Parcours avant sp_build. Site de test le 18/11/2026 ; prod sur feu vert.
+
 *Dernière mise à jour de ce fichier : 17/11/2026. À compléter à chaque nouvelle session de travail — une ligne datée suffit.*
