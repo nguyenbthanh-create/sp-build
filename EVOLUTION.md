@@ -502,6 +502,18 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 
 Demande de l'utilisateur. Depuis le 05/11/2026, la case « 🎂 Anniversaire affiché au club » (colonne `anniversaire_affiche`, voir `REALISATION.md`) n'est que sur la fiche côté bureau : la personne doit le lui demander. **À faire** : permettre aux adhérents de faire ce choix eux-mêmes. Endroit à décider (fiche personnelle ou espace famille, formulaire d'adhésion et de renouvellement). Pour un enfant, le choix revient aux parents.
 
+## 17/11/2026 — Application `/app/` : bouton « 🎓 Réviser le QCM Dan » (en test `e911bb6`, prod sur feu vert)
+
+Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page réservée aux adhérents Ado/Adulte à jour, reconnus par la session de l'application). Demande de l'utilisateur : y donner accès depuis l'application des adhérents, selon la catégorie Ado/Adulte.
+
+- **Fait (test)** : bouton sur l'Accueil (`renderQcmDan()` dans `assets/pwa/app.js`), affiché seulement si `categorie_age` contient Ado/Adulte et si l'adhésion n'est pas « expire » — même règle que la page (`qcm-acces.js` de TKD Parcours). Adresse `CFG.qcmUrl` fournie par `render_pwa_app()` (`includes/trait-admin-pwa.php`) : page qui porte `[claira_qcm_dan]`, vide si TKD Parcours est absent (pas de bouton). Lien dans la même fenêtre, aucun jeton dans l'adresse. Côté TKD Parcours 1.14.1 (`c9725d9` de sp-build-addons) : lien « ← Retour à l'application » sur la page.
+- **Pourquoi dans la même fenêtre** : sur iPhone, l'application installée n'a pas la même mémoire (localStorage) que Safari ; ouverte dans l'application, la page lit la session `spcal_jwt` et reconnaît l'adhérent. Ouverte dans Safari, elle afficherait « Réservé aux adhérents ».
+- **Reste à faire** :
+  1. Essai avec le lien d'un **vrai adhérent Ado/Adulte** à jour (bouton visible, page ouverte sans refus, retour à l'application), puis avec un enfant (bouton absent).
+  2. Essai sur **iPhone** avec l'application installée sur l'écran d'accueil, et sur Android.
+  3. Prod de sp_build (`e911bb6`) et de TKD Parcours 1.14.1 (`c9725d9`) **sur feu vert de l'utilisateur**, ensemble : le bouton n'a de sens qu'avec la page.
+- **Piste** : un adhérent dont la catégorie passe d'Enfant à Ado en cours de saison ne voit le bouton qu'après mise à jour de `categorie_age` sur sa fiche (pas de calcul par l'âge) — à revoir si besoin.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
