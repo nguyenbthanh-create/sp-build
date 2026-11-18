@@ -502,7 +502,7 @@ Demande de l'utilisateur : étendre le principe des doboks (validés en prod) au
 
 Demande de l'utilisateur. Depuis le 05/11/2026, la case « 🎂 Anniversaire affiché au club » (colonne `anniversaire_affiche`, voir `REALISATION.md`) n'est que sur la fiche côté bureau : la personne doit le lui demander. **À faire** : permettre aux adhérents de faire ce choix eux-mêmes. Endroit à décider (fiche personnelle ou espace famille, formulaire d'adhésion et de renouvellement). Pour un enfant, le choix revient aux parents.
 
-## 17/11/2026 — Application `/app/` : bouton « 🎓 Réviser le QCM Dan » (en test `e911bb6`, prod sur feu vert)
+## 17/11/2026 — Application `/app/` : bouton « 🎓 Réviser le QCM Dan » (en prod `e911bb6` le 18/11/2026, avec TKD Parcours 1.14.1)
 
 Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page réservée aux adhérents Ado/Adulte à jour, reconnus par la session de l'application). Demande de l'utilisateur : y donner accès depuis l'application des adhérents, selon la catégorie Ado/Adulte.
 
@@ -511,7 +511,7 @@ Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page rés
 - **Reste à faire** :
   1. Essai avec le lien d'un **vrai adhérent Ado/Adulte** à jour (bouton visible, page ouverte sans refus, retour à l'application), puis avec un enfant (bouton absent).
   2. Essai sur **iPhone** avec l'application installée sur l'écran d'accueil, et sur Android.
-  3. Prod de sp_build (`e911bb6`) et de TKD Parcours 1.14.1 (`c9725d9`) **sur feu vert de l'utilisateur**, ensemble : le bouton n'a de sens qu'avec la page.
+  3. ~~Prod~~ — **fait le 18/11/2026** : TKD Parcours 1.14.1 puis sp_build, fichiers contrôlés et code vérifié en ligne (`/app/` et page du QCM).
 - **Piste** : un adhérent dont la catégorie passe d'Enfant à Ado en cours de saison ne voit le bouton qu'après mise à jour de `categorie_age` sur sa fiche (pas de calcul par l'âge) — à revoir si besoin.
 
 ## Comment tenir ce fichier à jour
