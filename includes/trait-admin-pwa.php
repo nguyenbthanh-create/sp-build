@@ -173,7 +173,8 @@ trait SpCalPro_Admin_Pwa {
         if ( ! is_email( $email ) ) return $ok;
         if ( ! $this->pwa_rate_limit( 'acces_mail_' . $email, 3, HOUR_IN_SECONDS ) ) return $ok;
         $famille = $this->db->get_famille_par_email( $email );
-        if ( ! $famille ) return $ok;
+        $entr    = $this->pwa_entraineur_par_email( $email );
+        if ( ! $famille && ! $entr ) return $ok;
 
         $code = sprintf( '%06d', random_int( 0, 999999 ) );
         set_transient( 'spcal_ac_' . md5( $email ), array(
@@ -182,7 +183,9 @@ trait SpCalPro_Admin_Pwa {
         ), 10 * MINUTE_IN_SECONDS );
 
         $club    = get_option( 'blogname', 'Club' );
-        $prenoms = implode( ', ', wp_list_pluck( $famille, 'prenom' ) );
+        $prenoms = $entr
+            ? ( $entr->nom_public ?: $entr->nom ) . ', entraîneur'
+            : implode( ', ', wp_list_pluck( $famille, 'prenom' ) );
         $body    = "Bonjour,\n\nVotre code d'accès à l'espace membre de $club ($prenoms) :\n\n";
         $body   .= "    $code\n\n";
         $body   .= "Tapez-le dans l'application. Il reste valable 10 minutes.\n\n";
@@ -213,8 +216,32 @@ trait SpCalPro_Admin_Pwa {
         }
         delete_transient( $cle );
         $famille = $this->db->get_famille_par_email( $email );
-        if ( ! $famille ) return $refus;
-        return rest_ensure_response( array( 'success' => true, 'token' => $famille[0]->token ) );
+        $entr    = $this->pwa_entraineur_par_email( $email );
+        if ( ! $famille && ! $entr ) return $refus;
+        // Adresse d'un entraîneur : l'application rouvre le mode entraîneur (19/11/2026), qui passe avant la
+        // fiche adhérent de la même adresse.
+        return rest_ensure_response( array(
+            'success'    => true,
+            'token'      => $famille ? $famille[0]->token : '',
+            'entraineur' => $entr ? $entr->token : '',
+        ) );
+    }
+
+    /** Entraîneur actif dont l'adresse est $email (jeton créé s'il n'en a pas encore), null sinon. */
+    private function pwa_entraineur_par_email( string $email ) {
+        if ( ! is_email( $email ) ) return null;
+        global $wpdb;
+        $tt = $this->db->table_trainers();
+        $t  = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, nom, nom_public, token FROM $tt WHERE actif = 1 AND LOWER( TRIM( email ) ) = %s ORDER BY id LIMIT 1",
+            $email
+        ) );
+        if ( ! $t ) return null;
+        if ( empty( $t->token ) ) {
+            $t->token = bin2hex( random_bytes( 32 ) );
+            $wpdb->update( $tt, array( 'token' => $t->token ), array( 'id' => intval( $t->id ) ) );
+        }
+        return $t;
     }
 
     public function rest_pwa_eleve_me( WP_REST_Request $req ) {
@@ -390,8 +417,13 @@ trait SpCalPro_Admin_Pwa {
         if ( ! $post || ! has_shortcode( $post->post_content, 'sp_cal_app' ) ) return;
         // Le lien personnel passe dans le manifeste : l'icône installée le garde (voir maybe_serve_pwa_assets).
         // assets/pwa/app.js refait la même chose quand la page est ouverte sans ?token=.
+        // Même chose pour le lien entraîneur (?entraineur=, 19/11/2026) : l'icône de l'iPhone a sa propre
+        // mémoire, vide à l'installation, et rouvrait l'écran « code par e-mail ».
         $jeton        = sanitize_text_field( wp_unslash( $_GET['token'] ?? '' ) );
-        $manifest_url = esc_url( home_url( '/?spcal_manifest=1' . ( preg_match( '/^[0-9a-f]{64}$/', $jeton ) ? '&t=' . $jeton : '' ) ) );
+        $jeton_entr   = sanitize_text_field( wp_unslash( $_GET['entraineur'] ?? '' ) );
+        $manifest_url = esc_url( home_url( '/?spcal_manifest=1'
+            . ( preg_match( '/^[0-9a-f]{64}$/', $jeton ) ? '&t=' . $jeton : '' )
+            . ( preg_match( '/^[0-9a-f]{64}$/', $jeton_entr ) ? '&e=' . $jeton_entr : '' ) ) );
         $logo_url     = esc_url( get_option( 'sp_cal_logo_url', '' ) );
         $club         = esc_attr( get_option( 'blogname', 'TKD' ) );
         echo "<link rel=\"manifest\" href=\"$manifest_url\">\n";
@@ -425,10 +457,16 @@ trait SpCalPro_Admin_Pwa {
                 $icons[] = array( 'src' => $icon_url, 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any maskable' );
             }
             // « t » et non « token » : SpCalPro_Token::maybe_render_fiche() intercepte ?token= sur toutes les pages.
-            $jeton = sanitize_text_field( wp_unslash( $_GET['t'] ?? '' ) );
-            $start = preg_match( '/^[0-9a-f]{64}$/', $jeton )
-                ? add_query_arg( array( 'token' => $jeton, 'source' => 'pwa' ), home_url( '/app/' ) )
-                : home_url( '/app/?source=pwa' );
+            // « e » : lien personnel d'un entraîneur, rouvert en mode entraîneur (19/11/2026).
+            $jeton      = sanitize_text_field( wp_unslash( $_GET['t'] ?? '' ) );
+            $jeton_entr = sanitize_text_field( wp_unslash( $_GET['e'] ?? '' ) );
+            if ( preg_match( '/^[0-9a-f]{64}$/', $jeton_entr ) ) {
+                $start = add_query_arg( array( 'entraineur' => $jeton_entr, 'source' => 'pwa' ), home_url( '/app/' ) );
+            } elseif ( preg_match( '/^[0-9a-f]{64}$/', $jeton ) ) {
+                $start = add_query_arg( array( 'token' => $jeton, 'source' => 'pwa' ), home_url( '/app/' ) );
+            } else {
+                $start = home_url( '/app/?source=pwa' );
+            }
             $manifest = array(
                 // Identité fixe (l'ancienne adresse de départ) : une seule application par téléphone.
                 'id'               => '/app/?source=pwa',

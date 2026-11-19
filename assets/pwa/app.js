@@ -208,6 +208,7 @@ function initEntraineurToken(tt) {
     .then(function(r){ return r.json(); })
     .then(function(r) {
         if (!r || !r.success) { STORE.del('spcal_trainer_token'); initEleve(); return; }
+        spCalManifestPour(tt, 'e'); // l'icône de l'écran d'accueil rouvre le mode entraîneur (19/11/2026)
         initEntraineur(r.pin, {nom: r.nom, dispos_url: r.dispos_url, saisie_url: r.saisie_url || ''});
     })
     .catch(function() { showError('Erreur de connexion. Réessayez.'); });
@@ -344,11 +345,12 @@ function spCalOuvrirLien(token) {
 }
 
 /* L'icône ajoutée à l'écran d'accueil garde le lien personnel, même si la page a été ouverte sans ?token=. */
-function spCalManifestPour(token) {
+function spCalManifestPour(token, cle) {
     var link = document.querySelector('link[rel="manifest"]');
     if (!link) return;
-    var base = (link.getAttribute('href') || '').split('&t=')[0];
-    if (base) link.setAttribute('href', base + '&t=' + encodeURIComponent(token));
+    // « t » = lien adhérent, « e » = lien entraîneur (voir maybe_serve_pwa_assets) ; un seul à la fois.
+    var base = (link.getAttribute('href') || '').replace(/&(t|e)=[^&]*/g, '');
+    if (base) link.setAttribute('href', base + '&' + (cle || 't') + '=' + encodeURIComponent(token));
 }
 
 function renderAccueil() {
@@ -926,7 +928,12 @@ window.spCalAccesVerifier = function() {
     accesMessage('Vérification…');
     accesAppel('/acces/verifier', {email: email, code: code})
         .then(function(r) {
-            if (!r.success || !r.token) { accesMessage(r.message || 'Code incorrect ou expiré.'); return; }
+            if (!r.success || !(r.token || r.entraineur)) { accesMessage(r.message || 'Code incorrect ou expiré.'); return; }
+            if (r.entraineur) {
+                STORE.set('spcal_trainer_token', r.entraineur);
+                location.replace(location.pathname + '?entraineur=' + encodeURIComponent(r.entraineur));
+                return;
+            }
             spCalOuvrirLien(r.token);
         })
         .catch(function() { accesMessage('Vérifiez votre connexion et réessayez.'); });
