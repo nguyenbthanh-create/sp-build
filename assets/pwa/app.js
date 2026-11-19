@@ -111,13 +111,16 @@ function init() {
 
     // Entraîneur par son lien personnel de dispos (?entraineur=, redirigé depuis la page
     // des dispos par class-trainer-app.php). Clé distincte de spcal_token (élève).
+    // Le lien reste dans l'adresse (19/11/2026) : sur iPhone, « Sur l'écran d'accueil » enregistre
+    // l'adresse affichée, et l'icône a sa propre mémoire, que certains iPhone vident à chaque
+    // fermeture. Effacé de l'adresse, le lien était perdu : l'icône rouvrait « Retrouver mon accès ».
     var trainerFromUrl = urlParams.get('entraineur');
-    if (trainerFromUrl) {
-        STORE.set('spcal_trainer_token', trainerFromUrl);
-        urlParams.delete('entraineur');
-        history.replaceState(null, '', location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : ''));
-    }
+    if (trainerFromUrl) STORE.set('spcal_trainer_token', trainerFromUrl);
     var trainerTok = trainerFromUrl || (!urlParams.get('token') && STORE.get('spcal_trainer_token'));
+    if (trainerTok && !trainerFromUrl) {
+        urlParams.set('entraineur', trainerTok);
+        history.replaceState(null, '', location.pathname + '?' + urlParams.toString());
+    }
     if (trainerTok) {
         initEntraineurToken(trainerTok);
         return;
@@ -207,7 +210,13 @@ function initEntraineurToken(tt) {
     })
     .then(function(r){ return r.json(); })
     .then(function(r) {
-        if (!r || !r.success) { STORE.del('spcal_trainer_token'); initEleve(); return; }
+        if (!r || !r.success) {
+            STORE.del('spcal_trainer_token');
+            var p = new URLSearchParams(location.search); p.delete('entraineur'); // lien plus valable
+            history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p.toString() : ''));
+            initEleve();
+            return;
+        }
         spCalManifestPour(tt, 'e'); // l'icône de l'écran d'accueil rouvre le mode entraîneur (19/11/2026)
         initEntraineur(r.pin, {nom: r.nom, dispos_url: r.dispos_url, saisie_url: r.saisie_url || ''});
     })
