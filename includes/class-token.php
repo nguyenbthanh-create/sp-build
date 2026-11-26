@@ -377,6 +377,7 @@ class SpCalPro_Token {
                     <div class="sp-membre-meta">
                         <?php if($el->categorie_saisie): ?><span class="sp-membre-tag sp-membre-tag-saisie"><?php echo esc_html( $this->db->label_discipline($el->categorie_saisie) ); ?></span><?php endif; ?>
                         <?php if($el->categorie_age):   ?><span class="sp-membre-tag sp-membre-tag-age"><?php echo esc_html($el->categorie_age); ?></span><?php endif; ?>
+                        <?php $cat_fftda = SP_Cal_Categorie_Fftda::pour( $el ); if ( $cat_fftda !== '' ) : ?><span class="sp-membre-tag sp-membre-tag-age" title="Catégorie de la licence FFTDA">FFTDA : <?php echo esc_html( $cat_fftda ); ?></span><?php endif; ?>
                         <?php if($saison_courante):     ?><span class="sp-membre-saison"><?php echo esc_html($saison_courante); ?></span><?php endif; ?>
                     </div>
                 </div>

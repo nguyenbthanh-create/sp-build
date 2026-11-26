@@ -24,6 +24,7 @@ trait SP_Cal_Members_Eleves {
             'prenom'                 => 'Prénom',
             'categorie_saisie'       => 'Discipline pratiquée',
             'categorie_age'          => 'Catégorie âge',
+            'categorie_fftda'        => 'Catégorie FFTDA', // calculée (SP_Cal_Categorie_Fftda), pas une colonne
             'grade'                  => 'Grade',
             'date_naissance'         => 'Date de naissance',
             'saison'                 => 'Saison',
@@ -89,6 +90,8 @@ trait SP_Cal_Members_Eleves {
                     $line[] = $this->db->label_discipline( $el->categorie_saisie );
                 } elseif ( $key === 'date_naissance' ) {
                     $line[] = trim( $el->date_naissance . ( $el->annee_naissance ? '/' . $el->annee_naissance : '' ), '/' );
+                } elseif ( $key === 'categorie_fftda' ) {
+                    $line[] = SP_Cal_Categorie_Fftda::pour( $el );
                 } elseif ( $key === 'actif' ) {
                     $line[] = intval( $el->actif ) ? 'Actif' : 'Inactif';
                 } elseif ( $key === 'droit_image' || $key === 'autorisation_seul' ) {
@@ -667,6 +670,9 @@ trait SP_Cal_Members_Eleves {
                         $cat_connue     = in_array( $cat_edit, $cats_dispo, true );
                         ?>
                         <label style="display:block;font-weight:600;font-size:12px;margin-bottom:4px;">Catégorie d'âge</label>
+                        <?php $cat_fftda_edit = SP_Cal_Categorie_Fftda::pour( $edit ); if ( $cat_fftda_edit !== '' ) : ?>
+                        <p class="description" style="margin:0 0 6px;">Catégorie FFTDA <?php echo esc_html( (string) ( SP_Cal_Categorie_Fftda::annee_reference() - 1 ) . '-' . SP_Cal_Categorie_Fftda::annee_reference() ); ?> : <strong><?php echo esc_html( $cat_fftda_edit ); ?></strong> <span style="color:#9ca3af;">(calculée)</span></p>
+                        <?php endif; ?>
                         <select name="eleve_cat" id="sp-eleve-cat-select" class="regular-text" style="width:100%;">
                             <option value="">—</option>
                             <?php foreach ( $cats_dispo as $c ) : ?>
@@ -1576,6 +1582,7 @@ trait SP_Cal_Members_Eleves {
                         <th>Prénom</th>
                         <th>Discipline pratiquée</th>
                         <th>Cat. âge</th>
+                        <th title="Catégorie de la licence FFTDA, calculée d'après l'année de naissance (âge au 31/12 de la seconde année de la saison) et le sexe">Catégorie FFTDA</th>
                         <th>Grade</th>
                         <th>Naissance</th>
                         <th>Saison</th>
@@ -1621,6 +1628,7 @@ trait SP_Cal_Members_Eleves {
                         <td><?php echo esc_html($el->prenom); ?></td>
                         <td><?php if($el->categorie_saisie) echo '<span class="sp-badge-blue">' . esc_html( $this->db->label_discipline($el->categorie_saisie) ) . '</span>'; ?></td>
                         <td><?php if($el->categorie_age) echo '<span class="sp-badge-blue" style="background:#6366f1;color:#fff;">' . esc_html($el->categorie_age) . '</span>'; ?></td>
+                        <td><?php $cat_fftda = SP_Cal_Categorie_Fftda::pour( $el ); echo $cat_fftda !== '' ? esc_html( $cat_fftda ) : '<span class="sp-muted">—</span>'; ?></td>
                         <td>
                             <?php echo esc_html($el->grade); ?>
                             <?php if($nb_grades) echo ' <span class="sp-muted" style="font-size:11px;" title="' . $nb_grades . ' examens importés">(' . $nb_grades . ' 📋)</span>'; ?>
@@ -1649,7 +1657,7 @@ trait SP_Cal_Members_Eleves {
                         <td class="check-column" style="width:36px;">
                             <input type="checkbox" id="sp-check-all-bottom" title="Tout sélectionner / désélectionner">
                         </td>
-                        <th colspan="10">
+                        <th colspan="11">
                             <div class="sp-bulk-bar sp-bulk-bar-bottom" style="margin:0;border:none;padding:8px 0 0;">
                                 <div class="sp-bulk-actions">
                                     <select id="sp-bulk-action-bottom" class="sp-input" style="height:30px;min-width:200px;">

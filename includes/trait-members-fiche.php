@@ -103,6 +103,9 @@ trait SP_Cal_Members_Fiche {
                 <?php if($el->categorie_age): ?>
                 <span class="sp-fiche-pill sp-fiche-pill-age"><?php echo esc_html($el->categorie_age); ?></span>
                 <?php endif; ?>
+                <?php $cat_fftda = SP_Cal_Categorie_Fftda::pour( $el ); if ( $cat_fftda !== '' ) : ?>
+                <span class="sp-fiche-pill sp-fiche-pill-age" title="Catégorie de la licence FFTDA (calculée)">FFTDA : <?php echo esc_html( $cat_fftda ); ?></span>
+                <?php endif; ?>
                 <?php if($el->saison): ?>
                 <span class="sp-muted" style="font-size:13px;"><?php echo esc_html($el->saison); ?></span>
                 <?php endif; ?>

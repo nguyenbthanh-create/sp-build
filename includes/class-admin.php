@@ -13,6 +13,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-dobok.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-tenues.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-sante-front.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-carte.php';
+require_once plugin_dir_path( __FILE__ ) . 'class-categorie-fftda.php'; // catégorie d'âge de la licence FFTDA (26/11/2026)
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-passages.php';
 require_once plugin_dir_path( __FILE__ ) . 'class-ik-cloture.php';

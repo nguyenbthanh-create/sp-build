@@ -274,6 +274,7 @@ trait SpCalPro_Admin_Pwa {
         return rest_ensure_response( array(
             'id' => intval( $el->id ), 'prenom' => $el->prenom, 'nom' => mb_strtoupper( $el->nom ),
             'grade' => $el->grade ?? '', 'categorie_age' => $el->categorie_age ?? '',
+            'categorie_fftda' => SP_Cal_Categorie_Fftda::pour( $el ),
             'categorie_saisie' => $el->categorie_saisie ?? '', 'saison' => $el->saison ?? '',
             'photo_url' => $el->photo_url ?? '', 'licence' => $el->licence ?? '',
             'date_naissance' => $el->date_naissance ?? '', 'annee_naissance' => $el->annee_naissance ?? '',
