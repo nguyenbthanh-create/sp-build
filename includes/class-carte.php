@@ -196,9 +196,6 @@ class SP_Cal_Carte {
 		$lignes  = [];
 		if ( ! empty( $el->date_naissance ) && ! empty( $el->annee_naissance ) ) $lignes['Né(e) le'] = $el->date_naissance . '/' . $el->annee_naissance;
 		if ( ! empty( $el->licence ) )       $lignes['Licence']   = $el->licence;
-		// Catégorie de la licence FFTDA, calculée (class-categorie-fftda.php, 26/11/2026).
-		$cat_fftda = class_exists( 'SP_Cal_Categorie_Fftda' ) ? SP_Cal_Categorie_Fftda::pour( $el ) : '';
-		if ( $cat_fftda !== '' )             $lignes['Catégorie'] = $cat_fftda;
 		if ( ! empty( $el->num_passeport ) ) $lignes['Passeport'] = $el->num_passeport;
 
 		$v  = '<div class="' . $classes . ' spcm-verso"' . sprintf( $id, 'sp-carte-verso' ) . '>' . $coupe;
