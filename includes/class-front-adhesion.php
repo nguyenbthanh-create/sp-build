@@ -88,7 +88,18 @@ class SP_Front_Adhesion {
 		$missing  = array_diff( self::EXPECTED_COLUMNS, $existing );
 		if ( empty( $missing ) ) return;
 
-		self::create_table();
+		if ( empty( $existing ) ) {
+			self::create_table();
+		} else {
+			// dbDelta() ne complète jamais cette table (constaté le 26/11/2026) : à cause du « IF NOT EXISTS »
+			// de create_table(), il lit « IF » comme nom de table, la croit absente et relance une création
+			// sans effet. Les colonnes ajoutées après le 01/09/2026 manquaient donc (infos_sante en prod depuis
+			// le 29/10/2026). Chaque colonne manquante est ajoutée ici directement, avec sa définition de create_table().
+			foreach ( $missing as $col ) {
+				$def = self::definition_colonne( $col );
+				if ( $def !== '' ) $wpdb->query( "ALTER TABLE {$table} ADD COLUMN `{$col}` {$def}" );
+			}
+		}
 
 		$existing = $wpdb->get_col( "SHOW COLUMNS FROM {$table}" );
 		$missing  = array_diff( self::EXPECTED_COLUMNS, $existing );
@@ -1538,11 +1549,22 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 
 	// ─── Création de la table ─────────────────────────────────────────────────
 	public static function create_table(): void {
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		dbDelta( self::sql_creation() );
+	}
+
+	/** Définition SQL d'une colonne telle qu'écrite dans sql_creation() (ex. « TEXT »), '' si inconnue. */
+	private static function definition_colonne( string $col ): string {
+		if ( ! preg_match( '/^\s*' . preg_quote( $col, '/' ) . '\s+(.+?),?\s*$/m', self::sql_creation(), $m ) ) return '';
+		return str_ireplace( 'AUTO_INCREMENT', '', trim( $m[1] ) );
+	}
+
+	private static function sql_creation(): string {
 		global $wpdb;
 		$table   = $wpdb->prefix . 'sp_adhesions_pending';
 		$charset = $wpdb->get_charset_collate();
 
-		$sql = "CREATE TABLE IF NOT EXISTS {$table} (
+		return "CREATE TABLE IF NOT EXISTS {$table} (
 			id                      INT UNSIGNED  NOT NULL AUTO_INCREMENT,
 			nom                     VARCHAR(100)  NOT NULL,
 			prenom                  VARCHAR(100)  NOT NULL,
@@ -1592,8 +1614,5 @@ h1 { font-size: 14pt; color: #1e3a5f; text-align: center; margin-bottom: 24px; t
 			KEY idx_email           (email(50)),
 			KEY idx_renouv          (renouvellement_eleve_id)
 		) {$charset};";
-
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-		dbDelta( $sql );
 	}
 }
