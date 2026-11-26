@@ -701,6 +701,9 @@ trait SpCalPro_Admin_Reglages {
         <!-- ÉTAT DE LA BASE DE DONNÉES (class-schema.php, 07/10/2026) -->
         <?php SP_Cal_Schema::render_statut(); ?>
 
+        <!-- CATÉGORIES FFTDA : vérification de début de saison (class-fftda-verification.php, 26/11/2026) -->
+        <?php SP_Cal_Fftda_Verification::render(); ?>
+
         <!-- NETTOYAGE DOUBLONS -->
         <div class="sp-box" style="border-left:4px solid #f59e0b;">
             <h2 style="color:#92400e;">🧹 Nettoyage des événements parasites</h2>
