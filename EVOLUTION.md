@@ -518,7 +518,7 @@ Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page rés
 
 Deux lots, chacun testé sur le site de test puis mis en prod séparément (feu vert de l'utilisateur pour chaque mise en prod). Ordre proposé : lot 1 d'abord (3 mises à jour WordPress en attente en prod au 26/11/2026).
 
-### Lot 1 — Surveillance des mises à jour (codé le 27/11/2026, sur le site de test, pas en prod — détail dans sp-build-addons/…/JOURNAL.md, commit `3736030`)
+### Lot 1 — Surveillance des mises à jour (en prod le 27/11/2026, premier contrôle au vert — détail dans sp-build-addons/…/JOURNAL.md, commit `3736030`)
 
 - **Avant la mise à jour, sur le PC** : option « version cible WordPress / PHP » dans `sp-build-addons/…/outils/verifier.ps1` (PHPStan + stubs WordPress de la version cible, PHPCompatibility) sur sp-build et tous les add-ons.
 - **Procédure** : mise à jour d'abord sur le site de test, contrôle, puis prod.
