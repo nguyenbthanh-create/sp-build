@@ -80,6 +80,13 @@ final class SP_Cal_Stages_Izzidan {
 		return trim( (string) preg_replace( '/[^a-z0-9]+/', '-', $n ), '-' );
 	}
 
+	/** Événement du calendrier venu d'IzziDan (importé, ou saisi à la main puis reconnu par l'import). */
+	public static function est_izzidan( int $event_id ): bool {
+		static $ids = null;
+		if ( $ids === null ) $ids = array_flip( array_map( 'intval', (array) get_option( self::OPT_IMPORT, [] ) ) );
+		return $event_id > 0 && isset( $ids[ $event_id ] );
+	}
+
 	public static function coches(): array {
 		$o = get_option( self::OPT_ORGS );
 		return is_array( $o ) ? array_values( array_intersect( $o, array_keys( self::ORGANISATEURS ) ) ) : array_keys( self::ORGANISATEURS );
@@ -197,12 +204,12 @@ final class SP_Cal_Stages_Izzidan {
 			}
 		}
 
-		// Stages importés avant le 28/11/2026 : titre complété par « (IzziDan) » et couleur violette,
-		// seulement s'ils portent encore exactement le titre donné à l'import (jamais un titre modifié à la main).
+		// Titre des stages importés : « (IzziDan) » retiré (28/11/2026, l'origine est signalée par « IZD »
+		// à côté du niveau), seulement s'ils portent encore exactement le titre donné à l'import.
 		foreach ( array_unique( array_map( 'intval', $import ) ) as $id ) {
 			$ev = $wpdb->get_row( $wpdb->prepare( "SELECT id, titre FROM `$te` WHERE id = %d", $id ) );
-			if ( $ev && preg_match( '/^Stage prépa Dan — (C\.D\.T\.|Ligue) [^()]+$/u', wp_unslash( (string) $ev->titre ) ) ) {
-				$wpdb->update( $te, [ 'titre' => wp_unslash( (string) $ev->titre ) . ' (IzziDan)', 'couleur' => SP_Cal_Eligibilite_Dan::VIOLET ], [ 'id' => (int) $ev->id ] );
+			if ( $ev && preg_match( '/^(Stage prépa Dan — (C\.D\.T\.|Ligue) [^()]+) \(IzziDan\)$/u', wp_unslash( (string) $ev->titre ), $t ) ) {
+				$wpdb->update( $te, [ 'titre' => $t[1], 'couleur' => SP_Cal_Eligibilite_Dan::VIOLET ], [ 'id' => (int) $ev->id ] );
 			}
 		}
 
@@ -241,7 +248,7 @@ final class SP_Cal_Stages_Izzidan {
 						'date'                 => $s['date'],
 						'heure_debut'          => $d['debut'],
 						'heure_fin'            => $d['fin'],
-						'titre'                => 'Stage prépa Dan — ' . $nom . ' (IzziDan)',
+						'titre'                => 'Stage prépa Dan — ' . $nom,
 						'categorie'            => 'Taekwondo',
 						'cours_discipline'     => 'Taekwondo',
 						'couleur'              => SP_Cal_Eligibilite_Dan::VIOLET,

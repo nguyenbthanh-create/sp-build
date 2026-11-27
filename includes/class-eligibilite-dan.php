@@ -166,10 +166,17 @@ final class SP_Cal_Eligibilite_Dan {
 		return ! preg_match( '/\b[5-9]\s*(e|eme|ieme)?\s*dan\s+et\s+plus/', $t );
 	}
 
-	/** « Départemental » / « Régional » pour un stage qui compte, '' sinon (planning, agenda, calendrier). */
+	/**
+	 * Libellé court d'un stage qui compte (planning, agenda, calendrier) : « Département » / « Région »,
+	 * suivi de « · IZD » s'il vient d'IzziDan (choix de l'utilisateur, 28/11/2026) ; '' sinon.
+	 * Sans IZD = saisie de secours à la main.
+	 */
 	public static function niveau_stage( $ev ): string {
 		$ev = (object) $ev;
-		return ( $ev->type ?? '' ) === 'annulation' ? '' : ( self::NIVEAUX[ (string) ( $ev->prepa_dan ?? '' ) ] ?? '' );
+		if ( ( $ev->type ?? '' ) === 'annulation' ) return '';
+		$n = [ 'departemental' => 'Département', 'regional' => 'Région' ][ (string) ( $ev->prepa_dan ?? '' ) ] ?? '';
+		if ( $n !== '' && class_exists( 'SP_Cal_Stages_Izzidan' ) && SP_Cal_Stages_Izzidan::est_izzidan( (int) ( $ev->id ?? 0 ) ) ) $n .= ' · IZD';
+		return $n;
 	}
 
 	public static function est_stage( object $ev ): bool {

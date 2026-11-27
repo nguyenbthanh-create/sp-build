@@ -113,6 +113,7 @@ class SpCalPro_Ajax {
                 'inscriptions_age_categories' => $e->inscriptions_age_categories ?? '',
                 'inscriptions_extra_eleves'   => $e->inscriptions_extra_eleves   ?? '',
                 'prepa_dan'                   => $e->prepa_dan                   ?? '',
+                'izzidan'                     => class_exists( 'SP_Cal_Stages_Izzidan' ) && SP_Cal_Stages_Izzidan::est_izzidan( (int) $e->id ),
                 'cours_discipline'            => $e->cours_discipline           ?? '',
                 'cours_age_categories'        => $e->cours_age_categories       ?? '',
             );

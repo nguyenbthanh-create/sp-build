@@ -311,7 +311,7 @@ for ($w=0;$w<6;$w++) {
                             <?php if ($icon) echo '<span class="sp-plan-icon">'.esc_html($icon).'</span> '; ?>
                             <?php if ($is_ponct): ?>
                                 <span class="sp-plan-label"><?php echo $niv_dan !== '' ? '' : '⚡ '; echo esc_html($item['titre']); ?></span>
-                                <?php if ( $niv_dan !== '' ) echo '<span class="sp-plan-freq">Stage ' . esc_html( mb_strtolower( $niv_dan ) ) . '</span>'; ?>
+                                <?php if ( $niv_dan !== '' ) echo '<span class="sp-plan-freq">' . esc_html( $niv_dan ) . '</span>'; ?>
                             <?php else: ?>
                                 <span class="sp-plan-label"><?php echo esc_html($item['titre']); ?></span>
                                 <?php if ( $freq !== '' ) echo '<span class="sp-plan-freq">' . esc_html( $freq ) . '</span>'; ?>

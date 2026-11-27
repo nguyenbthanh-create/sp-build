@@ -228,7 +228,7 @@ class SpCalPro_Calendar {
                     <div class="spcal-evt-meta">
                         <?php $niv_dan = class_exists( 'SP_Cal_Eligibilite_Dan' ) ? SP_Cal_Eligibilite_Dan::niveau_stage( $ev ) : ''; // stage prépa Dan (28/11/2026) ?>
                         <?php if ( $niv_dan !== '' ) : ?>
-                        <span class="spcal-evt-badge spcal-evt-type-prepa-dan">🥋 Stage prépa Dan · <?php echo esc_html( $niv_dan ); ?></span>
+                        <span class="spcal-evt-badge spcal-evt-type-prepa-dan">🥋 Prépa Dan · <?php echo esc_html( $niv_dan ); ?></span>
                         <?php else : ?>
                         <span class="spcal-evt-badge spcal-evt-type-<?php echo esc_attr( $type_key ); ?>"><?php echo esc_html( $cfg['label'] ); ?></span>
                         <?php endif; ?>
