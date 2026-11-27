@@ -210,7 +210,8 @@ final class SP_Cal_Examens_Izzidan {
 
 	/** Examens d'Occitanie ouverts au 1er Dan entre deux dates (dernier passage), pour proposer la date d'examen. */
 	public static function proposes( string $debut, string $fin ): array {
-		return array_values( array_filter( (array) get_option( self::OPT_LISTE, [] ), static fn( $e ) => $e['date'] >= $debut && $e['date'] <= $fin ) );
+		$coches = SP_Cal_Stages_Izzidan::coches();   // mêmes organisateurs que l'import
+		return array_values( array_filter( (array) get_option( self::OPT_LISTE, [] ), static fn( $e ) => $e['date'] >= $debut && $e['date'] <= $fin && in_array( $e['cle'], $coches, true ) ) );
 	}
 }
 
