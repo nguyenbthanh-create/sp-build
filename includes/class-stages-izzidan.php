@@ -183,6 +183,21 @@ final class SP_Cal_Stages_Izzidan {
 		$debut   = SP_Cal_Eligibilite_Dan::bornes( SP_Cal_Eligibilite_Dan::saison_courante() )[0];
 		$couleur = class_exists( 'SpCalPro_DB' ) ? ( SpCalPro_DB::style_categorie( 'Taekwondo' )['color'] ?? '' ) : '';
 
+		// Un même événement rattaché à deux stages du même jour (ex. Ligue et C.D.T. Hérault le
+		// 25/04/2027, constaté au premier import en prod) : on ne garde que le rattachement dont
+		// l'organisateur figure dans le titre ; les autres stages seront importés à part.
+		$par_ev = [];
+		foreach ( $import as $k => $id ) $par_ev[ (int) $id ][] = (string) $k;
+		foreach ( $par_ev as $id => $cles ) {
+			if ( count( $cles ) < 2 ) continue;
+			$titre = str_replace( '-', ' ', strtolower( remove_accents( wp_unslash( (string) $wpdb->get_var( $wpdb->prepare( "SELECT titre FROM `$te` WHERE id = %d", $id ) ) ) ) ) );
+			foreach ( $cles as $k ) {
+				$org = (string) ( explode( '|', $k )[1] ?? '' );
+				$nom = $org === 'ligue-occitanie' ? 'ligue' : str_replace( '-', ' ', $org );
+				if ( strpos( $titre, $nom ) === false ) unset( $import[ $k ] );
+			}
+		}
+
 		foreach ( self::occitanie( $liste ) as $s ) {
 			$cle    = $s['date'] . '|' . $s['cle'];
 			$niveau = $s['type'] === 'ligue' ? 'regional' : 'departemental';
@@ -195,6 +210,7 @@ final class SP_Cal_Stages_Izzidan {
 				$meme = (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM `$te` WHERE date = %s AND type <> 'annulation'", $s['date'] ) );
 				$deja = null;
 				foreach ( $meme as $ev ) {
+					if ( in_array( (int) $ev->id, array_map( 'intval', $import ), true ) ) continue;   // déjà lié à un autre stage
 					if ( in_array( (string) ( $ev->prepa_dan ?? '' ), [ 'departemental', 'regional' ], true ) || SP_Cal_Eligibilite_Dan::titre_stage( wp_unslash( (string) $ev->titre ) ) ) { $deja = $ev; break; }
 				}
 				if ( $deja ) {

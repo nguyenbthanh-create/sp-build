@@ -514,7 +514,7 @@ Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page rés
   3. ~~Prod~~ — **fait le 18/11/2026** : TKD Parcours 1.14.1 puis sp_build, fichiers contrôlés et code vérifié en ligne (`/app/` et page du QCM).
 - **Piste** : un adhérent dont la catégorie passe d'Enfant à Ado en cours de saison ne voit le bouton qu'après mise à jour de `categorie_age` sur sa fiche (pas de calcul par l'âge) — à revoir si besoin.
 
-## 27/11/2026 — Chantier évolution : surveillance des mises à jour + éligibilité 1er Dan (lot 1 en prod, lot 2 sur le site de test)
+## 27/11/2026 — Chantier évolution : surveillance des mises à jour + éligibilité 1er Dan (lots 1 et 2 en prod le 27/11/2026)
 
 Deux lots, chacun testé sur le site de test puis mis en prod séparément (feu vert de l'utilisateur pour chaque mise en prod). Ordre proposé : lot 1 d'abord (3 mises à jour WordPress en attente en prod au 26/11/2026).
 
@@ -524,7 +524,7 @@ Deux lots, chacun testé sur le site de test puis mis en prod séparément (feu 
 - **Procédure** : mise à jour d'abord sur le site de test, contrôle, puis prod.
 - **Sur le site : mu-plugin « TKD Surveillance »**, indépendant des plugins (fonctionne même si sp-build plante). Déclenché après chaque mise à jour (cœur, plugin, thème, changement de version PHP) et par un bouton « Lancer maintenant ». Vérifie : plugins actifs et versions, état du schéma (`SP_Cal_Schema`), routes REST (`spcal/v1`, `sp-cal/v1`, `claira-tkd/v1`…), shortcodes, pages clés (accueil, `/app/`, adhésion, manifeste), tâches cron, erreurs PHP depuis la mise à jour (journal d'erreurs privé à réactiver : celui de la prod est arrêté depuis le 13/10/2026). Rapport par e-mail + historique dans l'admin + tests dans Outils → Santé du site ; y regrouper le bouton « Diagnostic plugin » de sp-build. Joindre une courte liste de gestes manuels (ce qui ne se vérifie pas automatiquement).
 
-### Lot 2 — Éligibilité 1er Dan automatique (règles validées par l'utilisateur le 27/11/2026 ; codé le 27/11/2026, sur le site de test, pas en prod — voir REALISATION.md)
+### Lot 2 — Éligibilité 1er Dan automatique (règles validées par l'utilisateur le 27/11/2026 ; en prod le 27/11/2026, avec l'import des stages IzziDan — voir REALISATION.md)
 
 **Constat** : `nb_licences` saisi à la main (règle ≥ 3, sans vérifier la licence en cours, non mis à jour au renouvellement) ; âge calculé au 30 juin de fin de saison ; aucune condition de stage ; résultat = case « Éligible 1e Dan » cochée à la main ; calcul écrit deux fois (`trait-members-eleves.php` fiche admin et `class-token.php` espace adhérent) — **à corriger : un seul calcul partagé**.
 
