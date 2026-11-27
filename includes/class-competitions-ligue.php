@@ -12,7 +12,11 @@
  * Jamais de doublon ni d'écrasement : une compétition déjà importée (même supprimée ensuite)
  * n'est pas recréée ; une compétition déjà saisie à la main le même jour et de la même discipline
  * (combat / poomsae-technique) est seulement reliée à la Ligue (son niveau passe à régional s'il
- * était resté « départemental ») ; un événement importé n'est jamais modifié ensuite.
+ * était resté « départemental »).
+ *
+ * Page détail de la Ligue (28/11/2026) : texte complet, affiche, documents. Un événement créé par
+ * l'import est remis à jour tant qu'il n'a pas été modifié à la main ; sous un événement saisi par
+ * le club, un bloc « Informations de la Ligue » est ajouté et tenu à jour, sans toucher au texte du club.
  * Épreuves et résultats restent saisis par le club.
  */
 
@@ -135,6 +139,7 @@ final class SP_Cal_Competitions_Ligue {
 		$crees  = array_map( 'intval', (array) get_option( self::OPT_CREES, [] ) );
 		$dept   = (bool) get_option( self::OPT_DEPT, 0 );
 		$auj    = current_time( 'Y-m-d' );
+		$par_ev = [];
 
 		foreach ( $liste as $c ) {
 			$cle   = $c['url'] !== '' ? $c['url'] : $c['date'] . '|' . sanitize_title( $c['titre'] );
@@ -188,11 +193,143 @@ final class SP_Cal_Competitions_Ligue {
 				}
 			}
 			$etat['trouves'][] = $ligne;
+			// Compétition à venir reliée à un événement du club : sa page détail sera reprise.
+			if ( isset( $import[ $cle ] ) && $c['date'] >= $auj ) {
+				$par_ev[ (int) $import[ $cle ] ][] = [ $c, count( $etat['trouves'] ) - 1 ];
+			}
 		}
+		if ( ! empty( $par_ev ) ) self::completer( $par_ev, $crees, $te, $cols, $etat );
 		update_option( self::OPT_IMPORT, $import, false );
 		update_option( self::OPT_CREES, array_values( array_unique( $crees ) ), false );
 		update_option( self::OPT_ETAT, $etat, false );
 		return $etat;
+	}
+
+	/* =====================================================================================
+	 * Page détail de la Ligue (28/11/2026) : texte complet, affiche, documents
+	 * =================================================================================== */
+
+	const OPT_SIGN  = 'sp_cal_ligue_signatures';   // [ id événement créé => empreinte de ce que l'import y a écrit ]
+	const OPT_DOCS  = 'sp_cal_ligue_docs';         // [ id événement du club => document joint posé par l'import ]
+	const DEBUT_BLOC = '— Informations de la Ligue Occitanie (mises à jour automatiquement) —';
+	const FIN_BLOC   = '— Fin des informations de la Ligue —';
+
+	/** Texte (paragraphes), affiche et documents PDF de la page détail ; null si page inaccessible. */
+	public static function detail( string $url, ?string $html = null ): ?array {
+		if ( $html === null ) {
+			if ( ! preg_match( '#^https://www\.taekwondo-occitanie\.com/#', $url ) ) return null;
+			$r = wp_remote_get( $url, [ 'timeout' => 20, 'user-agent' => 'Mozilla/5.0 (compatible; club WordPress)' ] );
+			if ( is_wp_error( $r ) || (int) wp_remote_retrieve_response_code( $r ) !== 200 ) return null;
+			$html = (string) wp_remote_retrieve_body( $r );
+		}
+		if ( ! preg_match( '#<section id="main-content">(.*?)</section>#s', $html, $m ) ) return null;
+		$bloc = $m[1];
+		$abs  = static fn( string $u ) => strpos( $u, 'http' ) === 0 ? $u : 'https://www.taekwondo-occitanie.com/' . ltrim( html_entity_decode( $u ), '/' );
+		$affiche = preg_match( '#<figure class="illustration">.*?<a[^>]+href="([^"]+)"#s', $bloc, $a ) ? $abs( $a[1] ) : '';
+		$docs = [];
+		if ( preg_match_all( '#<a[^>]+href="([^"]+\.(?:pdf|docx?|xlsx?))"[^>]*>(.*?)</a>#si', $bloc, $d, PREG_SET_ORDER ) ) {
+			foreach ( $d as $x ) $docs[] = [ $abs( $x[1] ), trim( html_entity_decode( wp_strip_all_tags( $x[2] ), ENT_QUOTES, 'UTF-8' ) ) ?: basename( $x[1] ) ];
+		}
+		$bloc = (string) preg_replace( '#<figure.*?</figure>#s', '', $bloc );
+		// Liens du texte : « texte (adresse) » quand l'adresse n'est pas déjà le texte.
+		$bloc = (string) preg_replace_callback( '#<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>#s', static function ( $x ) use ( $abs ) {
+			$t = trim( wp_strip_all_tags( $x[2] ) );
+			$u = $abs( $x[1] );
+			return ( $t === '' || strpos( $u, $t ) !== false ) ? $u : $t . ' (' . $u . ')';
+		}, $bloc );
+		$texte = html_entity_decode( wp_strip_all_tags( str_replace( [ '</p>', '<br>', '<br/>', '<br />', '</li>' ], "\n", $bloc ) ), ENT_QUOTES, 'UTF-8' );
+		$lignes = array_values( array_filter( array_map( static fn( $l ) => trim( (string) preg_replace( '/[ \t\x{00A0}]+/u', ' ', $l ) ), explode( "\n", $texte ) ), 'strlen' ) );
+		return [ 'texte' => implode( "\n", $lignes ), 'affiche' => $affiche, 'docs' => $docs ];
+	}
+
+	/** Document à joindre : premier document PDF, sinon l'affiche. [ url, nom ] ou null. */
+	private static function document( array $d ): ?array {
+		if ( ! empty( $d['docs'] ) ) return [ $d['docs'][0][0], mb_substr( $d['docs'][0][1], 0, 190 ) ];
+		return $d['affiche'] !== '' ? [ $d['affiche'], 'Affiche (Ligue Occitanie)' ] : null;
+	}
+
+	/** Informations d'une compétition : texte de la page, lieu, horaires, autres documents, lien. */
+	private static function infos( array $c, ?array $d ): string {
+		$l = [];
+		if ( $d && $d['texte'] !== '' ) $l[] = $d['texte'];
+		else $l[] = $c['titre'] . ( $c['lieu'] ? "\nLieu : " . $c['lieu'] : '' );
+		if ( $c['debut'] ) $l[] = 'Horaires : ' . $c['debut'] . ( $c['fin'] ? ' - ' . $c['fin'] : '' );
+		if ( $d ) {
+			foreach ( array_slice( $d['docs'], 1 ) as $x ) $l[] = 'Document : ' . $x[1] . ' (' . $x[0] . ')';
+			if ( ! empty( $d['docs'] ) && $d['affiche'] !== '' ) $l[] = 'Affiche : ' . $d['affiche'];
+		}
+		$l[] = 'Page de la Ligue : ' . ( $c['url'] ?: self::AGENDA );
+		return implode( "\n", $l );
+	}
+
+	private static function empreinte( object $ev ): string {
+		return md5( wp_unslash( (string) $ev->description ) . '|' . (string) ( $ev->document_url ?? '' ) . '|' . (string) $ev->heure_debut . '|' . (string) $ev->heure_fin );
+	}
+
+	/**
+	 * Reprend les pages détail des compétitions à venir reliées au calendrier.
+	 *  - événement créé par l'import : description, horaires et document remis à jour tant que
+	 *    l'événement n'a pas été modifié à la main (empreinte de ce que l'import a écrit) ;
+	 *  - événement saisi par le club : bloc « Informations de la Ligue » sous sa description
+	 *    (remplacé à chaque passage, le texte du club n'est jamais touché) ; document joint
+	 *    seulement s'il n'en a pas, puis tenu à jour tant que c'est celui posé par l'import.
+	 */
+	private static function completer( array $par_ev, array $crees, string $te, array $cols, array &$etat ): void {
+		global $wpdb;
+		$sign = (array) get_option( self::OPT_SIGN, [] );
+		$docs = (array) get_option( self::OPT_DOCS, [] );
+		$avec_doc = in_array( 'document_url', $cols, true );
+		$etat['maj'] = 0;
+		foreach ( $par_ev as $id => $items ) {
+			$ev = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM `$te` WHERE id = %d", $id ) );
+			if ( ! $ev ) continue;
+			$details = [];
+			foreach ( $items as [ $c ] ) $details[] = [ $c, $c['url'] ? self::detail( $c['url'] ) : null ];
+			$note = '';
+			if ( in_array( (int) $id, $crees, true ) ) {
+				if ( isset( $sign[ $id ] ) && $sign[ $id ] !== self::empreinte( $ev ) ) {
+					$note = 'modifiée à la main : plus mise à jour';
+				} else {
+					[ $c, $d ] = $details[0];
+					$maj = [
+						'description' => self::infos( $c, $d ) . "\n\nRepris automatiquement de l'agenda de la Ligue Occitanie.",
+						'heure_debut' => $c['debut'] ?: (string) $ev->heure_debut,
+						'heure_fin'   => $c['fin'] ?: (string) $ev->heure_fin,
+					];
+					$doc = $d ? self::document( $d ) : null;
+					if ( $avec_doc && $doc ) { $maj['document_url'] = $doc[0]; $maj['document_nom'] = $doc[1]; }
+					$apres = (object) array_merge( (array) $ev, $maj );
+					if ( self::empreinte( $apres ) !== self::empreinte( $ev ) ) {
+						$wpdb->update( $te, array_intersect_key( $maj, array_flip( $cols ) ), [ 'id' => (int) $id ] );
+						$note = 'détails repris de la page de la Ligue';
+						$etat['maj']++;
+					}
+					$sign[ $id ] = self::empreinte( $apres );
+				}
+			} else {
+				$desc  = wp_unslash( (string) $ev->description );
+				$club  = trim( (string) preg_replace( '/\n*' . preg_quote( self::DEBUT_BLOC, '/' ) . '.*?' . preg_quote( self::FIN_BLOC, '/' ) . '/su', '', $desc ) );
+				$parts = [];
+				foreach ( $details as [ $c, $d ] ) $parts[] = ( count( $details ) > 1 ? '▶ ' . $c['titre'] . "\n" : '' ) . self::infos( $c, $d );
+				$bloc  = self::DEBUT_BLOC . "\n" . implode( "\n\n", $parts ) . "\n" . self::FIN_BLOC;
+				$maj   = [ 'description' => ( $club !== '' ? $club . "\n\n" : '' ) . $bloc ];
+				$doc   = $details[0][1] ? self::document( $details[0][1] ) : null;
+				$actuel = (string) ( $ev->document_url ?? '' );
+				if ( $avec_doc && $doc && ( $actuel === '' || ( isset( $docs[ $id ] ) && $docs[ $id ] === $actuel ) ) ) {
+					$maj['document_url'] = $doc[0];
+					$maj['document_nom'] = $doc[1];
+					$docs[ $id ] = $doc[0];
+				}
+				if ( $maj['description'] !== $desc || ( isset( $maj['document_url'] ) && $maj['document_url'] !== $actuel ) ) {
+					$wpdb->update( $te, $maj, [ 'id' => (int) $id ] );
+					$note = 'informations de la Ligue ajoutées sous la description du club';
+					$etat['maj']++;
+				}
+			}
+			if ( $note !== '' ) foreach ( $items as [ , $i ] ) $etat['trouves'][ $i ]['statut'] .= ' — ' . $note;
+		}
+		update_option( self::OPT_SIGN, $sign, false );
+		update_option( self::OPT_DOCS, $docs, false );
 	}
 
 	/* =====================================================================================
@@ -213,7 +350,7 @@ final class SP_Cal_Competitions_Ligue {
 		$fr   = static fn( string $d ) => substr( $d, 8, 2 ) . '/' . substr( $d, 5, 2 ) . '/' . substr( $d, 0, 4 );
 		echo '<div class="sp-box" id="sp-ligue"><h2>🏆 Compétitions de la Ligue Occitanie</h2>';
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- message de retour
-		if ( isset( $_GET['ligue'] ) && is_array( $etat ) ) echo '<div class="notice notice-success inline"><p>Import fait : ' . (int) $etat['crees'] . ' compétition(s) ajoutée(s) au calendrier.</p></div>';
+		if ( isset( $_GET['ligue'] ) && is_array( $etat ) ) echo '<div class="notice notice-success inline"><p>Import fait : ' . (int) $etat['crees'] . ' compétition(s) ajoutée(s) au calendrier, ' . (int) ( $etat['maj'] ?? 0 ) . ' mise(s) à jour depuis les pages de la Ligue.</p></div>';
 		echo '<p>Chaque jour, les compétitions annoncées sur <a href="' . esc_url( self::AGENDA ) . '" target="_blank" rel="noopener">l\'agenda de la Ligue</a> (championnats, critériums, coupes) sont ajoutées au calendrier du club, type « Compétition », niveau régional, avec le repère <strong>LIG</strong>. '
 			. 'Une compétition déjà saisie le même jour et de la même discipline n\'est pas recopiée. Les épreuves et les résultats restent à saisir par le club.</p>';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_ligue_importer">';
