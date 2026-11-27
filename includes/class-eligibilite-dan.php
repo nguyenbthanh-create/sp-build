@@ -52,7 +52,7 @@ final class SP_Cal_Eligibilite_Dan {
 	private function __construct() {
 		add_action( 'admin_menu', [ $this, 'menu' ], 30 );
 		add_action( 'admin_post_sp_cal_dan_examen', [ $this, 'handle_examen' ] );
-		add_action( 'admin_post_sp_cal_dan_cibler', [ $this, 'handle_cibler' ] );
+		add_action( 'admin_post_sp_cal_dan_mail', [ $this, 'handle_mail' ] );
 		add_action( 'admin_post_sp_cal_dan_classer', [ $this, 'handle_classer' ] );
 		SP_Cal_Schema::enregistrer( 'Éligibilité 1er Dan', [ __CLASS__, 'maybe_upgrade' ] );
 	}
@@ -233,7 +233,7 @@ final class SP_Cal_Eligibilite_Dan {
 		$total   = count( $club ) + $hors;
 		$encours = (int) ( $el->actif ?? 0 ) === 1 && trim( (string) ( $el->saison ?? '' ) ) === $saison;
 		$lic_ok  = $encours && $total >= self::LICENCES;
-		$lic_txt = $total . ' licence' . ( $total > 1 ? 's' : '' ) . ' (' . count( $club ) . ' au club' . ( $hors ? ', ' . $hors . ' hors club' : '' ) . ')'
+		$lic_txt = $total . ' licence' . ( $total > 1 ? 's' : '' ) . ' (' . count( $club ) . ' enregistrée' . ( count( $club ) > 1 ? 's' : '' ) . ' au club' . ( $hors ? ', ' . $hors . ' des saisons précédentes' : '' ) . ')'
 			. ( $encours ? ', dont celle de ' . $saison : ' — licence ' . $saison . ' non prise' );
 
 		// 2. Âge le jour de l'examen
@@ -384,8 +384,8 @@ final class SP_Cal_Eligibilite_Dan {
 		if ( $sans ) echo '<p>⚠️ <strong>' . (int) $sans . '</strong> candidat(s) potentiel(s) sans aucun stage : un stage d\'ici la fin de saison leur évite d\'en avoir deux à faire l\'an prochain (cochés par défaut pour le ciblage).</p>';
 
 		$futurs = self::stages_a_venir();
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_dan_cibler">';
-		wp_nonce_field( 'sp_cal_dan_cibler' );
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_dan_mail">';
+		wp_nonce_field( 'sp_cal_dan_mail' );
 		echo '<table class="widefat striped" style="max-width:1200px;"><thead><tr><th style="width:24px;"><input type="checkbox" onclick="document.querySelectorAll(\'.sp-dan-chk\').forEach(c=>c.checked=this.checked)"></th><th>Adhérent</th><th>Grade</th><th>Licences ' . esc_html( $suiv ) . '</th><th>14 ans</th><th>Stages déjà faits</th><th>À faire</th></tr></thead><tbody>';
 		if ( ! $lignes ) echo '<tr><td colspan="7">Aucun candidat potentiel pour ' . esc_html( $suiv ) . ' avec ces hypothèses.</td></tr>';
 		foreach ( $lignes as [ $el, $p ] ) {
@@ -405,11 +405,7 @@ final class SP_Cal_Eligibilite_Dan {
 				. '<td>' . esc_html( $a_faire ) . '</td></tr>';
 		}
 		echo '</tbody></table>';
-		if ( $futurs ) {
-			echo '<p style="margin-top:12px;">Inviter les adhérents cochés au stage : <select name="event_id">';
-			foreach ( $futurs as $f ) echo '<option value="' . (int) $f->id . '">' . esc_html( self::fr( (string) $f->date ) . ' — ' . wp_unslash( (string) $f->titre ) ) . '</option>';
-			echo '</select> <button class="button button-primary">Cibler</button></p>';
-		}
+		self::formulaire_mail( $futurs, 'projection' );
 		echo '</form>';
 		echo '<p class="description">Non retenus : adhérents qui n\'auront pas 3 licences même en renouvelant, ou pas 14 ans à l\'examen ' . esc_html( $suiv ) . '.</p>';
 	}
@@ -499,7 +495,7 @@ final class SP_Cal_Eligibilite_Dan {
 		if ( $admin ) {
 			$extra = self::extra( $el );
 			$h .= '<input type="hidden" name="eleve_dan_bloc" value="1">';
-			$h .= '<p style="margin:10px 0 6px;"><label>Licences prises hors club (autre club, avant l\'arrivée) : <input type="number" name="eleve_dan_hors_club" min="0" max="50" value="'
+			$h .= '<p style="margin:10px 0 6px;"><label><strong>Licences des saisons précédentes</strong> (au club avant 2026/2027, ou dans un autre club) : <input type="number" name="eleve_dan_hors_club" min="0" max="50" value="'
 				. (int) $r['licences']['hors_club'] . '" style="width:60px;"></label>';
 			$h .= ' <span style="color:#6b7280;">Saisons au club : ' . esc_html( $r['licences']['club'] ? implode( ', ', $r['licences']['club'] ) : 'aucune' ) . ' (complétées automatiquement).</span></p>';
 			$ext = array_values( (array) ( $extra['stages_dan_externes'] ?? [] ) );
@@ -578,26 +574,68 @@ final class SP_Cal_Eligibilite_Dan {
 		exit;
 	}
 
-	/** Ajoute les candidats choisis au ciblage manuel des inscriptions d'un stage du calendrier. */
-	public function handle_cibler(): void {
+	/**
+	 * E-mail aux adhérents cochés pour un stage à venir (remplace le ciblage des inscriptions,
+	 * sans effet pour les stages IzziDan, 28/11/2026). Adresse : celle du représentant, sinon de
+	 * l'adhérent (même règle que les rappels de renouvellement). Envoi par la file d'envoi.
+	 */
+	public function handle_mail(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
-		check_admin_referer( 'sp_cal_dan_cibler' );
+		check_admin_referer( 'sp_cal_dan_mail' );
 		global $wpdb;
-		$te  = $wpdb->prefix . 'sp_cal_events';
-		$ev  = absint( wp_unslash( $_POST['event_id'] ?? 0 ) );
+		$vue = sanitize_key( wp_unslash( $_POST['vue'] ?? '' ) );
+		$ev  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM `{$wpdb->prefix}sp_cal_events` WHERE id = %d", absint( wp_unslash( $_POST['event_id'] ?? 0 ) ) ) );
 		$ids = array_filter( array_map( 'intval', (array) ( $_POST['eleves'] ?? [] ) ) );
-		$n   = 0;
-		$row = $ev ? $wpdb->get_row( $wpdb->prepare( "SELECT id, inscriptions_extra_eleves FROM `$te` WHERE id = %d", $ev ) ) : null;
-		if ( $row && $ids ) {
-			$avant = array_filter( array_map( 'intval', explode( ',', (string) $row->inscriptions_extra_eleves ) ) );
-			$tout  = array_values( array_unique( array_merge( $avant, $ids ) ) );
-			$n     = count( $tout ) - count( $avant );
-			$wpdb->update( $te, [ 'inscriptions_extra_eleves' => implode( ',', $tout ) ], [ 'id' => $ev ] );
+		$res = [ 'envoyes' => 0, 'en_file' => 0, 'sans_email' => [], 'echecs' => 0, 'stage' => '' ];
+		if ( $ev && $ids && self::est_stage( $ev ) ) {
+			$club   = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+			$niveau = (string) ( self::NIVEAUX[ (string) $ev->prepa_dan ] ?? '' );
+			$jour   = date_i18n( 'l j F Y', strtotime( (string) $ev->date ) );
+			$heure  = $ev->heure_debut ? ' de ' . substr( (string) $ev->heure_debut, 0, 5 ) . ( $ev->heure_fin ? ' à ' . substr( (string) $ev->heure_fin, 0, 5 ) : '' ) : '';
+			$desc   = trim( wp_strip_all_tags( wp_unslash( (string) $ev->description ) ) );
+			// Lignes techniques de l'import (rappel « cocher les présents ») : pas pour les familles.
+			$desc   = trim( (string) preg_replace( '/^Importé automatiquement.*$/mu', '', $desc ) );
+			$izd    = class_exists( 'SP_Cal_Stages_Izzidan' ) && SP_Cal_Stages_Izzidan::est_izzidan( (int) $ev->id );
+			$sujet  = "[{$club}] Stage de préparation Dan " . mb_strtolower( $niveau ) . ' — ' . date_i18n( 'j F Y', strtotime( (string) $ev->date ) );
+			$res['stage'] = date_i18n( 'j F Y', strtotime( (string) $ev->date ) ) . ' — ' . wp_unslash( (string) $ev->titre );
+			$envois = [];
+			foreach ( $ids as $id ) {
+				$el = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM `{$wpdb->prefix}sp_cal_eleves` WHERE id = %d", $id ) );
+				if ( ! $el ) continue;
+				$dest = '';
+				foreach ( [ $el->email_parent ?? '', $el->email ?? '' ] as $e ) { if ( is_email( trim( (string) $e ) ) ) { $dest = trim( (string) $e ); break; } }
+				if ( $dest === '' ) { $res['sans_email'][] = $el->prenom . ' ' . $el->nom; continue; }
+				$corps = "Bonjour {$el->prenom},\n\n"
+					. "Un stage de préparation au Dan " . mb_strtolower( $niveau ) . " a lieu le {$jour}{$heure} :\n"
+					. wp_unslash( (string) $ev->titre ) . "\n\n"
+					. ( $desc !== '' ? $desc . "\n\n" : '' )
+					. "Pour se présenter à l'examen du 1er Dan, il faut avoir suivi 2 stages de préparation départementaux ou régionaux, dont un pendant la saison de l'examen. Les préparations du club ne comptent pas pour cette condition.\n\n"
+					. ( $izd ? "L'inscription se fait sur IzziDan (lien ci-dessus, ou https://fftda.izzidan.com/stage/?p=liste-stages).\n" : '' )
+					. "Merci de prévenir ton entraîneur si tu y participes : le club note les présences, c'est ce qui compte pour ton dossier.\n\n"
+					. "Sportivement,\n{$club}";
+				$envois[] = [ $dest, $sujet, $corps ];
+			}
+			$r = SP_Cal_Mail_Queue::envoyer_lot( $envois, 'Stage prépa Dan' );
+			$res['envoyes'] = (int) $r['envoyes'];
+			$res['en_file'] = (int) $r['en_file'];
+			$res['echecs']  = count( (array) $r['echecs'] );
 		}
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE . '&cible=' . $n . '&ev=' . $ev ) );
+		set_transient( 'sp_cal_dan_mail_' . get_current_user_id(), $res, 10 * MINUTE_IN_SECONDS );
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE . ( $vue === 'projection' ? '&vue=projection' : '' ) . '&mail=1' ) );
 		exit;
 	}
 
+	/** Liste des stages à venir + bouton d'envoi (bas des deux onglets). */
+	private static function formulaire_mail( array $futurs, string $vue ): void {
+		if ( ! $futurs ) {
+			echo '<p class="description" style="margin-top:12px;">Aucun stage départemental ou régional à venir dans le calendrier du club.</p>';
+			return;
+		}
+		echo '<p style="margin-top:12px;"><input type="hidden" name="vue" value="' . esc_attr( $vue ) . '">✉️ Envoyer un e-mail aux adhérents cochés pour le stage : <select name="event_id">';
+		foreach ( $futurs as $f ) echo '<option value="' . (int) $f->id . '">' . esc_html( self::fr( (string) $f->date ) . ' — ' . wp_unslash( (string) $f->titre ) ) . '</option>';
+		echo '</select> <button class="button button-primary" onclick="var n=document.querySelectorAll(\'.sp-dan-chk:checked\').length;if(!n){alert(\'Cochez au moins un adhérent.\');return false;}return confirm(\'Envoyer l\\\'e-mail du stage à \'+n+\' adhérent(s) ?\');">Envoyer l\'e-mail</button></p>';
+		echo '<p class="description">Message : date, horaires, lieu et lien d\'inscription IzziDan du stage, rappel de la condition des 2 stages. Envoyé au représentant légal s\'il est renseigné, sinon à l\'adhérent.</p>';
+	}
 	/** Classe un événement « prépa Dan » : départemental, régional ou stage du club (non compté). */
 	public function handle_classer(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
@@ -643,7 +681,13 @@ final class SP_Cal_Eligibilite_Dan {
 		echo '<div class="wrap"><h1>🥋 Candidats 1er Dan — saison ' . esc_html( $saison ) . '</h1>';
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- messages de retour
 		if ( isset( $_GET['examen'] ) ) echo '<div class="notice notice-success is-dismissible"><p>Date de l\'examen enregistrée.</p></div>';
-		if ( isset( $_GET['cible'] ) ) echo '<div class="notice notice-success is-dismissible"><p>' . (int) $_GET['cible'] . ' adhérent(s) ajouté(s) au ciblage des inscriptions du stage. Les invitations s\'envoient depuis le calendrier (onglet de l\'événement).</p></div>';
+		$mail = isset( $_GET['mail'] ) ? get_transient( 'sp_cal_dan_mail_' . get_current_user_id() ) : false;
+		if ( is_array( $mail ) ) {
+			delete_transient( 'sp_cal_dan_mail_' . get_current_user_id() );
+			echo '<div class="notice ' . ( $mail['envoyes'] + $mail['en_file'] ? 'notice-success' : 'notice-warning' ) . ' is-dismissible"><p>✉️ Stage ' . esc_html( $mail['stage'] ) . ' : ' . (int) $mail['envoyes'] . ' e-mail(s) envoyé(s)'
+				. ( $mail['en_file'] ? ', ' . (int) $mail['en_file'] . ' en file d\'envoi' : '' ) . ( $mail['echecs'] ? ', ' . (int) $mail['echecs'] . ' échec(s)' : '' )
+				. ( $mail['sans_email'] ? '. Sans adresse e-mail : ' . esc_html( implode( ', ', $mail['sans_email'] ) ) : '' ) . '.</p></div>';
+		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 		// Date de l'examen
@@ -746,8 +790,8 @@ final class SP_Cal_Eligibilite_Dan {
 		$te      = $wpdb->prefix . 'sp_cal_events';
 		$col     = self::colonne_prepa() ? 'prepa_dan' : "'' AS prepa_dan";
 		$futurs  = array_filter( (array) $wpdb->get_results( $wpdb->prepare( "SELECT id, date, titre, type, {$col} FROM `$te` WHERE date >= %s AND type <> 'annulation' ORDER BY date LIMIT 300", current_time( 'Y-m-d' ) ) ), [ __CLASS__, 'est_stage' ] );
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_dan_cibler">';
-		wp_nonce_field( 'sp_cal_dan_cibler' );
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_dan_mail">';
+		wp_nonce_field( 'sp_cal_dan_mail' );
 		echo '<table class="widefat striped" style="max-width:1200px;"><thead><tr><th style="width:24px;"><input type="checkbox" onclick="document.querySelectorAll(\'.sp-dan-chk\').forEach(c=>c.checked=this.checked)"></th><th>Adhérent</th><th>Grade</th><th>Licences</th><th>Âge à l\'examen</th><th>Stages</th><th>Résultat</th></tr></thead><tbody>';
 		if ( ! $aff ) echo '<tr><td colspan="7">Aucun adhérent dans ce filtre.</td></tr>';
 		foreach ( $aff as [ $el, $r ] ) {
@@ -762,13 +806,7 @@ final class SP_Cal_Eligibilite_Dan {
 				. '<td><strong>' . esc_html( $res ) . '</strong></td></tr>';
 		}
 		echo '</tbody></table>';
-		if ( $futurs ) {
-			echo '<p style="margin-top:12px;">Ajouter les adhérents cochés (par défaut : ceux à qui il manque un stage) aux invitations du stage : <select name="event_id">';
-			foreach ( $futurs as $f ) echo '<option value="' . (int) $f->id . '">' . esc_html( self::fr( (string) $f->date ) . ' — ' . wp_unslash( (string) $f->titre ) ) . '</option>';
-			echo '</select> <button class="button button-primary">Cibler</button></p>';
-		} else {
-			echo '<p class="description" style="margin-top:12px;">Aucun stage de préparation Dan à venir dans le calendrier du club : créez l\'événement (case « Stage préparation Dan ») pour pouvoir y inviter les candidats.</p>';
-		}
+		self::formulaire_mail( array_values( $futurs ), '' );
 		echo '</form></div>';
 	}
 }
