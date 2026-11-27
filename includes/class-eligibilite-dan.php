@@ -14,9 +14,12 @@
  *     l'examen. Date de l'examen réglée à la main par saison (option sp_cal_dan_examens), sinon
  *     30 juin de fin de saison (ancienne règle).
  *  3. 2 stages de préparation Dan (départementaux ou régionaux) dont un dans la saison en cours.
- *     Preuve : présence pointée à un événement « stage préparation Dan » du calendrier (colonne
- *     events.prepa_dan, ou titre « prépa Dan » si la case n'a pas été réglée), ou stage fait
- *     ailleurs ajouté à la main sur la fiche (extra_data « stages_dan_externes »).
+ *     Preuve : présence pointée à un événement du calendrier marqué « stage de préparation Dan »
+ *     départemental ou régional (colonne events.prepa_dan), ou stage fait ailleurs ajouté à la main
+ *     sur la fiche (extra_data « stages_dan_externes »). Les prépas du club ne comptent pas : un
+ *     titre « prépa Dan » ne suffit plus (28/11/2026) — ces événements sont listés « à classer ».
+ *     Les stages départementaux et régionaux d'Occitanie sont importés d'IzziDan
+ *     (class-stages-izzidan.php).
  * Une dérogation avec motif (extra_data « derogation_dan ») rend l'adhérent éligible.
  * Rien n'est recalculé en base sauf nb_licences et eligible_dan, tenus à jour à l'enregistrement
  * de la fiche pour le code qui les lit encore.
@@ -49,6 +52,7 @@ final class SP_Cal_Eligibilite_Dan {
 		add_action( 'admin_menu', [ $this, 'menu' ], 30 );
 		add_action( 'admin_post_sp_cal_dan_examen', [ $this, 'handle_examen' ] );
 		add_action( 'admin_post_sp_cal_dan_cibler', [ $this, 'handle_cibler' ] );
+		add_action( 'admin_post_sp_cal_dan_classer', [ $this, 'handle_classer' ] );
 		SP_Cal_Schema::enregistrer( 'Éligibilité 1er Dan', [ __CLASS__, 'maybe_upgrade' ] );
 	}
 
@@ -57,7 +61,7 @@ final class SP_Cal_Eligibilite_Dan {
 	 * =================================================================================== */
 
 	/**
-	 * Colonne events.prepa_dan ('' = d'après le titre, 'departemental', 'regional', 'non') et
+	 * Colonne events.prepa_dan ('departemental' ou 'regional' = compté ; '' ou 'non' = pas compté) et
 	 * reprise de l'historique : saison actuelle des adhérents actifs ajoutée à saisons_licence,
 	 * licences_hors_club initialisé depuis nb_licences. Idempotent.
 	 */
@@ -162,10 +166,8 @@ final class SP_Cal_Eligibilite_Dan {
 	}
 
 	public static function est_stage( object $ev ): bool {
-		$p = (string) ( $ev->prepa_dan ?? '' );
-		if ( isset( self::NIVEAUX[ $p ] ) ) return true;
-		if ( $p === 'non' ) return false;
-		return ( $ev->type ?? '' ) !== 'annulation' && self::titre_stage( (string) ( $ev->titre ?? '' ) );
+		// Seuls les stages départementaux et régionaux comptent (choix de l'utilisateur, 28/11/2026).
+		return ( $ev->type ?? '' ) !== 'annulation' && isset( self::NIVEAUX[ (string) ( $ev->prepa_dan ?? '' ) ] );
 	}
 
 	/** Stages du calendrier avec les adhérents pointés présents : [ eleve_id => [ stage, … ] ]. */
@@ -178,7 +180,7 @@ final class SP_Cal_Eligibilite_Dan {
 		$rows = (array) $wpdb->get_results(
 			"SELECT e.id, e.date, e.titre, e.type, {$col} AS prepa_dan, p.eleve_id
 			 FROM `$te` e JOIN `$tp` p ON p.event_id = e.id AND p.present = 1
-			 WHERE e.type <> 'annulation' AND ( {$col} IN ('departemental','regional') OR e.titre LIKE '%dan%' )"
+			 WHERE e.type <> 'annulation' AND {$col} IN ('departemental','regional')"
 		);
 		$out = [];
 		foreach ( $rows as $r ) {
@@ -463,6 +465,28 @@ final class SP_Cal_Eligibilite_Dan {
 		exit;
 	}
 
+	/** Classe un événement « prépa Dan » : départemental, régional ou stage du club (non compté). */
+	public function handle_classer(): void {
+		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) wp_die( 'Accès refusé.' );
+		check_admin_referer( 'sp_cal_dan_classer' );
+		global $wpdb;
+		$ev  = absint( wp_unslash( $_POST['event_id'] ?? 0 ) );
+		$niv = sanitize_key( wp_unslash( $_POST['niveau'] ?? '' ) );
+		if ( $ev && self::colonne_prepa() && ( isset( self::NIVEAUX[ $niv ] ) || $niv === 'non' ) ) {
+			$wpdb->update( $wpdb->prefix . 'sp_cal_events', [ 'prepa_dan' => $niv ], [ 'id' => $ev ] );
+		}
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE . '#sp-dan-classer' ) );
+		exit;
+	}
+
+	/** Événements dont le titre ressemble à un stage prépa Dan mais qui n'ont pas été classés. */
+	private static function a_classer(): array {
+		if ( ! self::colonne_prepa() ) return [];
+		global $wpdb;
+		$rows = (array) $wpdb->get_results( "SELECT id, date, titre, type FROM `{$wpdb->prefix}sp_cal_events` WHERE prepa_dan = '' AND type <> 'annulation' AND titre LIKE '%dan%' ORDER BY date DESC LIMIT 200" );
+		return array_values( array_filter( $rows, static fn( $r ) => self::titre_stage( wp_unslash( (string) $r->titre ) ) ) );
+	}
+
 	public function page(): void {
 		if ( ! current_user_can( SP_Cal_Roles::CAP_GESTION_ADHESIONS ) ) return;
 		global $wpdb;
@@ -505,6 +529,27 @@ final class SP_Cal_Eligibilite_Dan {
 			echo '</ul>';
 		}
 		echo '<p class="description">Source : <a href="https://www.taekwondo-occitanie.com/evenements" target="_blank" rel="noopener">agenda de la Ligue Occitanie</a>, lu automatiquement ; rien n\'est enregistré sans votre clic.</p></div>';
+
+		// Stages importés d'IzziDan (comités cochés)
+		if ( class_exists( 'SP_Cal_Stages_Izzidan' ) ) SP_Cal_Stages_Izzidan::render();
+
+		// Anciens événements « prépa Dan » à classer
+		$classer = self::a_classer();
+		if ( $classer ) {
+			echo '<div id="sp-dan-classer" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:14px 18px;max-width:1000px;margin-top:14px;">';
+			echo '<h2 style="margin-top:0;">🗂️ Événements « prépa Dan » à classer (' . count( $classer ) . ')</h2>';
+			echo '<p>Seuls les stages départementaux et régionaux comptent pour l\'examen. Ces événements ont un titre de stage de préparation Dan mais leur niveau n\'est pas indiqué : ils ne sont <strong>pas comptés</strong> tant qu\'ils ne sont pas classés.</p><table class="widefat striped"><tbody>';
+			foreach ( $classer as $c ) {
+				echo '<tr><td style="width:100px;">' . esc_html( self::fr( (string) $c->date ) ) . '</td><td>' . esc_html( wp_unslash( (string) $c->titre ) ) . '</td><td style="white-space:nowrap;">';
+				foreach ( [ 'departemental' => 'Départemental', 'regional' => 'Régional', 'non' => 'Stage du club (ne compte pas)' ] as $v => $lib ) {
+					echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline;"><input type="hidden" name="action" value="sp_cal_dan_classer"><input type="hidden" name="event_id" value="' . (int) $c->id . '"><input type="hidden" name="niveau" value="' . esc_attr( $v ) . '">';
+					wp_nonce_field( 'sp_cal_dan_classer' );
+					echo '<button class="button button-small">' . esc_html( $lib ) . '</button></form> ';
+				}
+				echo '</td></tr>';
+			}
+			echo '</tbody></table></div>';
+		}
 
 		// Candidats
 		$eleves = (array) $wpdb->get_results( "SELECT * FROM `{$wpdb->prefix}sp_cal_eleves` WHERE actif = 1 ORDER BY nom, prenom" );

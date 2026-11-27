@@ -298,7 +298,7 @@ class SpCalPro_Ajax {
         if ( $type !== 'annulation' && empty( $data['titre'] ) ) wp_send_json_error( 'Titre requis.' );
 
         // Stage de préparation Dan (éligibilité 1er Dan, class-eligibilite-dan.php, 27/11/2026) :
-        // '' = d'après le titre, departemental / regional, non = jamais compté.
+        // departemental / regional = compté ; '' (ou 'non', ancienne valeur) = pas compté.
         if ( isset( $_POST['prepa_dan'] ) && class_exists( 'SP_Cal_Eligibilite_Dan' ) && SP_Cal_Eligibilite_Dan::colonne_prepa() ) {
             $pd = sanitize_key( wp_unslash( $_POST['prepa_dan'] ) );
             $data['prepa_dan'] = in_array( $pd, array( 'departemental', 'regional', 'non' ), true ) ? $pd : '';
