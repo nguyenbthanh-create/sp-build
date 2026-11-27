@@ -158,6 +158,7 @@
                         if      (ev.type==='cours_recurrent') { color=CAL.resolveColor(ev.categorie,'#3B82F6'); prefix=CAL.resolveIcon(ev.categorie,'🔄 '); cls2='sp-evt-pill sp-pill-recurrent'; }
                         else if (ev.type==='annulation')      { if(shown_annul[ev.slot_id])return; shown_annul[ev.slot_id]=true; color='#ef4444'; prefix='🚫 '; cls2='sp-evt-pill sp-pill-annulation'; }
                         else if (ev.type==='cours')           { color=CAL.resolveColor(ev.categorie,'#7c3aed'); prefix=CAL.resolveIcon(ev.categorie,'⚡ '); cls2='sp-evt-pill sp-pill-ponctuel'; }
+                        else if (CAL.estStageDan(ev))         { color=CAL.VIOLET_DAN; prefix='🥋 '; cls2='sp-evt-pill'; }   // stage prépa Dan qui compte, quel que soit son type (28/11/2026)
                         else if (ev.type==='examen')          { color='#b45309'; prefix='🎓 '; cls2='sp-evt-pill sp-evt-pill-examen'; }
                         else if (ev.type==='competition')     { color='#b8860b'; prefix='🏆 '; cls2='sp-evt-pill sp-pill-competition'; }
                         else if (ev.type==='anniversaire')    {
@@ -165,7 +166,6 @@
                             bdayHtml += '<span class="sp-pill-bday" data-id="'+CAL.esc(String(ev.id))+'">🎂 '+CAL.esc(ev.titre)+'</span>';
                             return;
                         }
-                        else if (CAL.estStageDan(ev))         { color=CAL.VIOLET_DAN; prefix='🥋 '; cls2='sp-evt-pill'; }   // stage prépa Dan qui compte (28/11/2026)
                         else                                  { color=ev.couleur||'#3B82F6'; prefix='📅 '; cls2='sp-evt-pill'; }
                         var time  = ev.heure_debut ? ev.heure_debut+' ' : '';
                         var label = ev.type==='annulation' ? prefix+CAL.esc(ev.titre) : prefix+time+CAL.esc(ev.titre);
@@ -438,8 +438,8 @@
             // Ponctuels + examens
             var ponctHtml = '';
             ponctArr.forEach(function(ev){
-                var color = ev.type==='cours' ? CAL.resolveColor(ev.categorie,'#7c3aed') : ev.type==='examen' ? '#b45309' : ev.type==='competition' ? '#b8860b' : CAL.estStageDan(ev) ? CAL.VIOLET_DAN : (ev.couleur||'#3B82F6');
-                var icon  = ev.type==='cours' ? '⚡' : ev.type==='examen' ? '🎓' : CAL.estStageDan(ev) ? '🥋' : '📅';
+                var color = ev.type==='cours' ? CAL.resolveColor(ev.categorie,'#7c3aed') : CAL.estStageDan(ev) ? CAL.VIOLET_DAN : ev.type==='examen' ? '#b45309' : ev.type==='competition' ? '#b8860b' : (ev.couleur||'#3B82F6');
+                var icon  = ev.type==='cours' ? '⚡' : CAL.estStageDan(ev) ? '🥋' : ev.type==='examen' ? '🎓' : '📅';
                 var time  = ev.heure_debut?(ev.heure_debut+(ev.heure_fin?' – '+ev.heure_fin:'')):'' ;
                 ponctHtml += '<div class="sp-day-event-item" data-id="'+ev.id+'">'
                     +'<div class="sp-day-event-dot" style="background:'+color+';"></div>'
