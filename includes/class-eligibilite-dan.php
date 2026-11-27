@@ -166,6 +166,12 @@ final class SP_Cal_Eligibilite_Dan {
 		return ! preg_match( '/\b[5-9]\s*(e|eme|ieme)?\s*dan\s+et\s+plus/', $t );
 	}
 
+	/** « Départemental » / « Régional » pour un stage qui compte, '' sinon (planning, agenda, calendrier). */
+	public static function niveau_stage( $ev ): string {
+		$ev = (object) $ev;
+		return ( $ev->type ?? '' ) === 'annulation' ? '' : ( self::NIVEAUX[ (string) ( $ev->prepa_dan ?? '' ) ] ?? '' );
+	}
+
 	public static function est_stage( object $ev ): bool {
 		// Seuls les stages départementaux et régionaux comptent (choix de l'utilisateur, 28/11/2026).
 		return ( $ev->type ?? '' ) !== 'annulation' && isset( self::NIVEAUX[ (string) ( $ev->prepa_dan ?? '' ) ] );

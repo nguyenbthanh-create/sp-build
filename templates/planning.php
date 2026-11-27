@@ -110,6 +110,7 @@ foreach ($ponctuels as $ev) {
         'titre'=>$ev->titre,'categorie'=>$ev->categorie,'recurrence'=>null,'annul_id'=>null,'ponctuel'=>true,
         'type'  => $ev->type ?? '',
         'couleur' => $ev->couleur ?? '',
+        'prepa_dan' => $ev->prepa_dan ?? '',
         'id'    => $ev->id   ?? 0,
         'document_url' => $ev->document_url ?? '', 'document_nom' => $ev->document_nom ?? '',
     );
@@ -284,6 +285,9 @@ for ($w=0;$w<6;$w++) {
                             $saved = SpCalPro_DB::style_element( $item['type'] ?? '', $cat, $item['couleur'] ?? '', $cat_colors );
                             $color = $saved['color'];
                             $icon  = $saved['icon'];
+                            // Stage de préparation Dan départemental / régional : violet, 🥋 et niveau (28/11/2026).
+                            $niv_dan = class_exists( 'SP_Cal_Eligibilite_Dan' ) ? SP_Cal_Eligibilite_Dan::niveau_stage( $item ) : '';
+                            if ( $niv_dan !== '' ) { $color = SP_Cal_Eligibilite_Dan::VIOLET; $icon = '🥋'; }
                             $is_annule = !empty($item['annul_id']);
                             $is_ponct  = !empty($item['ponctuel']);
                             $class = $is_annule ? 'sp-plan-event sp-plan-annule' : ($is_ponct ? 'sp-plan-event sp-plan-ponctuel' : 'sp-plan-event');
@@ -306,7 +310,8 @@ for ($w=0;$w<6;$w++) {
                         <?php else: ?>
                             <?php if ($icon) echo '<span class="sp-plan-icon">'.esc_html($icon).'</span> '; ?>
                             <?php if ($is_ponct): ?>
-                                <span class="sp-plan-label">⚡ <?php echo esc_html($item['titre']); ?></span>
+                                <span class="sp-plan-label"><?php echo $niv_dan !== '' ? '' : '⚡ '; echo esc_html($item['titre']); ?></span>
+                                <?php if ( $niv_dan !== '' ) echo '<span class="sp-plan-freq">Stage ' . esc_html( mb_strtolower( $niv_dan ) ) . '</span>'; ?>
                             <?php else: ?>
                                 <span class="sp-plan-label"><?php echo esc_html($item['titre']); ?></span>
                                 <?php if ( $freq !== '' ) echo '<span class="sp-plan-freq">' . esc_html( $freq ) . '</span>'; ?>
@@ -353,12 +358,16 @@ for ($w=0;$w<6;$w++) {
                 if ( ! empty($item['annul_id']) ) continue;
                 $type_item = $item['type'] ?? '';
                 // La légende des catégories ne concerne que les cours ; examens et compétitions ont la leur.
-                if ( isset( SpCalPro_DB::COULEURS_TYPES[ $type_item ] ) ) $types_week[ $type_item ] = true;
+                if ( class_exists( 'SP_Cal_Eligibilite_Dan' ) && SP_Cal_Eligibilite_Dan::niveau_stage( $item ) !== '' ) $types_week['prepa_dan'] = true;
+                elseif ( isset( SpCalPro_DB::COULEURS_TYPES[ $type_item ] ) ) $types_week[ $type_item ] = true;
                 elseif ( $type_item !== 'evenement' && $item['categorie'] ) $cats_week[$item['categorie']]=true;
             }
         }
         if ($cats_week || $types_week): ?>
         <div class="sp-planning-legend">
+            <?php if ( ! empty( $types_week['prepa_dan'] ) ) : ?>
+            <span class="sp-legend-item"><span class="sp-legend-dot" style="background:<?php echo esc_attr( SP_Cal_Eligibilite_Dan::VIOLET ); ?>;"></span>🥋 Stage prépa Dan (départemental / régional)</span>
+            <?php endif; ?>
             <?php foreach ( array( 'examen' => 'Examen', 'competition' => 'Compétition' ) as $type_leg => $lib_leg ) : if ( empty( $types_week[ $type_leg ] ) ) continue; ?>
             <span class="sp-legend-item">
                 <span class="sp-legend-dot" style="background:<?php echo esc_attr( SpCalPro_DB::COULEURS_TYPES[ $type_leg ] ); ?>;"></span>

@@ -1054,6 +1054,8 @@ textarea.sp-input { height:auto; padding:8px 10px; resize:vertical; }
 .spcal-evts-wrap .spcal-evt-type-competition::before { background: #c9a227; }
 .spcal-evts-wrap .spcal-evt-type-examen::before      { background: #7c3aed; }
 .spcal-evts-wrap .spcal-evt-type-stage::before       { background: #0891b2; }
+.spcal-evts-wrap .spcal-evt-type-prepa-dan          { color: #7E22CE; border-color: #d8b4fe; }   /* stage prépa Dan départemental / régional (28/11/2026) */
+.spcal-evts-wrap .spcal-evt-type-prepa-dan::before  { background: #7E22CE; }
 .spcal-evts-wrap .spcal-evt-past-badge { background: #faf9f7; }
 .spcal-evts-wrap .spcal-evt-heure-badge {
     font-family: Montserrat, sans-serif; font-weight: 500; font-size: 13px;
