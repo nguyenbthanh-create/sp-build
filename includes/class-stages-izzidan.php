@@ -181,7 +181,6 @@ final class SP_Cal_Stages_Izzidan {
 		$import  = (array) get_option( self::OPT_IMPORT, [] );
 		$coches  = self::coches();
 		$debut   = SP_Cal_Eligibilite_Dan::bornes( SP_Cal_Eligibilite_Dan::saison_courante() )[0];
-		$couleur = class_exists( 'SpCalPro_DB' ) ? ( SpCalPro_DB::style_categorie( 'Taekwondo' )['color'] ?? '' ) : '';
 
 		// Un même événement rattaché à deux stages du même jour (ex. Ligue et C.D.T. Hérault le
 		// 25/04/2027, constaté au premier import en prod) : on ne garde que le rattachement dont
@@ -195,6 +194,15 @@ final class SP_Cal_Stages_Izzidan {
 				$org = (string) ( explode( '|', $k )[1] ?? '' );
 				$nom = $org === 'ligue-occitanie' ? 'ligue' : str_replace( '-', ' ', $org );
 				if ( strpos( $titre, $nom ) === false ) unset( $import[ $k ] );
+			}
+		}
+
+		// Stages importés avant le 28/11/2026 : titre complété par « (IzziDan) » et couleur violette,
+		// seulement s'ils portent encore exactement le titre donné à l'import (jamais un titre modifié à la main).
+		foreach ( array_unique( array_map( 'intval', $import ) ) as $id ) {
+			$ev = $wpdb->get_row( $wpdb->prepare( "SELECT id, titre FROM `$te` WHERE id = %d", $id ) );
+			if ( $ev && preg_match( '/^Stage prépa Dan — (C\.D\.T\.|Ligue) [^()]+$/u', wp_unslash( (string) $ev->titre ) ) ) {
+				$wpdb->update( $te, [ 'titre' => wp_unslash( (string) $ev->titre ) . ' (IzziDan)', 'couleur' => SP_Cal_Eligibilite_Dan::VIOLET ], [ 'id' => (int) $ev->id ] );
 			}
 		}
 
@@ -218,7 +226,7 @@ final class SP_Cal_Stages_Izzidan {
 					$ligne['statut'] = 'déjà au calendrier';
 					$ligne['event']  = (int) $deja->id;
 					if ( (string) ( $deja->prepa_dan ?? '' ) === '' && in_array( 'prepa_dan', $cols, true ) ) {
-						$wpdb->update( $te, [ 'prepa_dan' => $niveau ], [ 'id' => (int) $deja->id ] );   // classé d'après IzziDan
+						$wpdb->update( $te, [ 'prepa_dan' => $niveau, 'couleur' => SP_Cal_Eligibilite_Dan::VIOLET ], [ 'id' => (int) $deja->id ] );   // classé d'après IzziDan
 						$ligne['statut'] = 'déjà au calendrier (niveau ajouté)';
 					}
 				} else {
@@ -233,10 +241,10 @@ final class SP_Cal_Stages_Izzidan {
 						'date'                 => $s['date'],
 						'heure_debut'          => $d['debut'],
 						'heure_fin'            => $d['fin'],
-						'titre'                => 'Stage prépa Dan — ' . $nom,
+						'titre'                => 'Stage prépa Dan — ' . $nom . ' (IzziDan)',
 						'categorie'            => 'Taekwondo',
 						'cours_discipline'     => 'Taekwondo',
-						'couleur'              => $couleur ?: '#3B82F6',
+						'couleur'              => SP_Cal_Eligibilite_Dan::VIOLET,
 						'type'                 => 'evenement',
 						'description'          => $desc,
 						'prepa_dan'            => $niveau,

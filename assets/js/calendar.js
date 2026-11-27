@@ -165,6 +165,7 @@
                             bdayHtml += '<span class="sp-pill-bday" data-id="'+CAL.esc(String(ev.id))+'">🎂 '+CAL.esc(ev.titre)+'</span>';
                             return;
                         }
+                        else if (CAL.estStageDan(ev))         { color=CAL.VIOLET_DAN; prefix='🥋 '; cls2='sp-evt-pill'; }   // stage prépa Dan qui compte (28/11/2026)
                         else                                  { color=ev.couleur||'#3B82F6'; prefix='📅 '; cls2='sp-evt-pill'; }
                         var time  = ev.heure_debut ? ev.heure_debut+' ' : '';
                         var label = ev.type==='annulation' ? prefix+CAL.esc(ev.titre) : prefix+time+CAL.esc(ev.titre);
@@ -271,6 +272,9 @@
 			CAL.indicePrepaDan();
 			});
 			// Stage de préparation Dan (27/11/2026) : même règle de titre que class-eligibilite-dan.php.
+			// Stages qui comptent pour le 1er Dan (départementaux / régionaux) : violet et 🥋 (28/11/2026).
+			CAL.VIOLET_DAN = '#7E22CE';
+			CAL.estStageDan = function(ev){ return !!ev && ev.type !== 'cours' && ev.type !== 'cours_recurrent' && (ev.prepa_dan === 'departemental' || ev.prepa_dan === 'regional'); };
 			CAL.indicePrepaDan = function(){
 				var t = ($('#ev-titre').val() || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 				var ressemble = /prepa(ration)?\b.*\bdan\b/.test(t) && !/\b[5-9]\s*(e|eme|ieme)?\s*dan\s+et\s+plus/.test(t);
@@ -434,8 +438,8 @@
             // Ponctuels + examens
             var ponctHtml = '';
             ponctArr.forEach(function(ev){
-                var color = ev.type==='cours' ? CAL.resolveColor(ev.categorie,'#7c3aed') : ev.type==='examen' ? '#b45309' : ev.type==='competition' ? '#b8860b' : (ev.couleur||'#3B82F6');
-                var icon  = ev.type==='cours' ? '⚡' : ev.type==='examen' ? '🎓' : '📅';
+                var color = ev.type==='cours' ? CAL.resolveColor(ev.categorie,'#7c3aed') : ev.type==='examen' ? '#b45309' : ev.type==='competition' ? '#b8860b' : CAL.estStageDan(ev) ? CAL.VIOLET_DAN : (ev.couleur||'#3B82F6');
+                var icon  = ev.type==='cours' ? '⚡' : ev.type==='examen' ? '🎓' : CAL.estStageDan(ev) ? '🥋' : '📅';
                 var time  = ev.heure_debut?(ev.heure_debut+(ev.heure_fin?' – '+ev.heure_fin:'')):'' ;
                 ponctHtml += '<div class="sp-day-event-item" data-id="'+ev.id+'">'
                     +'<div class="sp-day-event-dot" style="background:'+color+';"></div>'

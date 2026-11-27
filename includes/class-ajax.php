@@ -302,6 +302,7 @@ class SpCalPro_Ajax {
         if ( isset( $_POST['prepa_dan'] ) && class_exists( 'SP_Cal_Eligibilite_Dan' ) && SP_Cal_Eligibilite_Dan::colonne_prepa() ) {
             $pd = sanitize_key( wp_unslash( $_POST['prepa_dan'] ) );
             $data['prepa_dan'] = in_array( $pd, array( 'departemental', 'regional', 'non' ), true ) ? $pd : '';
+            if ( in_array( $data['prepa_dan'], array( 'departemental', 'regional' ), true ) ) $data['couleur'] = SP_Cal_Eligibilite_Dan::VIOLET;
         }
 
         $id = intval( $_POST['event_id'] ?? 0 );

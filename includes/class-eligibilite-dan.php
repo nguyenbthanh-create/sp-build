@@ -39,6 +39,7 @@ final class SP_Cal_Eligibilite_Dan {
 	const TRANSIENT    = 'sp_cal_dan_ics';
 	const PAGE         = 'sp-cal-dan';
 	const NIVEAUX      = [ 'departemental' => 'Départemental', 'regional' => 'Régional' ];
+	const VIOLET       = '#7E22CE';   // couleur des stages qui comptent dans le calendrier (28/11/2026)
 
 	private static $instance = null;
 	private static $stages_cache = null;
@@ -592,10 +593,23 @@ final class SP_Cal_Eligibilite_Dan {
 		$ev  = absint( wp_unslash( $_POST['event_id'] ?? 0 ) );
 		$niv = sanitize_key( wp_unslash( $_POST['niveau'] ?? '' ) );
 		if ( $ev && self::colonne_prepa() && ( isset( self::NIVEAUX[ $niv ] ) || $niv === 'non' ) ) {
-			$wpdb->update( $wpdb->prefix . 'sp_cal_events', [ 'prepa_dan' => $niv ], [ 'id' => $ev ] );
+			$wpdb->update( $wpdb->prefix . 'sp_cal_events', isset( self::NIVEAUX[ $niv ] ) ? [ 'prepa_dan' => $niv, 'couleur' => self::VIOLET ] : [ 'prepa_dan' => $niv ], [ 'id' => $ev ] );
 		}
 		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE . '#sp-dan-classer' ) );
 		exit;
+	}
+
+	/** Stages qui comptent, passés (saison en cours), sans aucune présence cochée. */
+	private static function stages_sans_presence(): array {
+		if ( ! self::colonne_prepa() ) return [];
+		global $wpdb;
+		$te = $wpdb->prefix . 'sp_cal_events';
+		$tp = $wpdb->prefix . 'sp_cal_presences_eleves';
+		return (array) $wpdb->get_results( $wpdb->prepare(
+			"SELECT e.id, e.date, e.titre FROM `$te` e WHERE e.prepa_dan IN ('departemental','regional') AND e.type <> 'annulation'
+			 AND e.date < %s AND e.date >= %s AND NOT EXISTS ( SELECT 1 FROM `$tp` p WHERE p.event_id = e.id AND p.present = 1 ) ORDER BY e.date",
+			current_time( 'Y-m-d' ), self::bornes( self::saison_courante() )[0]
+		) );
 	}
 
 	/** Événements dont le titre ressemble à un stage prépa Dan mais qui n'ont pas été classés. */
@@ -668,6 +682,15 @@ final class SP_Cal_Eligibilite_Dan {
 				echo '</td></tr>';
 			}
 			echo '</tbody></table></div>';
+		}
+
+		// Rappel : stages passés qui comptent mais sans aucune présence cochée (28/11/2026)
+		$oublis = self::stages_sans_presence();
+		if ( $oublis ) {
+			echo '<div style="background:#faf5ff;border:1px solid #d8b4fe;border-left:4px solid ' . esc_attr( self::VIOLET ) . ';border-radius:8px;padding:12px 18px;max-width:1000px;margin-top:14px;">';
+			echo '<h2 style="margin-top:0;">🥋 Présences à cocher (' . count( $oublis ) . ')</h2><p>Ces stages départementaux ou régionaux sont passés et <strong>aucune présence n\'est cochée</strong> : tant qu\'elles ne le sont pas, ils ne comptent pour personne. Ouvrez l\'événement dans le <a href="' . esc_url( admin_url( 'admin.php?page=sp-cal-pro' ) ) . '">calendrier</a>, onglet Présences.</p><ul style="list-style:disc;margin-left:20px;">';
+			foreach ( $oublis as $o ) echo '<li><strong>' . esc_html( self::fr( (string) $o->date ) ) . '</strong> — ' . esc_html( wp_unslash( (string) $o->titre ) ) . '</li>';
+			echo '</ul></div>';
 		}
 
 		// Onglets : saison en cours / projection sur la saison suivante
