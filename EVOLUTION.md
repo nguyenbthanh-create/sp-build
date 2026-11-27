@@ -514,6 +514,32 @@ Suite du module QCM Dan de TKD Parcours (1.14, en prod le 17/11/2026 : page rés
   3. ~~Prod~~ — **fait le 18/11/2026** : TKD Parcours 1.14.1 puis sp_build, fichiers contrôlés et code vérifié en ligne (`/app/` et page du QCM).
 - **Piste** : un adhérent dont la catégorie passe d'Enfant à Ado en cours de saison ne voit le bouton qu'après mise à jour de `categorie_age` sur sa fiche (pas de calcul par l'âge) — à revoir si besoin.
 
+## 27/11/2026 — Chantier évolution : surveillance des mises à jour + éligibilité 1er Dan (validé, non commencé)
+
+Deux lots, chacun testé sur le site de test puis mis en prod séparément (feu vert de l'utilisateur pour chaque mise en prod). Ordre proposé : lot 1 d'abord (3 mises à jour WordPress en attente en prod au 26/11/2026).
+
+### Lot 1 — Surveillance des mises à jour (proposition du 26/11/2026, questions de l'utilisateur à recueillir avant de coder)
+
+- **Avant la mise à jour, sur le PC** : option « version cible WordPress / PHP » dans `sp-build-addons/…/outils/verifier.ps1` (PHPStan + stubs WordPress de la version cible, PHPCompatibility) sur sp-build et tous les add-ons.
+- **Procédure** : mise à jour d'abord sur le site de test, contrôle, puis prod.
+- **Sur le site : mu-plugin « TKD Surveillance »**, indépendant des plugins (fonctionne même si sp-build plante). Déclenché après chaque mise à jour (cœur, plugin, thème, changement de version PHP) et par un bouton « Lancer maintenant ». Vérifie : plugins actifs et versions, état du schéma (`SP_Cal_Schema`), routes REST (`spcal/v1`, `sp-cal/v1`, `claira-tkd/v1`…), shortcodes, pages clés (accueil, `/app/`, adhésion, manifeste), tâches cron, erreurs PHP depuis la mise à jour (journal d'erreurs privé à réactiver : celui de la prod est arrêté depuis le 13/10/2026). Rapport par e-mail + historique dans l'admin + tests dans Outils → Santé du site ; y regrouper le bouton « Diagnostic plugin » de sp-build. Joindre une courte liste de gestes manuels (ce qui ne se vérifie pas automatiquement).
+
+### Lot 2 — Éligibilité 1er Dan automatique (règles validées par l'utilisateur le 27/11/2026)
+
+**Constat** : `nb_licences` saisi à la main (règle ≥ 3, sans vérifier la licence en cours, non mis à jour au renouvellement) ; âge calculé au 30 juin de fin de saison ; aucune condition de stage ; résultat = case « Éligible 1e Dan » cochée à la main ; calcul écrit deux fois (`trait-members-eleves.php` fiche admin et `class-token.php` espace adhérent) — **à corriger : un seul calcul partagé**.
+
+**Règles (FFTDA, données par l'utilisateur)** :
+1. **3 licences dont celle de la saison en cours** (les 2 autres continues ou non). Saisons licenciées au club enregistrées automatiquement à chaque adhésion / renouvellement validé ; champ manuel « licences antérieures hors club » (pas de source FFTDA publique connue ; l'extranet e-licence du club est peut-être à regarder) ; reprise de l'actuel `nb_licences` au démarrage.
+2. **14 ans révolus le jour de l'examen** (au plus tard le jour de l'examen : anniversaire des 14 ans ≤ date de l'examen). **Date d'examen paramétrable à la main** par saison (elle change d'une saison à l'autre) ; à défaut, 30 juin de fin de saison comme aujourd'hui.
+3. **2 stages de préparation (régionaux ou départementaux) dont un dans la saison en cours**. Preuve = **présence pointée** au stage (l'attestation relève de l'organisateur). **Ajout manuel par un admin** d'un stage fait ailleurs (date, lieu, niveau).
+
+**À construire** :
+- Catégorie / case « Stage préparation Dan » (niveau départemental ou régional) sur l'événement du calendrier, pré-cochée si le titre contient « prépa Dan » ; elle sert aussi de **cible automatique** des inscriptions (candidats potentiels au lieu d'un ciblage manuel).
+- Classe unique de calcul (licences, âge, stages) → fiche admin, espace adhérent, application ; détail ✅ / ❌ par condition et ce qui manque.
+- La case manuelle devient une **dérogation avec motif** (l'utilisateur est d'accord : la case seule « pas terrible »).
+- Liste « Candidats 1er Dan » de la saison : éligibles, et à qui il ne manque qu'une condition.
+- **Flux de la Ligue Occitanie** (vérifié le 27/11/2026) : le site https://www.taekwondo-occitanie.com/evenements n'est pas un WordPress (plateforme Sportsregions) mais publie un flux iCal public `https://www.taekwondo-occitanie.com/evenements.ics` (15 prochains événements ; aussi RSS `/rss/evenement`). On y trouve « EXAMEN 1ER ET 2EME DAN » (13/12/2026), « EXAMEN DU 1ER AU 4EME DAN » (23/05/2027), « STAGE PREPARATION DAN OBLIGATOIRE - 1ER AU 4EME DAN » (25/04/2027) et des stages « 5EME DAN ET PLUS » (à exclure pour le 1er Dan). Attention : les journées entières sont codées 23:00 UTC la veille → convertir en heure de Paris. Usage prévu : **proposer** les dates d'examen et les stages régionaux à l'admin (« utiliser cette date » / « ajouter au calendrier »), jamais de remplacement automatique, pour garder la date paramétrée humainement.
+
 ## Comment tenir ce fichier à jour
 
 Ajouter une entrée datée dès qu'une idée d'amélioration ou une demande non traitée apparaît, même si elle n'est pas urgente — c'est le rôle de ce fichier de ne pas perdre ces idées entre deux sessions.
