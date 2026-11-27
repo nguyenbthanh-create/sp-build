@@ -286,9 +286,6 @@ final class SP_Cal_Eligibilite_Dan {
 	 * Projection : candidats potentiels de la saison suivante (28/11/2026)
 	 * =================================================================================== */
 
-	/** Grade minimum aujourd'hui pour apparaître dans la projection : 2e Keup (choix de l'utilisateur). */
-	const KEUP_PROJECTION = 2;
-
 	public static function saison_suivante( ?string $saison = null ): string {
 		$y = (int) substr( $saison ?? self::saison_courante(), 0, 4 ) + 1;
 		return $y . '/' . ( $y + 1 );
@@ -318,7 +315,7 @@ final class SP_Cal_Eligibilite_Dan {
 
 	/**
 	 * Projection d'un adhérent sur la saison suivante, en supposant qu'il renouvelle :
-	 * licences +1, âge à l'examen suivant, grade ≥ 2e Keup, stages déjà faits (il en faudra au
+	 * licences +1, âge à l'examen suivant, stages déjà faits (il en faudra au
 	 * moins un pendant la saison suivante). potentiel = licences, âge et grade réunis.
 	 */
 	public static function projection( object $el ): array {
@@ -331,7 +328,6 @@ final class SP_Cal_Eligibilite_Dan {
 		$d14    = $r['age']['date_14'];
 		$age_ok = $d14 !== '' && $d14 <= $exam;
 		$k      = self::keup( (string) ( $el->grade ?? '' ) );
-		$grd_ok = $k !== null && $k <= self::KEUP_PROJECTION;
 		$faits  = count( $r['stages']['liste'] );
 		$a_faire = max( 1, self::STAGES - $faits );
 		return [
@@ -339,9 +335,9 @@ final class SP_Cal_Eligibilite_Dan {
 			'saison'    => $suiv,
 			'licences'  => [ 'ok' => $lic_ok, 'total' => $total ],
 			'age'       => [ 'ok' => $age_ok, 'date_14' => $d14, 'examen' => $exam, 'texte' => $exam_txt ],
-			'grade'     => [ 'ok' => $grd_ok, 'keup' => $k ],
+			'grade'     => [ 'keup' => $k ],   // affiché seulement : le grade change en un an (28/11/2026)
 			'stages'    => [ 'faits' => $faits, 'a_faire' => $a_faire, 'liste' => $r['stages']['liste'] ],
-			'potentiel' => $lic_ok && $age_ok && $grd_ok,
+			'potentiel' => $lic_ok && $age_ok,   // conditions fédérales seulement (choix de l'utilisateur)
 		];
 	}
 
@@ -370,7 +366,7 @@ final class SP_Cal_Eligibilite_Dan {
 		echo '<h2>Candidats potentiels ' . esc_html( $suiv ) . ' (' . count( $lignes ) . ')</h2>';
 		echo '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;max-width:1200px;margin-bottom:10px;">'
 			. '<strong>Projection, pas une éligibilité acquise.</strong> Hypothèses : l\'adhérent <strong>renouvelle</strong> pour ' . esc_html( $suiv ) . ' (une licence de plus) ; âge calculé à la ' . esc_html( $exam_txt )
-			. ' ; grade aujourd\'hui <strong>2e Keup minimum</strong> (ou POOM). Les stages départementaux ou régionaux faits dès cette saison comptent : il en faudra au moins un pendant la saison ' . esc_html( $suiv ) . '.</div>';
+			. ' ; seules les conditions fédérales sont prises en compte (le grade, qui évolue en un an, est affiché pour information). Les stages départementaux ou régionaux faits dès cette saison comptent : il en faudra au moins un pendant la saison ' . esc_html( $suiv ) . '.</div>';
 		if ( $sans ) echo '<p>⚠️ <strong>' . (int) $sans . '</strong> candidat(s) potentiel(s) sans aucun stage : un stage d\'ici la fin de saison leur évite d\'en avoir deux à faire l\'an prochain (cochés par défaut pour le ciblage).</p>';
 
 		$futurs = self::stages_a_venir();
@@ -401,7 +397,7 @@ final class SP_Cal_Eligibilite_Dan {
 			echo '</select> <button class="button button-primary">Cibler</button></p>';
 		}
 		echo '</form>';
-		echo '<p class="description">Non retenus : adhérents qui n\'auront pas 3 licences même en renouvelant, pas 14 ans à l\'examen ' . esc_html( $suiv ) . ', ou dont le grade est en dessous du 2e Keup aujourd\'hui.</p>';
+		echo '<p class="description">Non retenus : adhérents qui n\'auront pas 3 licences même en renouvelant, ou pas 14 ans à l\'examen ' . esc_html( $suiv ) . '.</p>';
 	}
 
 	/* =====================================================================================
