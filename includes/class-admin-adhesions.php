@@ -731,6 +731,7 @@ class SP_Admin_Adhesions {
 			'documents'            => $docs,
 			'source'               => 'adhesion_form',
 			'adhesion_id'          => $row->id,
+			'saisons_licence'      => [ $saison ],   // éligibilité 1er Dan (class-eligibilite-dan.php)
 		];
 
 		$data = [
@@ -878,6 +879,10 @@ class SP_Admin_Adhesions {
 			'adhesion_id'                => $row->id,
 			'derniere_saison_renouvelee' => $saison_cible,
 		] );
+		// Éligibilité 1er Dan : l'ancienne saison et la nouvelle comptent comme licences au club (27/11/2026).
+		if ( class_exists( 'SP_Cal_Eligibilite_Dan' ) ) {
+			$extra = SP_Cal_Eligibilite_Dan::ajouter_saison( SP_Cal_Eligibilite_Dan::ajouter_saison( $extra, (string) ( $existing->saison ?? '' ) ), $saison_cible );
+		}
 
 		[ $ddn_jjmm, $annee_naissance ] = $this->split_date_naissance( $row->date_naissance );
 

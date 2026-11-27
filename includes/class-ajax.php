@@ -112,6 +112,7 @@ class SpCalPro_Ajax {
                 'inscriptions_categories'     => $e->inscriptions_categories     ?? '',
                 'inscriptions_age_categories' => $e->inscriptions_age_categories ?? '',
                 'inscriptions_extra_eleves'   => $e->inscriptions_extra_eleves   ?? '',
+                'prepa_dan'                   => $e->prepa_dan                   ?? '',
                 'cours_discipline'            => $e->cours_discipline           ?? '',
                 'cours_age_categories'        => $e->cours_age_categories       ?? '',
             );
@@ -295,6 +296,13 @@ class SpCalPro_Ajax {
         }
 
         if ( $type !== 'annulation' && empty( $data['titre'] ) ) wp_send_json_error( 'Titre requis.' );
+
+        // Stage de préparation Dan (éligibilité 1er Dan, class-eligibilite-dan.php, 27/11/2026) :
+        // '' = d'après le titre, departemental / regional, non = jamais compté.
+        if ( isset( $_POST['prepa_dan'] ) && class_exists( 'SP_Cal_Eligibilite_Dan' ) && SP_Cal_Eligibilite_Dan::colonne_prepa() ) {
+            $pd = sanitize_key( wp_unslash( $_POST['prepa_dan'] ) );
+            $data['prepa_dan'] = in_array( $pd, array( 'departemental', 'regional', 'non' ), true ) ? $pd : '';
+        }
 
         $id = intval( $_POST['event_id'] ?? 0 );
 

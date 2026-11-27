@@ -202,11 +202,17 @@ class SP_Cal_Members {
                 'anniversaire_affiche' => isset($_POST['eleve_anniversaire_affiche']) ? 1 : 0,
                 'autorisation_seul' => isset($_POST['eleve_autorisation_seul']) ? 1 : 0,
                 'infos_sante'       => mb_substr( sanitize_textarea_field( wp_unslash( $_POST['eleve_infos_sante'] ?? '' ) ), 0, 2000 ),
-                'nb_licences'       => intval( $_POST['eleve_nb_licences']  ?? 0 ),
-                'eligible_dan'      => isset($_POST['eleve_eligible_dan']) ? 1 : 0,
                 'photo_url'         => esc_url_raw( wp_unslash( $_POST['eleve_photo_url'] ?? '' ) ),
                 'extra_data'        => wp_json_encode( $extra ),
             );
+
+            // Éligibilité 1er Dan (class-eligibilite-dan.php, 27/11/2026) : saisons licenciées, licences hors
+            // club, stages faits ailleurs, dérogation ; nb_licences et eligible_dan tenus à jour par le calcul.
+            $dan_nb_avant = $id ? (int) $wpdb->get_var( $wpdb->prepare( "SELECT nb_licences FROM $tel WHERE id=%d", $id ) ) : 0;
+            [ $extra, $data['nb_licences'], $data['eligible_dan'] ] = SP_Cal_Eligibilite_Dan::depuis_formulaire(
+                $extra, $_POST, (string) $data['saison'], (int) $data['actif'], (int) $id, $dan_nb_avant
+            );
+            $data['extra_data'] = wp_json_encode( $extra );
 
             // Filtrage défensif contre le schéma réel — même correctif que sur le formulaire
             // d'adhésion public (cf. doleances.md 08/09/2026) : une colonne pas encore migrée

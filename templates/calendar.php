@@ -152,6 +152,17 @@ $public_link = SP_Cal_Menu::url_page_shortcode( 'sp_cal_planning' );
         <option value="international">🌐 International</option>
     </select>
 </div>
+							<!-- Stage de préparation Dan : compté pour l'éligibilité 1er Dan d'après les présences (27/11/2026) -->
+							<div id="ev-prepa-dan-wrap" style="display:none;margin-top:8px;">
+    <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">🥋 Stage de préparation Dan</label>
+    <select id="ev-prepa-dan" class="sp-input">
+        <option value="">Selon le titre (« prépa Dan »)</option>
+        <option value="departemental">Oui — départemental</option>
+        <option value="regional">Oui — régional</option>
+        <option value="non">Non, ne pas compter</option>
+    </select>
+    <div id="ev-prepa-dan-indice" style="display:none;font-size:12px;color:#b45309;margin-top:4px;">Ce titre ressemble à un stage de préparation Dan : il sera compté. Précisez le niveau.</div>
+</div>
                         </div>
                         <div class="sp-form-row">
                             <label>Heure début</label>

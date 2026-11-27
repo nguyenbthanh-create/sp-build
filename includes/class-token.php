@@ -437,68 +437,10 @@ class SpCalPro_Token {
             <!-- PAGE IMPRESSION A4 — 8 cartes -->
             <div id="sp-carte-print-<?php echo intval($el->id); ?>" style="display:none;"></div>
 
-            <!-- Éligibilité 1e Dan -->
-            <?php if ( in_array($el->categorie_age ?? '', ['Ado/adulte', 'Adulte']) ) :
-                $saison_elig     = get_option('tkd_saison_courante', '2025/2026');
-                $annee_fin_elig  = intval( explode('/', $saison_elig)[1] ?? date('Y') );
-                $ts_ref_elig     = mktime(0, 0, 0, 6, 30, $annee_fin_elig);
-                $nb_lic          = intval($el->nb_licences ?? 0);
-                $cond_lic        = $nb_lic >= 3;
-                $date_elig_txt   = '';
-                $cond_age_elig   = false;
-                $atteint_saison  = false;
-                if ( ! empty($el->date_naissance) && ! empty($el->annee_naissance) ) {
-                    $parts_elig = explode('/', $el->date_naissance);
-                    if ( count($parts_elig) >= 2 ) {
-                        $ts_naiss_elig = mktime(0,0,0, intval($parts_elig[1]), intval($parts_elig[0]), intval($el->annee_naissance));
-                        $ts_14ans_elig = mktime(0,0,0, intval($parts_elig[1]), intval($parts_elig[0]), intval($el->annee_naissance)+14);
-                        $cond_age_elig = ($ts_14ans_elig <= $ts_ref_elig);
-                        $date_elig_txt = date('d/m/Y', $ts_14ans_elig);
-                        $atteint_saison = $ts_14ans_elig <= $ts_ref_elig
-                            && $ts_14ans_elig > mktime(0,0,0,9,1,$annee_fin_elig-1);
-                    }
-                }
-                $auto_elig = $cond_age_elig && $cond_lic;
-            ?>
+            <!-- Éligibilité 1er Dan : calcul unique (class-eligibilite-dan.php, 27/11/2026) -->
+            <?php if ( SP_Cal_Eligibilite_Dan::concerne( $el ) ) : ?>
             <div class="sp-membre-section">
-                <h2>🥋 Éligibilité 1e Dan</h2>
-                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;">
-                    <!-- Licences -->
-                    <div style="margin-bottom:10px;font-size:14px;">
-                        <?php if ($cond_lic): ?>
-                            <span style="color:green;">✅ <?php echo $nb_lic; ?> licences — condition remplie</span>
-                        <?php else: ?>
-                            <span style="color:#dc2626;">❌ <?php echo $nb_lic; ?> licence(s) sur 3 requises</span>
-                        <?php endif; ?>
-                    </div>
-                    <!-- Âge -->
-                    <div style="margin-bottom:12px;font-size:14px;">
-                        <?php if ( ! $date_elig_txt ): ?>
-                            <span style="color:#999;">Date de naissance manquante</span>
-                        <?php elseif ($cond_age_elig && !$atteint_saison): ?>
-                            <span style="color:green;">✅ 14 ans révolus depuis le <?php echo $date_elig_txt; ?></span>
-                        <?php elseif ($cond_age_elig && $atteint_saison): ?>
-                            <span style="color:#f0a500;">⚠️ Éligible à partir du <?php echo $date_elig_txt; ?> — vérifiez la date de l'examen</span>
-                        <?php else: ?>
-                            <span style="color:#dc2626;">❌ Éligible à partir du <?php echo $date_elig_txt; ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <!-- Résultat -->
-                    <div style="padding:10px 14px;border-radius:8px;font-weight:700;font-size:14px;
-                                background:<?php echo $auto_elig ? '#f0fdf4' : '#fef2f2'; ?>;
-                                border:1px solid <?php echo $auto_elig ? '#86efac' : '#fca5a5'; ?>;
-                                color:<?php echo $auto_elig ? 'green' : '#dc2626'; ?>;">
-                        <?php if ($auto_elig): ?>
-                            → Éligible au 1e Dan cette saison
-                        <?php elseif (!$cond_lic): ?>
-                            → Non éligible (licences insuffisantes)
-                        <?php elseif (!$cond_age_elig): ?>
-                            → Non éligible cette saison
-                        <?php else: ?>
-                            → Données manquantes
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php echo SP_Cal_Eligibilite_Dan::rendre( $el, false ); // phpcs:ignore WordPress.Security.EscapeOutput -- échappé dans rendre() ?>
             </div>
             <?php endif; ?>
 

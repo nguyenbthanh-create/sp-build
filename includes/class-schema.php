@@ -57,6 +57,7 @@ class SP_Cal_Schema {
 		'includes/class-tenues.php',
 		'includes/class-passages.php',
 		'includes/class-mail-queue.php',
+		'includes/class-eligibilite-dan.php', // events.prepa_dan + reprise des licences (27/11/2026)
 	];
 
 	/** @var array<int, array{0: string, 1: callable}> vérifications enregistrées, dans l'ordre */

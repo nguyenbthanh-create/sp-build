@@ -267,7 +267,16 @@
             $('#btn-save-event').on('click',   CAL.saveEvent);
 			$('#ev-type').on('change', function(){
 			$('#ev-niveau-wrap').toggle($(this).val() === 'competition');
+			$('#ev-prepa-dan-wrap').toggle($(this).val() !== 'cours');
+			CAL.indicePrepaDan();
 			});
+			// Stage de préparation Dan (27/11/2026) : même règle de titre que class-eligibilite-dan.php.
+			CAL.indicePrepaDan = function(){
+				var t = ($('#ev-titre').val() || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+				var ressemble = /prepa(ration)?\b.*\bdan\b/.test(t) && !/\b[5-9]\s*(e|eme|ieme)?\s*dan\s+et\s+plus/.test(t);
+				$('#ev-prepa-dan-indice').toggle(ressemble && $('#ev-prepa-dan').val() === '');
+			};
+			$('#ev-titre, #ev-prepa-dan').on('input change', function(){ CAL.indicePrepaDan(); });
             $('#btn-delete-event').on('click', CAL.deleteEvent);
             // Compétition
             $(document).on('click', '#btn-add-epreuve', function(){
@@ -814,6 +823,9 @@
 			// Niveau compétition (visible uniquement pour type=competition)
 			$('#ev-niveau').val(ev ? (ev.niveau || 'departemental') : 'departemental');
 			$('#ev-niveau-wrap').toggle(displayType === 'competition');
+			$('#ev-prepa-dan').val(ev ? (ev.prepa_dan || '') : '');
+			$('#ev-prepa-dan-wrap').toggle(displayType !== 'cours');
+			CAL.indicePrepaDan();
             $('#ev-debut').val(ev?CAL.toTimeInput(ev.heure_debut):'');
             $('#ev-fin').val(ev?CAL.toTimeInput(ev.heure_fin):'');
             CAL.renderCoursCategorieWrap(
@@ -1148,6 +1160,7 @@
                 cours_age_categories: coursAge.join(','),
                 couleur:     $('#ev-couleur').val(),
                 type:        $('#ev-type').val(),
+                prepa_dan:   $('#ev-type').val() === 'cours' ? '' : ($('#ev-prepa-dan').val() || ''),
                 description: $('#ev-description').val().trim(),
                 inscriptions_actives:  ($('#ev-insc-actives').length && $('#ev-insc-actives').prop('checked')) ? 1 : 0,
                 inscriptions_categories: (function(){
