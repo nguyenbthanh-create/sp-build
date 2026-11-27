@@ -230,7 +230,8 @@ class SpCalPro_Calendar {
                         <?php if ( $niv_dan !== '' ) : ?>
                         <span class="spcal-evt-badge spcal-evt-type-prepa-dan">🥋 Prépa Dan · <?php echo esc_html( $niv_dan ); ?></span>
                         <?php else : ?>
-                        <span class="spcal-evt-badge spcal-evt-type-<?php echo esc_attr( $type_key ); ?>"><?php echo esc_html( $cfg['label'] ); ?></span>
+                        <?php $niv_lig = ( $ev->type === 'competition' && class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) $ev->id ) ) ? ' · ' . ( ( $ev->niveau ?? '' ) === 'departemental' ? 'Département' : 'Région' ) . ' · LIG' : ''; ?>
+                        <span class="spcal-evt-badge spcal-evt-type-<?php echo esc_attr( $type_key ); ?>"><?php echo esc_html( $cfg['label'] . $niv_lig ); ?></span>
                         <?php endif; ?>
                         <?php if ( $ev->categorie && $ev->categorie !== 'Général' ) : ?>
                         <span class="spcal-evt-cat"><?php echo esc_html( $ev->categorie ); ?></span>

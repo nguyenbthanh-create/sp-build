@@ -114,6 +114,7 @@ class SpCalPro_Ajax {
                 'inscriptions_extra_eleves'   => $e->inscriptions_extra_eleves   ?? '',
                 'prepa_dan'                   => $e->prepa_dan                   ?? '',
                 'izzidan'                     => class_exists( 'SP_Cal_Stages_Izzidan' ) && SP_Cal_Stages_Izzidan::est_izzidan( (int) $e->id ),
+                'ligue'                       => class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) $e->id ),
                 'cours_discipline'            => $e->cours_discipline           ?? '',
                 'cours_age_categories'        => $e->cours_age_categories       ?? '',
             );
@@ -261,7 +262,7 @@ class SpCalPro_Ajax {
             'categorie'            => SpCalPro_DB::categorie_affichage( sanitize_text_field( wp_unslash( $_POST['cours_special'] ?? '' ) ), $disc_arr ),
             'couleur'     => sanitize_hex_color(  $_POST['couleur']     ?? '#3B82F6' ) ?: '#3B82F6',
             'type'        => $type,
-			'niveau'      => in_array( $type, array('competition') ) ? sanitize_text_field( wp_unslash( $_POST['niveau'] ?? 'departemental' ) ) : 'departemental',
+			'niveau'      => ( $type === 'competition' && in_array( sanitize_key( wp_unslash( $_POST['niveau'] ?? '' ) ), array( 'departemental', 'regional', 'national', 'international' ), true ) ) ? sanitize_key( wp_unslash( $_POST['niveau'] ) ) : 'departemental',
             'description' => sanitize_textarea_field( wp_unslash( $_POST['description'] ?? '' ) ),
             'slot_id'     => $slot_id,
         );

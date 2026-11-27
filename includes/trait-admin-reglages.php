@@ -370,6 +370,9 @@ trait SpCalPro_Admin_Reglages {
 
         <?php elseif ( $onglet === 'competition' ) : ?>
 
+        <!-- COMPÉTITIONS DE LA LIGUE OCCITANIE (class-competitions-ligue.php, 28/11/2026) -->
+        <?php if ( class_exists( 'SP_Cal_Competitions_Ligue' ) ) SP_Cal_Competitions_Ligue::render(); ?>
+
         <!-- CONVENTION MÉDAILLE → POINTS -->
         <div class="sp-box">
             <h2>🏅 Convention médaille → points</h2>

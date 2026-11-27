@@ -170,6 +170,7 @@
                         var time  = ev.heure_debut ? ev.heure_debut+' ' : '';
                         var label = ev.type==='annulation' ? prefix+CAL.esc(ev.titre) : prefix+time+CAL.esc(ev.titre);
                         if (CAL.estStageDan(ev)) label += ' · <strong>'+CAL.niveauStageDan(ev)+'</strong>';
+                        else if (CAL.niveauLigue(ev)) label += ' · <strong>'+CAL.niveauLigue(ev)+'</strong>';
                         eventsHtml += '<span class="'+cls2+'" style="background:'+color+';" data-id="'+CAL.esc(String(ev.id))+'">'+label+'</span>';
                     });
                     grid += eventsHtml;
@@ -275,6 +276,8 @@
 			// Stage de préparation Dan (27/11/2026) : même règle de titre que class-eligibilite-dan.php.
 			// Stages qui comptent pour le 1er Dan (départementaux / régionaux) : violet et 🥋 (28/11/2026).
 			CAL.VIOLET_DAN = '#7E22CE';
+			// Compétition venue de l'agenda de la Ligue : « Région · LIG » (28/11/2026).
+			CAL.niveauLigue = function(ev){ return (ev && ev.type === 'competition' && ev.ligue) ? (ev.niveau === 'departemental' ? 'Département' : 'Région') + ' · LIG' : ''; };
 			CAL.niveauStageDan = function(ev){ return !CAL.estStageDan(ev) ? '' : (ev.prepa_dan === 'regional' ? 'Région' : 'Département') + (ev.izzidan ? ' · IZD' : ''); };
 			CAL.estStageDan = function(ev){ return !!ev && ev.type !== 'cours' && ev.type !== 'cours_recurrent' && (ev.prepa_dan === 'departemental' || ev.prepa_dan === 'regional'); };
 			CAL.indicePrepaDan = function(){
@@ -445,7 +448,7 @@
                 var time  = ev.heure_debut?(ev.heure_debut+(ev.heure_fin?' – '+ev.heure_fin:'')):'' ;
                 ponctHtml += '<div class="sp-day-event-item" data-id="'+ev.id+'">'
                     +'<div class="sp-day-event-dot" style="background:'+color+';"></div>'
-                    +'<div class="sp-day-event-info"><div class="sp-day-event-title">'+icon+' '+CAL.esc(ev.titre)+(CAL.estStageDan(ev) ? ' <span style="color:'+CAL.VIOLET_DAN+';font-weight:700;">· '+CAL.niveauStageDan(ev)+'</span>' : '')+'</div>'
+                    +'<div class="sp-day-event-info"><div class="sp-day-event-title">'+icon+' '+CAL.esc(ev.titre)+(CAL.estStageDan(ev) ? ' <span style="color:'+CAL.VIOLET_DAN+';font-weight:700;">· '+CAL.niveauStageDan(ev)+'</span>' : (CAL.niveauLigue(ev) ? ' <span style="font-weight:700;">· '+CAL.niveauLigue(ev)+'</span>' : ''))+'</div>'
                     +(time?'<div class="sp-day-event-time">'+time+'</div>':'')+'</div>'
                     +'<button class="button button-small sp-btn-edit-event" data-id="'+ev.id+'">✏️</button>'
                     +'</div>';
@@ -1166,6 +1169,8 @@
                 cours_age_categories: coursAge.join(','),
                 couleur:     $('#ev-couleur').val(),
                 type:        $('#ev-type').val(),
+                // Niveau de la compétition : n'était jamais envoyé, toute compétition repassait en « départemental » (28/11/2026).
+                niveau:      $('#ev-type').val() === 'competition' ? ($('#ev-niveau').val() || 'departemental') : '',
                 prepa_dan:   $('#ev-type').val() === 'cours' ? '' : ($('#ev-prepa-dan').val() || ''),
                 description: $('#ev-description').val().trim(),
                 inscriptions_actives:  ($('#ev-insc-actives').length && $('#ev-insc-actives').prop('checked')) ? 1 : 0,

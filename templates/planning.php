@@ -111,6 +111,7 @@ foreach ($ponctuels as $ev) {
         'type'  => $ev->type ?? '',
         'couleur' => $ev->couleur ?? '',
         'prepa_dan' => $ev->prepa_dan ?? '',
+        'niveau'    => $ev->niveau ?? '',
         'id'    => $ev->id   ?? 0,
         'document_url' => $ev->document_url ?? '', 'document_nom' => $ev->document_nom ?? '',
     );
@@ -288,6 +289,10 @@ for ($w=0;$w<6;$w++) {
                             // Stage de préparation Dan départemental / régional : violet, 🥋 et niveau (28/11/2026).
                             $niv_dan = class_exists( 'SP_Cal_Eligibilite_Dan' ) ? SP_Cal_Eligibilite_Dan::niveau_stage( $item ) : '';
                             if ( $niv_dan !== '' ) { $color = SP_Cal_Eligibilite_Dan::VIOLET; $icon = '🥋'; }
+                            // Compétition de l'agenda de la Ligue : « Région · LIG » (28/11/2026).
+                            if ( $niv_dan === '' && ( $item['type'] ?? '' ) === 'competition' && class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) ( $item['id'] ?? 0 ) ) ) {
+                                $niv_dan = ( ( $item['niveau'] ?? '' ) === 'departemental' ? 'Département' : 'Région' ) . ' · LIG';
+                            }
                             $is_annule = !empty($item['annul_id']);
                             $is_ponct  = !empty($item['ponctuel']);
                             $class = $is_annule ? 'sp-plan-event sp-plan-annule' : ($is_ponct ? 'sp-plan-event sp-plan-ponctuel' : 'sp-plan-event');
