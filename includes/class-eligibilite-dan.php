@@ -273,12 +273,135 @@ final class SP_Cal_Eligibilite_Dan {
 		];
 	}
 
-	/** Bloc concerné : adhérent sans Dan, Ado/Adulte ou d'au moins 13 ans le jour de l'examen. */
-	public static function concerne( object $el ): bool {
+	/** Bloc concerné : adhérent sans Dan, Ado/Adulte ou d'au moins 13 ans l'année de l'examen. */
+	public static function concerne( object $el, ?int $annee_examen = null ): bool {
 		if ( preg_match( '/\bdan\b/i', (string) ( $el->grade ?? '' ) ) ) return false;
 		if ( in_array( (string) ( $el->categorie_age ?? '' ), [ 'Ado/adulte', 'Adulte' ], true ) ) return true;
 		$n = self::naissance( $el );
-		return $n !== '' && ( (int) substr( self::date_examen()[0], 0, 4 ) - (int) substr( $n, 0, 4 ) ) >= 13;
+		$a = $annee_examen ?? (int) substr( self::date_examen()[0], 0, 4 );
+		return $n !== '' && ( $a - (int) substr( $n, 0, 4 ) ) >= 13;
+	}
+
+	/* =====================================================================================
+	 * Projection : candidats potentiels de la saison suivante (28/11/2026)
+	 * =================================================================================== */
+
+	/** Grade minimum aujourd'hui pour apparaître dans la projection : 2e Keup (choix de l'utilisateur). */
+	const KEUP_PROJECTION = 2;
+
+	public static function saison_suivante( ?string $saison = null ): string {
+		$y = (int) substr( $saison ?? self::saison_courante(), 0, 4 ) + 1;
+		return $y . '/' . ( $y + 1 );
+	}
+
+	/**
+	 * Numéro de keup d'un grade (« 2e rouge** » → 2, « 1e Rouge (***) » → 1), 0 pour un POOM,
+	 * null si illisible. Les échelles Enfant et Ado/Adulte sont numérotées en keups (class-db.php).
+	 */
+	public static function keup( string $grade ): ?int {
+		if ( preg_match( '/\bpoom\b/i', $grade ) ) return 0;
+		return preg_match( '/^\s*(\d{1,2})\s*(e|er|eme|ème)?\b/iu', $grade, $m ) ? (int) $m[1] : null;
+	}
+
+	/** Date d'examen supposée pour la saison suivante : réglée, sinon celle de cette saison + 1 an, sinon 30 juin. */
+	public static function date_examen_suivante(): array {
+		$suiv = self::saison_suivante();
+		[ $d, $regle ] = self::date_examen( $suiv );
+		if ( $regle ) return [ $d, 'examen du ' . self::fr( $d ) ];
+		[ $d0, $regle0 ] = self::date_examen();
+		if ( $regle0 ) {
+			$d = ( (int) substr( $d0, 0, 4 ) + 1 ) . substr( $d0, 4 );
+			return [ checkdate( (int) substr( $d, 5, 2 ), (int) substr( $d, 8, 2 ), (int) substr( $d, 0, 4 ) ) ? $d : substr( $d, 0, 8 ) . '28', 'date estimée : ' . self::fr( $d ) . ' (examen de cette saison + 1 an)' ];
+		}
+		return [ $d, 'date estimée : ' . self::fr( $d ) . ' (fin de saison)' ];
+	}
+
+	/**
+	 * Projection d'un adhérent sur la saison suivante, en supposant qu'il renouvelle :
+	 * licences +1, âge à l'examen suivant, grade ≥ 2e Keup, stages déjà faits (il en faudra au
+	 * moins un pendant la saison suivante). potentiel = licences, âge et grade réunis.
+	 */
+	public static function projection( object $el ): array {
+		$r      = self::evaluer( $el );
+		$suiv   = self::saison_suivante();
+		$club   = $r['licences']['club'];
+		$total  = $r['licences']['total'] + ( in_array( $suiv, $club, true ) ? 0 : 1 );
+		$lic_ok = $total >= self::LICENCES;
+		[ $exam, $exam_txt ] = self::date_examen_suivante();
+		$d14    = $r['age']['date_14'];
+		$age_ok = $d14 !== '' && $d14 <= $exam;
+		$k      = self::keup( (string) ( $el->grade ?? '' ) );
+		$grd_ok = $k !== null && $k <= self::KEUP_PROJECTION;
+		$faits  = count( $r['stages']['liste'] );
+		$a_faire = max( 1, self::STAGES - $faits );
+		return [
+			'actuel'    => $r,
+			'saison'    => $suiv,
+			'licences'  => [ 'ok' => $lic_ok, 'total' => $total ],
+			'age'       => [ 'ok' => $age_ok, 'date_14' => $d14, 'examen' => $exam, 'texte' => $exam_txt ],
+			'grade'     => [ 'ok' => $grd_ok, 'keup' => $k ],
+			'stages'    => [ 'faits' => $faits, 'a_faire' => $a_faire, 'liste' => $r['stages']['liste'] ],
+			'potentiel' => $lic_ok && $age_ok && $grd_ok,
+		];
+	}
+
+	/** Stages départementaux / régionaux à venir dans le calendrier (pour le ciblage). */
+	private static function stages_a_venir(): array {
+		global $wpdb;
+		$col = self::colonne_prepa() ? 'prepa_dan' : "'' AS prepa_dan";
+		return array_values( array_filter( (array) $wpdb->get_results( $wpdb->prepare( "SELECT id, date, titre, type, {$col} FROM `{$wpdb->prefix}sp_cal_events` WHERE date >= %s AND type <> 'annulation' ORDER BY date LIMIT 300", current_time( 'Y-m-d' ) ) ), [ __CLASS__, 'est_stage' ] ) );
+	}
+
+	/** Onglet « Saison suivante » de la page Candidats. */
+	private static function page_projection(): void {
+		global $wpdb;
+		$suiv = self::saison_suivante();
+		[ , $exam_txt ] = self::date_examen_suivante();
+		$lignes = [];
+		foreach ( (array) $wpdb->get_results( "SELECT * FROM `{$wpdb->prefix}sp_cal_eleves` WHERE actif = 1 ORDER BY nom, prenom" ) as $el ) {
+			if ( ! self::concerne( $el, (int) substr( self::date_examen_suivante()[0], 0, 4 ) ) ) continue;
+			$p = self::projection( $el );
+			if ( $p['potentiel'] ) $lignes[] = [ $el, $p ];
+		}
+		// Ceux à qui il manque le plus de stages d'abord : ce sont eux à inviter cette saison.
+		usort( $lignes, static fn( $a, $b ) => [ $a[1]['stages']['faits'], $a[0]->nom ] <=> [ $b[1]['stages']['faits'], $b[0]->nom ] );
+		$sans = count( array_filter( $lignes, static fn( $l ) => $l[1]['stages']['faits'] === 0 ) );
+
+		echo '<h2>Candidats potentiels ' . esc_html( $suiv ) . ' (' . count( $lignes ) . ')</h2>';
+		echo '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;max-width:1200px;margin-bottom:10px;">'
+			. '<strong>Projection, pas une éligibilité acquise.</strong> Hypothèses : l\'adhérent <strong>renouvelle</strong> pour ' . esc_html( $suiv ) . ' (une licence de plus) ; âge calculé à la ' . esc_html( $exam_txt )
+			. ' ; grade aujourd\'hui <strong>2e Keup minimum</strong> (ou POOM). Les stages départementaux ou régionaux faits dès cette saison comptent : il en faudra au moins un pendant la saison ' . esc_html( $suiv ) . '.</div>';
+		if ( $sans ) echo '<p>⚠️ <strong>' . (int) $sans . '</strong> candidat(s) potentiel(s) sans aucun stage : un stage d\'ici la fin de saison leur évite d\'en avoir deux à faire l\'an prochain (cochés par défaut pour le ciblage).</p>';
+
+		$futurs = self::stages_a_venir();
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="sp_cal_dan_cibler">';
+		wp_nonce_field( 'sp_cal_dan_cibler' );
+		echo '<table class="widefat striped" style="max-width:1200px;"><thead><tr><th style="width:24px;"><input type="checkbox" onclick="document.querySelectorAll(\'.sp-dan-chk\').forEach(c=>c.checked=this.checked)"></th><th>Adhérent</th><th>Grade</th><th>Licences ' . esc_html( $suiv ) . '</th><th>14 ans</th><th>Stages déjà faits</th><th>À faire</th></tr></thead><tbody>';
+		if ( ! $lignes ) echo '<tr><td colspan="7">Aucun candidat potentiel pour ' . esc_html( $suiv ) . ' avec ces hypothèses.</td></tr>';
+		foreach ( $lignes as [ $el, $p ] ) {
+			$fiche = admin_url( 'admin.php?page=sp-cal-eleves&sp_edit_eleve=' . (int) $el->id );
+			$faits = $p['stages']['faits'];
+			$detail = $faits ? implode( ', ', array_map( static fn( $s ) => self::fr( $s['date'] ), $p['stages']['liste'] ) ) : 'aucun';
+			$a_faire = $faits === 0 ? '⚠️ 1 stage dès cette saison conseillé, puis 1 en ' . $p['saison']
+				: ( $faits >= self::STAGES ? '✅ 1 stage en ' . $p['saison'] . ' (obligatoire dans la saison de l\'examen)' : '1 stage en ' . $p['saison'] );
+			$note = $p['actuel']['eligible'] ? ' <span class="description">(déjà éligible cette saison)</span>' : '';
+			// phpcs:ignore WordPress.Security.EscapeOutput -- valeurs échappées, $note est un HTML fixe
+			echo '<tr><td><input type="checkbox" class="sp-dan-chk" name="eleves[]" value="' . (int) $el->id . '"' . ( $faits === 0 ? ' checked' : '' ) . '></td>'
+				. '<td><a href="' . esc_url( $fiche ) . '">' . esc_html( mb_strtoupper( (string) $el->nom ) . ' ' . $el->prenom ) . '</a>' . $note . '</td>'
+				. '<td>' . esc_html( (string) $el->grade ) . '</td>'
+				. '<td>' . esc_html( $p['licences']['total'] . ' si renouvellement' ) . '</td>'
+				. '<td>' . esc_html( self::fr( $p['age']['date_14'] ) ) . '</td>'
+				. '<td>' . esc_html( $faits . ' (' . $detail . ')' ) . '</td>'
+				. '<td>' . esc_html( $a_faire ) . '</td></tr>';
+		}
+		echo '</tbody></table>';
+		if ( $futurs ) {
+			echo '<p style="margin-top:12px;">Inviter les adhérents cochés au stage : <select name="event_id">';
+			foreach ( $futurs as $f ) echo '<option value="' . (int) $f->id . '">' . esc_html( self::fr( (string) $f->date ) . ' — ' . wp_unslash( (string) $f->titre ) ) . '</option>';
+			echo '</select> <button class="button button-primary">Cibler</button></p>';
+		}
+		echo '</form>';
+		echo '<p class="description">Non retenus : adhérents qui n\'auront pas 3 licences même en renouvelant, pas 14 ans à l\'examen ' . esc_html( $suiv ) . ', ou dont le grade est en dessous du 2e Keup aujourd\'hui.</p>';
 	}
 
 	/* =====================================================================================
@@ -549,6 +672,18 @@ final class SP_Cal_Eligibilite_Dan {
 				echo '</td></tr>';
 			}
 			echo '</tbody></table></div>';
+		}
+
+		// Onglets : saison en cours / projection sur la saison suivante
+		$vue  = sanitize_key( wp_unslash( $_GET['vue'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- onglet d'affichage
+		$base = admin_url( 'admin.php?page=' . self::PAGE );
+		echo '<h2 class="nav-tab-wrapper" style="margin-top:18px;">'
+			. '<a class="nav-tab' . ( $vue !== 'projection' ? ' nav-tab-active' : '' ) . '" href="' . esc_url( $base ) . '">Candidats ' . esc_html( $saison ) . '</a>'
+			. '<a class="nav-tab' . ( $vue === 'projection' ? ' nav-tab-active' : '' ) . '" href="' . esc_url( add_query_arg( 'vue', 'projection', $base ) ) . '">Saison suivante ' . esc_html( self::saison_suivante() ) . ' (projection)</a></h2>';
+		if ( $vue === 'projection' ) {
+			self::page_projection();
+			echo '</div>';
+			return;
 		}
 
 		// Candidats
