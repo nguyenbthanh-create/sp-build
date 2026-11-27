@@ -277,7 +277,7 @@
 			// Stages qui comptent pour le 1er Dan (départementaux / régionaux) : violet et 🥋 (28/11/2026).
 			CAL.VIOLET_DAN = '#7E22CE';
 			// Compétition venue de l'agenda de la Ligue : « Région · LIG » (28/11/2026).
-			CAL.niveauLigue = function(ev){ return (ev && ev.type === 'competition' && ev.ligue) ? (ev.niveau === 'departemental' ? 'Département' : 'Région') + ' · LIG' : ''; };
+			CAL.niveauLigue = function(ev){ if (ev && ev.type === 'examen' && ev.izd_examen) return ev.izd_examen; return (ev && ev.type === 'competition' && ev.ligue) ? (ev.niveau === 'departemental' ? 'Département' : 'Région') + ' · LIG' : ''; };   // examen Dan IzziDan : « Région · IZD » (28/11/2026)
 			CAL.niveauStageDan = function(ev){ return !CAL.estStageDan(ev) ? '' : (ev.prepa_dan === 'regional' ? 'Région' : 'Département') + (ev.izzidan ? ' · IZD' : ''); };
 			CAL.estStageDan = function(ev){ return !!ev && ev.type !== 'cours' && ev.type !== 'cours_recurrent' && (ev.prepa_dan === 'departemental' || ev.prepa_dan === 'regional'); };
 			CAL.indicePrepaDan = function(){

@@ -230,7 +230,7 @@ class SpCalPro_Calendar {
                         <?php if ( $niv_dan !== '' ) : ?>
                         <span class="spcal-evt-badge spcal-evt-type-prepa-dan">🥋 Prépa Dan · <?php echo esc_html( $niv_dan ); ?></span>
                         <?php else : ?>
-                        <?php $niv_lig = ( $ev->type === 'competition' && class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) $ev->id ) ) ? ' · ' . ( ( $ev->niveau ?? '' ) === 'departemental' ? 'Département' : 'Région' ) . ' · LIG' : ''; ?>
+                        <?php $niv_lig = ( $ev->type === 'competition' && class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) $ev->id ) ) ? ' · ' . ( ( $ev->niveau ?? '' ) === 'departemental' ? 'Département' : 'Région' ) . ' · LIG' : ''; if ( $niv_lig === '' && $ev->type === 'examen' && class_exists( 'SP_Cal_Examens_Izzidan' ) && SP_Cal_Examens_Izzidan::libelle( (int) $ev->id ) !== '' ) $niv_lig = ' · ' . SP_Cal_Examens_Izzidan::libelle( (int) $ev->id ); ?>
                         <span class="spcal-evt-badge spcal-evt-type-<?php echo esc_attr( $type_key ); ?>"><?php echo esc_html( $cfg['label'] . $niv_lig ); ?></span>
                         <?php endif; ?>
                         <?php if ( $ev->categorie && $ev->categorie !== 'Général' ) : ?>

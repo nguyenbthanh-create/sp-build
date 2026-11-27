@@ -700,8 +700,20 @@ final class SP_Cal_Eligibilite_Dan {
 		echo '<input type="date" name="date_examen" value="' . esc_attr( $regle ? $exam : '' ) . '"> <button class="button button-primary">Enregistrer</button> <span class="description">(vide = fin de saison)</span></form>';
 		[ $deb, $fin ] = self::bornes( $saison );
 		$prop = array_filter( $ligue['examens'], static fn( $e ) => $e['date'] >= $deb && $e['date'] <= $fin );
+		// Examens publiés sur IzziDan (plus complet, avec la clôture des inscriptions, 28/11/2026).
+		if ( class_exists( 'SP_Cal_Examens_Izzidan' ) ) {
+			$par_date = [];
+			foreach ( $prop as $p ) $par_date[ $p['date'] ] = $p;
+			foreach ( SP_Cal_Examens_Izzidan::proposes( $deb, $fin ) as $x ) {
+				$lib = $x['grades'] . ' — ' . ( $x['type'] === 'ligue' ? 'Ligue ' : 'C.D.T. ' ) . $x['nom'] . ' (IzziDan' . ( $x['cloture'] ? ', clôture des inscriptions le ' . self::fr( $x['cloture'] ) : '' ) . ')';
+				if ( isset( $par_date[ $x['date'] ] ) ) $par_date[ $x['date'] ]['titre'] .= ' · ' . $lib;
+				else $par_date[ $x['date'] ] = [ 'date' => $x['date'], 'titre' => $lib, 'lieu' => $x['ville'] ];
+			}
+			ksort( $par_date );
+			$prop = array_values( $par_date );
+		}
 		if ( $prop ) {
-			echo '<p style="margin-bottom:4px;">Publiés par la Ligue Occitanie :</p><ul style="margin-top:0;">';
+			echo '<p style="margin-bottom:4px;">Publiés par la Ligue Occitanie et sur IzziDan :</p><ul style="margin-top:0;">';
 			foreach ( $prop as $e ) {
 				echo '<li><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline;"><input type="hidden" name="action" value="sp_cal_dan_examen"><input type="hidden" name="date_examen" value="' . esc_attr( $e['date'] ) . '">';
 				wp_nonce_field( 'sp_cal_dan_examen' );

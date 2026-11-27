@@ -83,7 +83,11 @@ final class SP_Cal_Stages_Izzidan {
 	/** Événement du calendrier venu d'IzziDan (importé, ou saisi à la main puis reconnu par l'import). */
 	public static function est_izzidan( int $event_id ): bool {
 		static $ids = null;
-		if ( $ids === null ) $ids = array_flip( array_map( 'intval', (array) get_option( self::OPT_IMPORT, [] ) ) );
+		if ( $ids === null ) {
+			$ids = array_map( 'intval', (array) get_option( self::OPT_IMPORT, [] ) );
+			if ( class_exists( 'SP_Cal_Examens_Izzidan' ) ) $ids = array_merge( $ids, SP_Cal_Examens_Izzidan::ids() );   // examens Dan (28/11/2026)
+			$ids = array_flip( $ids );
+		}
 		return $event_id > 0 && isset( $ids[ $event_id ] );
 	}
 
@@ -271,6 +275,8 @@ final class SP_Cal_Stages_Izzidan {
 			$etat['trouves'][] = $ligne;
 		}
 		update_option( self::OPT_IMPORT, $import, false );
+		// Examens Dan d'Occitanie, au même passage (class-examens-izzidan.php, 28/11/2026).
+		if ( class_exists( 'SP_Cal_Examens_Izzidan' ) ) $etat['examens'] = SP_Cal_Examens_Izzidan::synchroniser();
 		update_option( self::OPT_ETAT, $etat, false );
 		return $etat;
 	}
@@ -305,9 +311,9 @@ final class SP_Cal_Stages_Izzidan {
 		$coches = self::coches();
 		$etat   = get_option( self::OPT_ETAT );
 		echo '<div id="sp-izzidan" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;max-width:1000px;margin-top:14px;">';
-		echo '<h2 style="margin-top:0;">🔄 Stages départementaux et régionaux (IzziDan)</h2>';
+		echo '<h2 style="margin-top:0;">🔄 Stages et examens Dan départementaux et régionaux (IzziDan)</h2>';
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- message de retour
-		if ( isset( $_GET['izzidan'] ) ) echo '<div class="notice notice-success inline"><p>Import IzziDan fait' . ( is_array( $etat ) ? ' : ' . (int) $etat['crees'] . ' stage(s) ajouté(s) au calendrier.' : '.' ) . '</p></div>';
+		if ( isset( $_GET['izzidan'] ) ) echo '<div class="notice notice-success inline"><p>Import IzziDan fait' . ( is_array( $etat ) ? ' : ' . (int) $etat['crees'] . ' stage(s) et ' . (int) ( $etat['examens']['crees'] ?? 0 ) . ' examen(s) ajouté(s) au calendrier.' : '.' ) . '</p></div>';
 		echo '<p>Chaque jour, les stages de préparation au 1er Dan publiés sur <a href="' . esc_url( self::LISTE ) . '" target="_blank" rel="noopener">IzziDan</a> par les organisateurs cochés sont ajoutés au calendrier du club (sans inscriptions). '
 			. 'Il reste à <strong>cocher les présents</strong> après chaque stage. Les prépas du club ne comptent pas pour l\'examen.</p>';
 
@@ -335,6 +341,20 @@ final class SP_Cal_Stages_Izzidan {
 				echo '</tbody></table>';
 			} elseif ( ! $etat['erreur'] ) {
 				echo '<p class="description">Aucun stage de préparation au 1er Dan en Occitanie sur IzziDan pour l\'instant.</p>';
+			}
+			$ex = $etat['examens'] ?? null;
+			if ( is_array( $ex ) ) {
+				echo '<h3 style="margin:16px 0 6px;">Examens Dan ouverts au 1er Dan</h3>';
+				if ( $ex['erreur'] ) echo '<p style="color:#dc2626;">' . esc_html( $ex['erreur'] ) . '</p>';
+				if ( ! empty( $ex['trouves'] ) ) {
+					echo '<table class="widefat striped"><thead><tr><th>Date</th><th>Organisateur</th><th>Examen</th><th>Dans le calendrier du club</th></tr></thead><tbody>';
+					foreach ( $ex['trouves'] as $l ) {
+						echo '<tr><td>' . esc_html( self::fr( $l['date'] ) ) . '</td><td>' . esc_html( $l['org'] ) . '</td><td>' . esc_html( $l['grades'] ) . '</td><td>' . esc_html( $l['statut'] ) . '</td></tr>';
+					}
+					echo '</tbody></table>';
+				} elseif ( ! $ex['erreur'] ) {
+					echo '<p class="description">Aucun examen ouvert au 1er Dan en Occitanie sur IzziDan pour l\'instant.</p>';
+				}
 			}
 		} else {
 			echo '<p class="description">Premier import : demain au plus tard, ou cliquez sur « Importer maintenant ».</p>';

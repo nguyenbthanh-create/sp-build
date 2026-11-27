@@ -115,6 +115,7 @@ class SpCalPro_Ajax {
                 'prepa_dan'                   => $e->prepa_dan                   ?? '',
                 'izzidan'                     => class_exists( 'SP_Cal_Stages_Izzidan' ) && SP_Cal_Stages_Izzidan::est_izzidan( (int) $e->id ),
                 'ligue'                       => class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) $e->id ),
+                'izd_examen'                  => class_exists( 'SP_Cal_Examens_Izzidan' ) ? SP_Cal_Examens_Izzidan::libelle( (int) $e->id ) : '',
                 'cours_discipline'            => $e->cours_discipline           ?? '',
                 'cours_age_categories'        => $e->cours_age_categories       ?? '',
             );

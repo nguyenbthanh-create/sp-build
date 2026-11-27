@@ -293,6 +293,8 @@ for ($w=0;$w<6;$w++) {
                             if ( $niv_dan === '' && ( $item['type'] ?? '' ) === 'competition' && class_exists( 'SP_Cal_Competitions_Ligue' ) && SP_Cal_Competitions_Ligue::est_ligue( (int) ( $item['id'] ?? 0 ) ) ) {
                                 $niv_dan = ( ( $item['niveau'] ?? '' ) === 'departemental' ? 'Département' : 'Région' ) . ' · LIG';
                             }
+                            // Examen Dan venu d'IzziDan : « Région · IZD » (28/11/2026).
+                            if ( $niv_dan === '' && ( $item['type'] ?? '' ) === 'examen' && class_exists( 'SP_Cal_Examens_Izzidan' ) ) $niv_dan = SP_Cal_Examens_Izzidan::libelle( (int) ( $item['id'] ?? 0 ) );
                             $is_annule = !empty($item['annul_id']);
                             $is_ponct  = !empty($item['ponctuel']);
                             $class = $is_annule ? 'sp-plan-event sp-plan-annule' : ($is_ponct ? 'sp-plan-event sp-plan-ponctuel' : 'sp-plan-event');

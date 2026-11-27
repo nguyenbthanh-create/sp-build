@@ -20,6 +20,7 @@ require_once plugin_dir_path( __FILE__ ) . 'class-eligibilite-dan.php'; // élig
 SP_Cal_Eligibilite_Dan::get_instance();
 require_once plugin_dir_path( __FILE__ ) . 'class-stages-izzidan.php'; // stages prépa Dan d'Occitanie importés d'IzziDan (28/11/2026)
 SP_Cal_Stages_Izzidan::get_instance();
+require_once plugin_dir_path( __FILE__ ) . 'class-examens-izzidan.php'; // examens Dan d'Occitanie importés d'IzziDan (28/11/2026)
 require_once plugin_dir_path( __FILE__ ) . 'class-competitions-ligue.php'; // compétitions de la Ligue Occitanie importées (28/11/2026)
 SP_Cal_Competitions_Ligue::get_instance();
 require_once plugin_dir_path( __FILE__ ) . 'class-anniversaires.php';
